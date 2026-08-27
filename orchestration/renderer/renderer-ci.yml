@@ -1,0 +1,51 @@
+name: renderer-ci
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'packages/play_flutter/**'
+      - 'packages/play_schema/**'
+      - 'packages/play_runtime/**'
+      - 'apps/mosaic_app/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - '.github/workflows/renderer-ci.yml'
+  pull_request:
+    paths:
+      - 'packages/play_flutter/**'
+      - 'packages/play_schema/**'
+      - 'packages/play_runtime/**'
+      - 'apps/mosaic_app/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - '.github/workflows/renderer-ci.yml'
+
+concurrency:
+  group: renderer-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.44.7'
+          cache: true
+      - name: Resolve locked workspace
+        run: flutter pub get --enforce-lockfile
+      - name: Verify formatting
+        run: dart format --output=none --set-exit-if-changed packages/play_flutter
+      - name: Analyze renderer
+        run: flutter analyze packages/play_flutter --fatal-infos
+      - name: Test renderer
+        working-directory: packages/play_flutter
+        run: flutter test --reporter=expanded
