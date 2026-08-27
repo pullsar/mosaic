@@ -94,41 +94,69 @@ final class OutboxPolicy {
   final Duration maxBackoff;
 }
 
+final class UnsupportedLocalSchemaException implements Exception {
+  const UnsupportedLocalSchemaException({
+    required this.foundVersion,
+    required this.supportedVersion,
+  });
+
+  final int foundVersion;
+  final int supportedVersion;
+
+  @override
+  String toString() =>
+      'Local database schema $foundVersion is newer than supported '
+      '$supportedVersion.';
+}
+
 typedef ActorIdFactory = String Function();
 
 final class MosaicLocalStore {
   MosaicLocalStore._(
     this._db, {
     required this.policy,
+    required this.maxFeedWindowRevisionIds,
     required ActorIdFactory actorIdFactory,
   }) : _actorIdFactory = actorIdFactory;
 
   static const int schemaVersion = 1;
+  static const int defaultMaxFeedWindowRevisionIds = 64;
 
   final Database _db;
   final OutboxPolicy policy;
+  final int maxFeedWindowRevisionIds;
   final ActorIdFactory _actorIdFactory;
 
   static MosaicLocalStore open(
     String path, {
     OutboxPolicy policy = const OutboxPolicy(),
+    int maxFeedWindowRevisionIds = defaultMaxFeedWindowRevisionIds,
     ActorIdFactory actorIdFactory = _randomUuidV4,
   }) {
+    _validateFeedWindowLimit(maxFeedWindowRevisionIds);
+    Database? candidate;
     try {
-      final db = sqlite3.open(path);
+      candidate = sqlite3.open(path);
       final store = MosaicLocalStore._(
-        db,
+        candidate,
         policy: policy,
+        maxFeedWindowRevisionIds: maxFeedWindowRevisionIds,
         actorIdFactory: actorIdFactory,
       );
+      store._verifyIntegrity();
       store._migrate();
       return store;
+    } on UnsupportedLocalSchemaException {
+      candidate?.close();
+      rethrow;
     } on Object {
+      candidate?.close();
       _quarantineCorruptDatabase(path);
       final db = sqlite3.open(path);
       final store = MosaicLocalStore._(
         db,
         policy: policy,
+        maxFeedWindowRevisionIds: maxFeedWindowRevisionIds,
         actorIdFactory: actorIdFactory,
       );
       store._migrate();
@@ -138,18 +166,21 @@ final class MosaicLocalStore {
 
   static MosaicLocalStore openInMemory({
     OutboxPolicy policy = const OutboxPolicy(),
+    int maxFeedWindowRevisionIds = defaultMaxFeedWindowRevisionIds,
     ActorIdFactory actorIdFactory = _randomUuidV4,
   }) {
+    _validateFeedWindowLimit(maxFeedWindowRevisionIds);
     final store = MosaicLocalStore._(
       sqlite3.openInMemory(),
       policy: policy,
+      maxFeedWindowRevisionIds: maxFeedWindowRevisionIds,
       actorIdFactory: actorIdFactory,
     );
     store._migrate();
     return store;
   }
 
-  void close() => _db.dispose();
+  void close() => _db.close();
 
   int get userVersion {
     final rows = _db.select('pragma user_version');
@@ -167,7 +198,10 @@ final class MosaicLocalStore {
   void replaceInterests(InterestKind kind, Iterable<String> topicIds) {
     _transaction(() {
       _db.execute('delete from topic_preferences where kind = ?', [kind.name]);
-      final unique = topicIds.where((value) => value.trim().isNotEmpty).toSet();
+      final unique = topicIds
+          .map((value) => value.trim())
+          .where((value) => value.isNotEmpty)
+          .toSet();
       for (final topic in unique) {
         _db.execute(
           'insert into topic_preferences (kind, topic_id) values (?, ?)',
@@ -190,6 +224,15 @@ final class MosaicLocalStore {
     required List<String> windowRevisionIds,
     DateTime? updatedAt,
   }) {
+    final boundedWindow = <String>[];
+    final seen = <String>{};
+    for (final revisionId in windowRevisionIds) {
+      final normalized = revisionId.trim();
+      if (normalized.isEmpty || !seen.add(normalized)) continue;
+      boundedWindow.add(normalized);
+      if (boundedWindow.length >= maxFeedWindowRevisionIds) break;
+    }
+
     _db.execute(
       '''
       insert into feed_resume (singleton, cursor, window_json, updated_at)
@@ -201,7 +244,7 @@ final class MosaicLocalStore {
       ''',
       [
         cursor,
-        jsonEncode(windowRevisionIds),
+        jsonEncode(boundedWindow),
         (updatedAt ?? DateTime.now().toUtc()).toIso8601String(),
       ],
     );
@@ -307,6 +350,7 @@ final class MosaicLocalStore {
     DateTime? createdAt,
   }) {
     final encoded = jsonEncode(event.toJson());
+    final instant = createdAt ?? DateTime.now().toUtc();
     _db.execute(
       '''
       insert into event_outbox (
@@ -319,13 +363,17 @@ final class MosaicLocalStore {
         encoded,
         utf8.encode(encoded).length,
         priority.value,
-        (createdAt ?? DateTime.now().toUtc()).toIso8601String(),
+        instant.toIso8601String(),
       ],
     );
-    pruneOutbox(now: createdAt ?? DateTime.now().toUtc());
+    pruneOutbox(now: instant);
   }
 
-  List<PendingEvent> dueEvents({DateTime? now, int limit = 50}) {
+  List<PendingEvent> dueEvents({
+    DateTime? now,
+    int limit = 50,
+  }) {
+    if (limit <= 0) return const [];
     final instant = (now ?? DateTime.now().toUtc()).toIso8601String();
     return _db
         .select(
@@ -374,11 +422,10 @@ final class MosaicLocalStore {
 
   int get outboxBytes =>
       (_db
-              .select(
-                'select coalesce(sum(byte_size), 0) as bytes from event_outbox',
-              )
-              .first['bytes']
-          as int);
+          .select(
+            'select coalesce(sum(byte_size), 0) as bytes from event_outbox',
+          )
+          .first['bytes'] as int);
 
   void pruneOutbox({DateTime? now}) {
     final current = now ?? DateTime.now().toUtc();
@@ -399,17 +446,26 @@ final class MosaicLocalStore {
         [OutboxPriority.critical.value],
       );
       if (candidate.isEmpty) break;
-      _db.execute('delete from event_outbox where event_id = ?', [
-        candidate.first['event_id'],
-      ]);
+      _db.execute(
+        'delete from event_outbox where event_id = ?',
+        [candidate.first['event_id']],
+      );
+    }
+  }
+
+  void _verifyIntegrity() {
+    final result = _db.select('pragma quick_check(1)');
+    if (result.isEmpty || result.first.values.first != 'ok') {
+      throw StateError('Local database integrity check failed.');
     }
   }
 
   void _migrate() {
     final version = userVersion;
     if (version > schemaVersion) {
-      throw StateError(
-        'Local database schema $version is newer than supported $schemaVersion.',
+      throw UnsupportedLocalSchemaException(
+        foundVersion: version,
+        supportedVersion: schemaVersion,
       );
     }
     if (version == 0) {
@@ -517,18 +573,30 @@ final class MosaicLocalStore {
     );
   }
 
+  static void _validateFeedWindowLimit(int limit) {
+    if (limit <= 0) {
+      throw ArgumentError.value(
+        limit,
+        'maxFeedWindowRevisionIds',
+        'must be greater than zero',
+      );
+    }
+  }
+
   static void _quarantineCorruptDatabase(String path) {
     if (path == ':memory:') return;
-    final file = File(path);
-    if (!file.existsSync()) return;
     final suffix = DateTime.now().toUtc().microsecondsSinceEpoch;
-    try {
-      file.renameSync('$path.corrupt.$suffix');
-    } on FileSystemException {
+    for (final sidecar in const ['', '-wal', '-shm']) {
+      final file = File('$path$sidecar');
+      if (!file.existsSync()) continue;
       try {
-        file.deleteSync();
+        file.renameSync('$path.corrupt.$suffix$sidecar');
       } on FileSystemException {
-        // Let the subsequent open report the unrecoverable filesystem error.
+        try {
+          file.deleteSync();
+        } on FileSystemException {
+          // Let the subsequent open report the unrecoverable filesystem error.
+        }
       }
     }
   }
