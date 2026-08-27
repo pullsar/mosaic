@@ -4,6 +4,10 @@ import 'dart:io';
 import 'package:play_schema/play_schema.dart';
 import 'package:test/test.dart';
 
+Map<String, Object?> _fixture(String path) =>
+    jsonDecode(File('fixtures/$path').readAsStringSync())
+        as Map<String, Object?>;
+
 void main() {
   const fixtures = [
     'where_is_this.json',
@@ -12,15 +16,13 @@ void main() {
     'play_it_back.json',
     'move_one_match.json',
     'which_century.json',
+    'compat/v1_baseline_guess.json',
   ];
 
-  test('all reference fixtures parse and validate', () {
+  test('all reference and pinned compatibility fixtures parse and validate', () {
     const validator = PlaySchemaValidator();
     for (final fixture in fixtures) {
-      final raw =
-          jsonDecode(File('fixtures/$fixture').readAsStringSync())
-              as Map<String, Object?>;
-      final play = PlayDocument.fromJson(raw);
+      final play = PlayDocument.fromJson(_fixture(fixture));
       final errors = validator
           .validate(play)
           .where((issue) => issue.severity == PlayValidationSeverity.error)
@@ -33,10 +35,118 @@ void main() {
     }
   });
 
+  test('M0 capabilities decode a supported Play', () {
+    final result = const PlayCompatibilityChecker().decode(
+      _fixture('where_is_this.json'),
+      PlayCapabilityEnvelope.m0(),
+    );
+    expect(result, isA<DecodedPlay>());
+  });
+
+  test('future schema fails closed without throwing', () {
+    final raw = {..._fixture('where_is_this.json'), 'schemaVersion': 2};
+    final result = const PlayCompatibilityChecker().decode(
+      raw,
+      PlayCapabilityEnvelope.m0(),
+    );
+    expect(result, isA<UnsupportedPlay>());
+    final unsupported = result as UnsupportedPlay;
+    expect(
+      unsupported.decision.status,
+      PlayCompatibilityStatus.unsupportedSchema,
+    );
+    expect(unsupported.decision.missingCapabilities, contains('schema:2'));
+  });
+
+  test('future primitive fails closed before enum parsing', () {
+    final raw = _fixture('where_is_this.json');
+    final states = Map<String, Object?>.from(raw['states']! as Map);
+    final guess = Map<String, Object?>.from(states['guess']! as Map);
+    states['guess'] = {
+      ...guess,
+      'input': {
+        ...Map<String, Object?>.from(guess['input']! as Map),
+        'type': 'future_spin',
+      },
+    };
+
+    final result = const PlayCompatibilityChecker().decode(
+      {...raw, 'states': states},
+      PlayCapabilityEnvelope.m0(),
+    );
+    expect(result, isA<UnsupportedPlay>());
+    expect(
+      (result as UnsupportedPlay).decision.missingCapabilities,
+      contains('input:future_spin'),
+    );
+  });
+
+  test('required platform flag participates in eligibility', () {
+    final raw = {
+      ..._fixture('where_is_this.json'),
+      'requiredPlatformFlags': ['low_latency_audio'],
+    };
+    final checker = const PlayCompatibilityChecker();
+
+    final unsupported = checker.decode(raw, PlayCapabilityEnvelope.m0());
+    expect(unsupported, isA<UnsupportedPlay>());
+    expect(
+      (unsupported as UnsupportedPlay).decision.missingCapabilities,
+      contains('platform:low_latency_audio'),
+    );
+
+    final supported = checker.decode(
+      raw,
+      const PlayCapabilityEnvelope(
+        schemaVersions: {1},
+        presentationTypes: {'text', 'video_clip'},
+        inputTypes: {'tap', 'single_choice'},
+        validatorTypes: {'none', 'equals'},
+        platformFlags: {'low_latency_audio'},
+      ),
+    );
+    expect(supported, isA<DecodedPlay>());
+  });
+
+  test('unknown optional fields remain additive-compatible', () {
+    final raw = {
+      ..._fixture('where_is_this.json'),
+      'futureOptionalMetadata': {'anything': true},
+    };
+    final result = const PlayCompatibilityChecker().decode(
+      raw,
+      PlayCapabilityEnvelope.m0(),
+    );
+    expect(result, isA<DecodedPlay>());
+  });
+
+  test('malformed raw capability shape returns MalformedPlay', () {
+    final raw = {..._fixture('where_is_this.json'), 'states': 'broken'};
+    final result = const PlayCompatibilityChecker().decode(
+      raw,
+      PlayCapabilityEnvelope.m0(),
+    );
+    expect(result, isA<MalformedPlay>());
+  });
+
+  test('capability envelope round-trips deterministically', () {
+    const capabilities = PlayCapabilityEnvelope(
+      schemaVersions: {1},
+      presentationTypes: {'text', 'video_clip'},
+      inputTypes: {'tap', 'single_choice'},
+      validatorTypes: {'none', 'equals'},
+      platformFlags: {'web_video'},
+    );
+    final decoded = PlayCapabilityEnvelope.fromJson(capabilities.toJson());
+    expect(decoded.schemaVersions, capabilities.schemaVersions);
+    expect(decoded.presentationTypes, capabilities.presentationTypes);
+    expect(decoded.inputTypes, capabilities.inputTypes);
+    expect(decoded.validatorTypes, capabilities.validatorTypes);
+    expect(decoded.platformFlags, capabilities.platformFlags);
+  });
+
   test('rejects unresolved transitions', () {
-    final raw =
-        jsonDecode(File('fixtures/where_is_this.json').readAsStringSync())
-            as Map<String, Object?>;
+    final raw = _fixture('where_is_this.json');
     final states = Map<String, Object?>.from(raw['states']! as Map)
       ..['guess'] = {
         ...Map<String, Object?>.from((raw['states']! as Map)['guess']! as Map),
@@ -51,9 +161,7 @@ void main() {
   });
 
   test('enforces prompt copy budget', () {
-    final raw =
-        jsonDecode(File('fixtures/where_is_this.json').readAsStringSync())
-            as Map<String, Object?>;
+    final raw = _fixture('where_is_this.json');
     final states = Map<String, Object?>.from(raw['states']! as Map);
     final guess = Map<String, Object?>.from(states['guess']! as Map);
     final presentation = Map<String, Object?>.from(
