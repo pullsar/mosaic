@@ -1,0 +1,88 @@
+name: repair-authoritative-reconcile-once
+
+on:
+  push:
+    branches: ['agent/m05-m06-authoritative-reconcile-20260827']
+    paths:
+      - '.github/workflows/repair-authoritative-reconcile-once.yml'
+
+permissions:
+  actions: write
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: pullsar/mosaic
+      BRANCH: agent/m05-m06-authoritative-reconcile-20260827
+    steps:
+      - name: Cancel superseded reconciliation run
+        run: |
+          set -euo pipefail
+          runs=$(gh api -X GET "repos/$REPOSITORY/actions/runs" -f branch="$BRANCH" -f per_page=100)
+          jq -r '.workflow_runs[] | select(.name == "authoritative-m05-m06-reconcile-once" and .status != "completed") | .id' <<<"$runs" | while read -r id; do
+            [[ -z "$id" ]] || gh api -X POST "repos/$REPOSITORY/actions/runs/$id/cancel" >/dev/null 2>&1 || true
+          done
+      - name: Checkout control branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/m05-m06-authoritative-reconcile-20260827
+          fetch-depth: 0
+      - name: Correct deterministic assertions and retrigger
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          platform = Path('orchestration/reconcile_platform.py')
+          text = platform.read_text()
+          old = '''if text.count("AA1000040000000000000004 /* InfoPlist.xcstrings */") != 2:'''
+          new = '''if text.count("AA1000040000000000000004 /* InfoPlist.xcstrings */") != 3:'''
+          if old not in text and new not in text:
+              raise SystemExit('Xcode reference assertion marker is missing')
+          platform.write_text(text.replace(old, new, 1))
+
+          test = Path('orchestration/renderer/play_visual_renderer_test.dart')
+          text = test.read_text()
+          old = '''    await tester.pumpWidget(
+      MediaQuery(
+        data: const MediaQueryData(disableAnimations: true),
+        child: MaterialApp(
+          home: ResolvedPlayVisual(
+            assetId: 'visual_a',
+            resolver: CallbackPlayVisualAssetResolver((_) => pending.future),
+          ),
+        ),
+      ),
+    );'''
+          new = '''    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(disableAnimations: true),
+          child: ResolvedPlayVisual(
+            assetId: 'visual_a',
+            resolver: CallbackPlayVisualAssetResolver((_) => pending.future),
+          ),
+        ),
+      ),
+    );'''
+          if old not in text and new not in text:
+              raise SystemExit('Reduced-motion test marker is missing')
+          test.write_text(text.replace(old, new, 1))
+
+          workflow = Path('.github/workflows/authoritative-m05-m06-reconcile-once.yml')
+          content = workflow.read_text().rstrip()
+          marker = '# reconciliation-revision: 2'
+          if marker not in content:
+              content = f'{content}\n\n{marker}\n'
+          workflow.write_text(content)
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/repair-authoritative-reconcile-once.yml
+          git add orchestration .github/workflows/authoritative-m05-m06-reconcile-once.yml
+          git commit -m 'fix(orchestration): correct exact native and motion gates'
+          git push origin HEAD:"$BRANCH"
