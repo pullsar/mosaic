@@ -1,0 +1,158 @@
+name: extend-renderer-prefetch-once
+
+on:
+  push:
+    branches: ['agent/m06-renderer-prefetch-bootstrap-20260827']
+    paths:
+      - '.github/workflows/extend-renderer-prefetch-once.yml'
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: extend-renderer-prefetch-once
+  cancel-in-progress: false
+
+jobs:
+  extend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: pullsar/mosaic
+      BOOTSTRAP_BRANCH: agent/m06-renderer-prefetch-bootstrap-20260827
+      TARGET_BRANCH: agent/m06-play-renderer-20260827
+    steps:
+      - name: Wait for merged foundations and tested renderer predecessors
+        shell: bash
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 320); do
+            issue13=$(gh issue view 13 --repo "$REPOSITORY" --json state --jq .state)
+            issue14=$(gh issue view 14 --repo "$REPOSITORY" --json state --jq .state)
+            if [[ "$issue13" == CLOSED && "$issue14" == CLOSED ]]; then
+              source=$(gh api -X GET \
+                "repos/$REPOSITORY/contents/packages/play_flutter/lib/src/play_visual_renderer.dart" \
+                -f ref="$TARGET_BRANCH" --jq .content 2>/dev/null | base64 -d 2>/dev/null || true)
+              if grep -q 'final class CachingPlayVisualAssetResolver' <<<"$source" && \
+                 grep -q 'final class PlayVisualMediaBuilder<' <<<"$source"; then
+                gh api -X GET \
+                  "repos/$REPOSITORY/contents/packages/play_flutter/test/play_visual_cache_test.dart" \
+                  -f ref="$TARGET_BRANCH" >/dev/null
+                gh api -X GET \
+                  "repos/$REPOSITORY/contents/packages/play_flutter/test/play_visual_media_builder_test.dart" \
+                  -f ref="$TARGET_BRANCH" >/dev/null
+                exit 0
+              fi
+            fi
+            sleep 15
+          done
+          echo 'The verified cache and layer-binding renderer lineage did not become available.' >&2
+          exit 1
+
+      - name: Checkout bootstrap implementation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: bootstrap
+
+      - name: Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.44.7'
+          cache: true
+
+      - name: Apply, commit and validate the exact prefetch head
+        id: implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}.git" workspace
+          cd workspace
+          git checkout "$TARGET_BRANCH"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin main
+          git merge --no-edit origin/main -m 'chore(renderer): sync latest main before prefetch budget'
+
+          python3 ../bootstrap/orchestration/renderer_prefetch_finalize.py \
+            . ../bootstrap/orchestration
+          cp ../bootstrap/orchestration/play_visual_prefetch_test_v2.dart \
+            packages/play_flutter/test/play_visual_prefetch_test.dart
+
+          dart format packages/play_flutter
+          flutter pub get --enforce-lockfile
+          git diff --check
+          git add \
+            packages/play_flutter \
+            docs/progress/2026-08-27-m06-play-renderer-progress.md
+          if ! git diff --cached --quiet; then
+            git commit -m 'perf(renderer): bound visual decode and prefetch work'
+          fi
+          target_sha=$(git rev-parse HEAD)
+          git diff --exit-code
+
+          flutter analyze --fatal-infos
+          (cd packages/play_schema && dart test)
+          (cd packages/play_runtime && dart test)
+          (cd packages/play_flutter && flutter test --reporter=expanded)
+          (cd packages/platform_contracts && dart test)
+          (cd packages/platform_flutter && flutter test --reporter=expanded)
+          (cd packages/local_state && dart test --reporter=expanded)
+          (cd apps/mosaic_app && flutter test --reporter=expanded)
+          (cd apps/mosaic_app && flutter build web --release)
+          git diff --exit-code
+
+          git push origin HEAD:"$TARGET_BRANCH"
+          branch_sha=$(gh api "repos/$REPOSITORY/git/ref/heads/$TARGET_BRANCH" --jq .object.sha)
+          [[ "$branch_sha" == "$target_sha" ]]
+          echo "sha=$target_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Refresh the draft renderer PR and issue checkpoint
+        env:
+          TARGET_SHA: ${{ steps.implementation.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          pr=$(gh pr list --repo "$REPOSITORY" --state open \
+            --head "$TARGET_BRANCH" --base main \
+            --json number --jq '.[0].number // empty')
+          cat > /tmp/renderer.md <<'BODY'
+          Part of #3
+
+          Implements the first four visual-renderer tranches:
+
+          - immutable HTTPS/memory/bundle sources, exact asset-ID validation, stale-safe resolution, semantic images and accessible reduced-motion states;
+          - explicit-capacity LRU resolution with duplicate-load coalescing, negative caching, retry-on-failure and invalidation-safe stale completions;
+          - reusable generic layer binding with custom fallback/loading/error states and explicit repaint isolation;
+          - positive decode-size hints plus a globally bounded, superseding prefetch controller that caps each feed window, retains its concurrency budget across overlapping generations, reports missing/failing assets and prevents stale work from starting successors or changing current accounting.
+
+          #3 remains open. Next: native video/controller ownership through the lifecycle coordinator, then complete Play-state integration and renderer acceptance coverage.
+          BODY
+          if [[ -z "$pr" ]]; then
+            url=$(gh pr create --repo "$REPOSITORY" --head "$TARGET_BRANCH" \
+              --base main --draft \
+              --title 'feat(renderer): add visual asset resolution foundation' \
+              --body-file /tmp/renderer.md)
+            pr=${url##*/}
+          else
+            gh pr edit "$pr" --repo "$REPOSITORY" \
+              --title 'feat(renderer): add visual asset resolution foundation' \
+              --body-file /tmp/renderer.md
+          fi
+          gh issue comment 3 --repo "$REPOSITORY" --body \
+            "Decode/prefetch budgeting is now on renderer PR #$pr at exact tested head \`$TARGET_SHA\`: resize hints, capped/deduplicated windows, a global operation permit budget, superseding generations and stale-safe accounting."
+
+      - name: Remove successful bootstrap lineages
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          for branch in \
+            agent/m06-renderer-cache-bootstrap-20260827 \
+            agent/m06-renderer-binding-bootstrap-20260827 \
+            "$BOOTSTRAP_BRANCH"; do
+            gh api -X DELETE "repos/$REPOSITORY/git/refs/heads/$branch" >/dev/null 2>&1 || true
+          done
