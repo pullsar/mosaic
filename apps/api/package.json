@@ -1,0 +1,28 @@
+{
+  "name": "@mosaic/api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {"node": ">=24 <25"},
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "node --enable-source-maps dist/server.js",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --import tsx --test test/**/*.test.ts",
+    "migrate": "tsx src/db/migrate.ts up",
+    "migrate:down": "tsx src/db/migrate.ts down",
+    "migrate:status": "tsx src/db/migrate.ts status",
+    "seed": "tsx src/seed.ts"
+  },
+  "dependencies": {
+    "fastify": "5.12.1",
+    "pg": "8.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.1.0",
+    "@types/pg": "8.23.1",
+    "tsx": "4.23.12",
+    "typescript": "7.0.2"
+  }
+}
