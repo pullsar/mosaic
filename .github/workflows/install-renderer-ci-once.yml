@@ -1,0 +1,112 @@
+name: install-renderer-ci-once
+
+on:
+  push:
+    branches: ['agent/m06-renderer-ci-bootstrap-20260827']
+    paths:
+      - '.github/workflows/install-renderer-ci-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: pullsar/mosaic
+      TARGET_BRANCH: agent/m06-play-renderer-20260827
+      BOOTSTRAP_BRANCH: agent/m06-renderer-ci-bootstrap-20260827
+      SOURCE: packages/play_flutter/lib/src/play_visual_renderer.dart
+    steps:
+      - name: Wait for tested renderer source
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 420); do
+            if gh api "repos/$REPOSITORY/contents/$SOURCE?ref=$TARGET_BRANCH" >/dev/null 2>&1; then
+              sleep 30
+              exit 0
+            fi
+            sleep 10
+          done
+          echo 'Renderer source did not arrive in time.' >&2
+          exit 1
+      - name: Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.44.7'
+          cache: true
+      - name: Install and exercise permanent renderer CI
+        run: |
+          set -euo pipefail
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}.git" repository
+          cd repository
+          git checkout "$TARGET_BRANCH"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          cat > .github/workflows/renderer-ci.yml <<'YAML'
+          name: renderer-ci
+
+          on:
+            push:
+              branches: ['**']
+              paths:
+                - 'packages/play_flutter/**'
+                - 'packages/play_schema/**'
+                - 'packages/play_runtime/**'
+                - 'apps/mosaic_app/**'
+                - 'pubspec.yaml'
+                - 'pubspec.lock'
+                - '.github/workflows/renderer-ci.yml'
+            pull_request:
+              paths:
+                - 'packages/play_flutter/**'
+                - 'packages/play_schema/**'
+                - 'packages/play_runtime/**'
+                - 'apps/mosaic_app/**'
+                - 'pubspec.yaml'
+                - 'pubspec.lock'
+                - '.github/workflows/renderer-ci.yml'
+
+          concurrency:
+            group: renderer-ci-${{ github.ref }}
+            cancel-in-progress: true
+
+          permissions:
+            contents: read
+
+          jobs:
+            validate:
+              runs-on: ubuntu-latest
+              timeout-minutes: 15
+              steps:
+                - name: Checkout
+                  uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+                - name: Flutter
+                  uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+                  with:
+                    flutter-version: '3.44.7'
+                    cache: true
+                - name: Resolve locked workspace
+                  run: flutter pub get --enforce-lockfile
+                - name: Verify formatting
+                  run: dart format --output=none --set-exit-if-changed packages/play_flutter
+                - name: Analyze renderer
+                  run: flutter analyze packages/play_flutter --fatal-infos
+                - name: Test renderer
+                  working-directory: packages/play_flutter
+                  run: flutter test --reporter=expanded
+          YAML
+          flutter pub get --enforce-lockfile
+          dart format --output=none --set-exit-if-changed packages/play_flutter
+          flutter analyze packages/play_flutter --fatal-infos
+          (cd packages/play_flutter && flutter test --reporter=expanded)
+          git add .github/workflows/renderer-ci.yml
+          if ! git diff --cached --quiet; then
+            git commit -m 'ci(renderer): add permanent visual renderer gate'
+            git push origin "$TARGET_BRANCH"
+          fi
+      - name: Remove temporary bootstrap branch
+        if: success()
+        run: gh api -X DELETE "repos/$REPOSITORY/git/refs/heads/$BOOTSTRAP_BRANCH"
