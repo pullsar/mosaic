@@ -19,21 +19,24 @@ void main() {
     'compat/v1_baseline_guess.json',
   ];
 
-  test('all reference and pinned compatibility fixtures parse and validate', () {
-    const validator = PlaySchemaValidator();
-    for (final fixture in fixtures) {
-      final play = PlayDocument.fromJson(_fixture(fixture));
-      final errors = validator
-          .validate(play)
-          .where((issue) => issue.severity == PlayValidationSeverity.error)
-          .toList();
-      expect(
-        errors,
-        isEmpty,
-        reason: '$fixture: ${errors.map((e) => e.message)}',
-      );
-    }
-  });
+  test(
+    'all reference and pinned compatibility fixtures parse and validate',
+    () {
+      const validator = PlaySchemaValidator();
+      for (final fixture in fixtures) {
+        final play = PlayDocument.fromJson(_fixture(fixture));
+        final errors = validator
+            .validate(play)
+            .where((issue) => issue.severity == PlayValidationSeverity.error)
+            .toList();
+        expect(
+          errors,
+          isEmpty,
+          reason: '$fixture: ${errors.map((e) => e.message)}',
+        );
+      }
+    },
+  );
 
   test('M0 capabilities decode a supported Play', () {
     final result = const PlayCompatibilityChecker().decode(
@@ -70,10 +73,10 @@ void main() {
       },
     };
 
-    final result = const PlayCompatibilityChecker().decode(
-      {...raw, 'states': states},
-      PlayCapabilityEnvelope.m0(),
-    );
+    final result = const PlayCompatibilityChecker().decode({
+      ...raw,
+      'states': states,
+    }, PlayCapabilityEnvelope.m0());
     expect(result, isA<UnsupportedPlay>());
     expect(
       (result as UnsupportedPlay).decision.missingCapabilities,

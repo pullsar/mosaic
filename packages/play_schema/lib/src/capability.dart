@@ -31,11 +31,11 @@ final class PlayCapabilityEnvelope {
 
   /// Capabilities implemented by the M0 client/runtime today.
   factory PlayCapabilityEnvelope.m0() => const PlayCapabilityEnvelope(
-        schemaVersions: {1},
-        presentationTypes: {'text', 'image', 'video_clip', 'audio'},
-        inputTypes: {'tap', 'single_choice'},
-        validatorTypes: {'none', 'equals'},
-      );
+    schemaVersions: {1},
+    presentationTypes: {'text', 'image', 'video_clip', 'audio'},
+    inputTypes: {'tap', 'single_choice'},
+    validatorTypes: {'none', 'equals'},
+  );
 
   factory PlayCapabilityEnvelope.fromJson(Map<String, Object?> json) {
     Set<String> strings(String key) {
@@ -70,12 +70,12 @@ final class PlayCapabilityEnvelope {
   }
 
   Map<String, Object?> toJson() => {
-        'schemaVersions': schemaVersions.toList()..sort(),
-        'presentationTypes': presentationTypes.toList()..sort(),
-        'inputTypes': inputTypes.toList()..sort(),
-        'validatorTypes': validatorTypes.toList()..sort(),
-        'platformFlags': platformFlags.toList()..sort(),
-      };
+    'schemaVersions': schemaVersions.toList()..sort(),
+    'presentationTypes': presentationTypes.toList()..sort(),
+    'inputTypes': inputTypes.toList()..sort(),
+    'validatorTypes': validatorTypes.toList()..sort(),
+    'platformFlags': platformFlags.toList()..sort(),
+  };
 }
 
 final class PlayRequirements {
@@ -231,7 +231,9 @@ final class PlayCompatibilityChecker {
       final presentationRaw = state['presentation'];
       final inputRaw = state['input'];
       final validationRaw = state['validation'];
-      if (presentationRaw is! Map || inputRaw is! Map || validationRaw is! Map) {
+      if (presentationRaw is! Map ||
+          inputRaw is! Map ||
+          validationRaw is! Map) {
         return null;
       }
 

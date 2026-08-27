@@ -77,7 +77,8 @@ final class PlaySchemaValidator {
       );
       return issues;
     }
-    if (play.classification == PlayClassification.fact && play.sources.isEmpty) {
+    if (play.classification == PlayClassification.fact &&
+        play.sources.isEmpty) {
       issues.add(
         const PlayValidationIssue(
           code: 'fact_source_required',
