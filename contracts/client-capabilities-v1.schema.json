@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mosaic.app/contracts/client-capabilities-v1.schema.json",
+  "title": "Mosaic Client Play Capabilities v1",
+  "type": "object",
+  "required": [
+    "schemaVersions",
+    "presentationTypes",
+    "inputTypes",
+    "validatorTypes",
+    "platformFlags"
+  ],
+  "properties": {
+    "schemaVersions": {
+      "type": "array",
+      "items": {"type": "integer", "minimum": 1},
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "presentationTypes": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    },
+    "inputTypes": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    },
+    "validatorTypes": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    },
+    "platformFlags": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    }
+  },
+  "additionalProperties": true
+}
