@@ -83,6 +83,9 @@ Formats:
 ### Runtime, ranking, and creation
 
 - [`docs/play-runtime-spec.md`](docs/play-runtime-spec.md) — Play schema, state machine, media/input primitives, and runtime constraints.
+- [`docs/play-schema-evolution.md`](docs/play-schema-evolution.md) — schema-version support, client capabilities, conformance fixtures, and deprecation policy.
+- [`contracts/play-v1.schema.json`](contracts/play-v1.schema.json) — language-neutral Play v1 wire contract.
+- [`contracts/client-capabilities-v1.schema.json`](contracts/client-capabilities-v1.schema.json) — language-neutral client capability envelope.
 - [`docs/creator-platform-spec.md`](docs/creator-platform-spec.md) — Remix, Quick Create, Studio, templates, lineage, and creator supply.
 - [`docs/recommendation-and-analytics-spec.md`](docs/recommendation-and-analytics-spec.md) — interest/learning/interaction graphs, ranking, events, and metrics.
 - [`docs/media-pipeline-spec.md`](docs/media-pipeline-spec.md) — capture/import, resumable upload, normalization, delivery, and rights metadata.
@@ -97,9 +100,9 @@ Formats:
 
 ## Current status
 
-**Milestone 0 implementation in progress.**
+**Milestone 0 is merged. Milestone 0.5 compatibility/platform foundations are in progress.**
 
-The first tranche establishes the Flutter workspace, pure-Dart Play schema/engine, analytics/platform contracts, CI, and reference fixtures before widening the UI.
+The active sequence is schema/capability negotiation, API/data foundation, lifecycle/permissions, and bounded local recovery before widening the Play renderer and consumer feed.
 
 ## Controlled-beta test
 
