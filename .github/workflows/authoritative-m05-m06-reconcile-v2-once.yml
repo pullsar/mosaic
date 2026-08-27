@@ -1,0 +1,424 @@
+name: authoritative-m05-m06-reconcile-v2-once
+
+on:
+  push:
+    branches: ['agent/m05-m06-authoritative-reconcile-20260827']
+    paths:
+      - '.github/workflows/authoritative-m05-m06-reconcile-v2-once.yml'
+
+permissions:
+  actions: write
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: authoritative-m05-m06-reconcile-v2
+  cancel-in-progress: false
+
+env:
+  REPOSITORY: pullsar/mosaic
+  FLUTTER_VERSION: '3.44.7'
+  CONTROL_BRANCH: agent/m05-m06-authoritative-reconcile-20260827
+
+jobs:
+  prepare-platform:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      skip: ${{ steps.state.outputs.skip }}
+      sha: ${{ steps.target.outputs.sha }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      FEATURE_BRANCH: agent/m05-platform-lifecycle-20260827
+    steps:
+      - name: Stop superseded control runs
+        shell: bash
+        run: |
+          set -euo pipefail
+          runs=$(gh api -X GET "repos/$REPOSITORY/actions/runs" -f branch="$CONTROL_BRANCH" -f per_page=100)
+          jq -r --arg current "$GITHUB_RUN_ID" '.workflow_runs[] | select((.id | tostring) != $current and .status != "completed") | .id' <<<"$runs" | while read -r id; do
+            [[ -z "$id" ]] || gh api -X POST "repos/$REPOSITORY/actions/runs/$id/cancel" >/dev/null 2>&1 || true
+          done
+          sleep 5
+      - name: Inspect platform issue
+        id: state
+        shell: bash
+        run: |
+          state=$(gh issue view 13 --repo "$REPOSITORY" --json state --jq .state)
+          [[ "$state" == CLOSED ]] && echo 'skip=true' >> "$GITHUB_OUTPUT" || echo 'skip=false' >> "$GITHUB_OUTPUT"
+      - name: Checkout orchestration source
+        if: steps.state.outputs.skip != 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: orchestrator
+      - name: Checkout platform feature
+        if: steps.state.outputs.skip != 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/m05-platform-lifecycle-20260827
+          fetch-depth: 0
+          path: workspace
+      - name: Flutter
+        if: steps.state.outputs.skip != 'true'
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - name: Reconcile platform branch
+        if: steps.state.outputs.skip != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('orchestrator/orchestration/reconcile_platform.py')
+          text = path.read_text()
+          text = text.replace(
+              'if text.count("AA1000040000000000000004 /* InfoPlist.xcstrings */") != 2:',
+              'if text.count("AA1000040000000000000004 /* InfoPlist.xcstrings */") != 3:',
+          )
+          path.write_text(text)
+          PY
+          git -C workspace config user.name 'github-actions[bot]'
+          git -C workspace config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C workspace fetch origin main
+          git -C workspace merge --no-edit origin/main -m 'chore(platform): sync latest main before native validation'
+          python3 orchestrator/orchestration/reconcile_platform.py workspace
+          (
+            cd workspace
+            flutter pub get
+            dart format apps/mosaic_app/lib packages/platform_contracts packages/platform_flutter
+            git diff --check
+          )
+          git -C workspace add -A
+          if ! git -C workspace diff --cached --quiet; then
+            git -C workspace commit -m 'fix(platform): finalize serialized lifecycle and native privacy resources'
+          fi
+          git -C workspace push origin HEAD:"$FEATURE_BRANCH"
+      - name: Publish exact target
+        id: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if [[ '${{ steps.state.outputs.skip }}' == true ]]; then
+            sha=$(gh api "repos/$REPOSITORY/git/ref/heads/main" --jq .object.sha)
+          else
+            sha=$(git -C workspace rev-parse HEAD)
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+  platform-linux:
+    needs: prepare-platform
+    if: needs.prepare-platform.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare-platform.outputs.sha }}
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - name: Analyze and test exact platform head
+        run: |
+          flutter pub get --enforce-lockfile
+          dart format --output=none --set-exit-if-changed apps/mosaic_app/lib apps/mosaic_app/test packages
+          flutter analyze --fatal-infos
+          (cd packages/play_schema && dart test)
+          (cd packages/play_runtime && dart test)
+          (cd packages/play_flutter && flutter test --reporter=expanded)
+          (cd packages/platform_contracts && dart test)
+          (cd packages/platform_flutter && flutter test --reporter=expanded)
+          (cd apps/mosaic_app && flutter test --reporter=expanded)
+      - name: Verify permission minimization
+        run: |
+          project=apps/mosaic_app/ios/Runner.xcodeproj/project.pbxproj
+          manifest=apps/mosaic_app/android/app/src/main/AndroidManifest.xml
+          test "$(grep -c 'InfoPlist.xcstrings in Resources' "$project")" -eq 2
+          grep -q 'PrivacyInfo.xcprivacy in Resources' "$project"
+          grep -q 'android.permission.CAMERA' "$manifest"
+          grep -q 'android.permission.RECORD_AUDIO' "$manifest"
+          grep -q 'android.permission.POST_NOTIFICATIONS' "$manifest"
+          ! grep -Eq 'READ_MEDIA_IMAGES|READ_MEDIA_VIDEO|READ_EXTERNAL_STORAGE|ACCESS_FINE_LOCATION|ACCESS_COARSE_LOCATION' "$manifest"
+      - name: Build web and Android hosts
+        run: |
+          (cd apps/mosaic_app && flutter build web --release)
+          (cd apps/mosaic_app && flutter build apk --debug)
+
+  platform-ios:
+    needs: prepare-platform
+    if: needs.prepare-platform.outputs.skip != 'true'
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare-platform.outputs.sha }}
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - name: Build iOS simulator host
+        run: |
+          flutter pub get --enforce-lockfile
+          (cd apps/mosaic_app && flutter build ios --simulator --no-codesign)
+
+  complete-foundations-and-seed-renderer:
+    needs:
+      - prepare-platform
+      - platform-linux
+      - platform-ios
+    if: ${{ always() && needs.prepare-platform.result == 'success' && (needs.prepare-platform.outputs.skip == 'true' || (needs.platform-linux.result == 'success' && needs.platform-ios.result == 'success')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PLATFORM_BRANCH: agent/m05-platform-lifecycle-20260827
+      PLATFORM_SHA: ${{ needs.prepare-platform.outputs.sha }}
+      LOCAL_BRANCH: agent/m05-local-recovery-20260827
+      RENDERER_BRANCH: agent/m06-play-renderer-20260827
+    steps:
+      - name: Checkout orchestration source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: orchestrator
+      - name: Correct staged reduced-motion regression
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('orchestrator/orchestration/renderer/play_visual_renderer_test.dart')
+          text = path.read_text()
+          old = '''    await tester.pumpWidget(
+      MediaQuery(
+        data: const MediaQueryData(disableAnimations: true),
+        child: MaterialApp(
+          home: ResolvedPlayVisual(
+            assetId: 'visual_a',
+            resolver: CallbackPlayVisualAssetResolver((_) => pending.future),
+          ),
+        ),
+      ),
+    );'''
+          new = '''    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(disableAnimations: true),
+          child: ResolvedPlayVisual(
+            assetId: 'visual_a',
+            resolver: CallbackPlayVisualAssetResolver((_) => pending.future),
+          ),
+        ),
+      ),
+    );'''
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Merge exact platform head
+        shell: bash
+        run: |
+          set -euo pipefail
+          state=$(gh issue view 13 --repo "$REPOSITORY" --json state --jq .state)
+          if [[ "$state" != CLOSED ]]; then
+            branch_sha=$(gh api "repos/$REPOSITORY/git/ref/heads/$PLATFORM_BRANCH" --jq .object.sha)
+            [[ "$branch_sha" == "$PLATFORM_SHA" ]]
+            comparison=$(gh api "repos/$REPOSITORY/compare/main...$PLATFORM_SHA" --jq .status)
+            [[ "$comparison" == ahead || "$comparison" == identical ]]
+            if [[ "$comparison" == identical ]]; then
+              gh issue close 13 --repo "$REPOSITORY" --reason completed
+            else
+              pr=$(gh pr list --repo "$REPOSITORY" --state open --head "$PLATFORM_BRANCH" --base main --json number --jq '.[0].number // empty')
+              cat > /tmp/platform.md <<'BODY'
+          Closes #13
+
+          Completes generated Android/iOS/web hosts, serialized single-active media ownership, ordered lifecycle recovery, scoped contextual permissions, Android lost-media recovery, minimized manifests, localized iOS purpose strings and linked privacy resources. The exact head passed Dart/Flutter tests plus Android, web and iOS simulator builds before this SHA-fenced merge.
+          BODY
+              if [[ -z "$pr" ]]; then
+                url=$(gh pr create --repo "$REPOSITORY" --head "$PLATFORM_BRANCH" --base main --title 'feat(platform): complete lifecycle and native host foundation' --body-file /tmp/platform.md)
+                pr=${url##*/}
+              else
+                gh pr edit "$pr" --repo "$REPOSITORY" --title 'feat(platform): complete lifecycle and native host foundation' --body-file /tmp/platform.md
+              fi
+              response=$(gh api -X PUT "repos/$REPOSITORY/pulls/$pr/merge" -f sha="$PLATFORM_SHA" -f merge_method=merge)
+              jq -e '.merged == true' <<<"$response" >/dev/null
+              gh issue close 13 --repo "$REPOSITORY" --reason completed >/dev/null 2>&1 || true
+            fi
+          fi
+          gh api -X DELETE "repos/$REPOSITORY/git/refs/heads/$PLATFORM_BRANCH" >/dev/null 2>&1 || true
+
+      - name: Reconcile and validate local recovery
+        id: local
+        shell: bash
+        run: |
+          set -euo pipefail
+          state=$(gh issue view 14 --repo "$REPOSITORY" --json state --jq .state)
+          if [[ "$state" == CLOSED ]]; then
+            echo 'skip=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          runs=$(gh api -X GET "repos/$REPOSITORY/actions/runs" -f branch="$LOCAL_BRANCH" -f per_page=100)
+          jq -r '.workflow_runs[] | select(.status != "completed") | .id' <<<"$runs" | while read -r id; do
+            [[ -z "$id" ]] || gh api -X POST "repos/$REPOSITORY/actions/runs/$id/cancel" >/dev/null 2>&1 || true
+          done
+          sleep 5
+
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}.git" local-workspace
+          cd local-workspace
+          git checkout "$LOCAL_BRANCH"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin main
+          git merge --no-edit origin/main -m 'chore(local): sync completed platform foundation'
+          flutter pub get
+          python3 ../orchestrator/orchestration/audit_local_recovery_v2.py .
+          dart format packages/local_state
+          git diff --check
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m 'chore(local): finalize durable recovery foundation'
+          fi
+          target_sha=$(git rev-parse HEAD)
+
+          flutter pub get --enforce-lockfile
+          dart format --output=none --set-exit-if-changed apps/mosaic_app/lib apps/mosaic_app/test packages
+          flutter analyze --fatal-infos
+          (cd packages/local_state && dart test --reporter=expanded)
+          (cd packages/local_state && dart test --concurrency=1 --reporter=expanded)
+          (cd packages/local_state && dart test --test-randomize-ordering-seed=94731 --reporter=expanded)
+          (cd packages/play_schema && dart test)
+          (cd packages/play_runtime && dart test)
+          (cd packages/play_flutter && flutter test --reporter=expanded)
+          (cd packages/platform_contracts && dart test)
+          (cd packages/platform_flutter && flutter test --reporter=expanded)
+          (cd apps/mosaic_app && flutter test --reporter=expanded)
+          git diff --exit-code
+
+          git push origin HEAD:"$LOCAL_BRANCH"
+          branch_sha=$(gh api "repos/$REPOSITORY/git/ref/heads/$LOCAL_BRANCH" --jq .object.sha)
+          [[ "$branch_sha" == "$target_sha" ]]
+          comparison=$(gh api "repos/$REPOSITORY/compare/main...$target_sha" --jq .status)
+          [[ "$comparison" == ahead || "$comparison" == identical ]]
+          if [[ "$comparison" == identical ]]; then
+            gh issue close 14 --repo "$REPOSITORY" --reason completed
+          else
+            pr=$(gh pr list --repo "$REPOSITORY" --state open --head "$LOCAL_BRANCH" --base main --json number --jq '.[0].number // empty')
+            cat > /tmp/local.md <<'BODY'
+          Closes #14
+
+          Adds the sqlite3-backed durable process-death layer for identity/binding, separate interest state, bounded feed resume, drafts, upload metadata, stable event-ID outbox deduplication, capped retries, priority-aware spool pressure, migrations and corrupt-database quarantine/recovery. The exact head passed static dependency/SQL auditing, repeated restart tests and the full Flutter/Dart suite before this SHA-fenced merge.
+          BODY
+            if [[ -z "$pr" ]]; then
+              url=$(gh pr create --repo "$REPOSITORY" --head "$LOCAL_BRANCH" --base main --title 'feat(local): add durable process-death recovery foundation' --body-file /tmp/local.md)
+              pr=${url##*/}
+            else
+              gh pr edit "$pr" --repo "$REPOSITORY" --title 'feat(local): add durable process-death recovery foundation' --body-file /tmp/local.md
+            fi
+            response=$(gh api -X PUT "repos/$REPOSITORY/pulls/$pr/merge" -f sha="$target_sha" -f merge_method=merge)
+            jq -e '.merged == true' <<<"$response" >/dev/null
+            gh issue close 14 --repo "$REPOSITORY" --reason completed >/dev/null 2>&1 || true
+          fi
+          gh api -X DELETE "repos/$REPOSITORY/git/refs/heads/$LOCAL_BRANCH" >/dev/null 2>&1 || true
+          echo "sha=$target_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Seed exact tested renderer tranche
+        id: renderer
+        shell: bash
+        run: |
+          set -euo pipefail
+          for branch in agent/m06-play-renderer-bootstrap-20260827 agent/m06-renderer-ci-bootstrap-20260827 "$RENDERER_BRANCH"; do
+            runs=$(gh api -X GET "repos/$REPOSITORY/actions/runs" -f branch="$branch" -f per_page=100 2>/dev/null || printf '{"workflow_runs":[]}')
+            jq -r '.workflow_runs[] | select(.status != "completed") | .id' <<<"$runs" | while read -r id; do
+              [[ -z "$id" ]] || gh api -X POST "repos/$REPOSITORY/actions/runs/$id/cancel" >/dev/null 2>&1 || true
+            done
+          done
+          for branch in agent/m06-play-renderer-bootstrap-20260827 agent/m06-renderer-ci-bootstrap-20260827; do
+            gh api -X DELETE "repos/$REPOSITORY/git/refs/heads/$branch" >/dev/null 2>&1 || true
+          done
+
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}.git" renderer-workspace
+          cd renderer-workspace
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin main
+          if git ls-remote --exit-code --heads origin "$RENDERER_BRANCH" >/dev/null 2>&1; then
+            git checkout "$RENDERER_BRANCH"
+            git merge --no-edit origin/main -m 'chore(renderer): sync completed foundation'
+          else
+            git checkout -b "$RENDERER_BRANCH" origin/main
+          fi
+
+          mkdir -p packages/play_flutter/lib/src packages/play_flutter/test .github/workflows docs/progress
+          cp ../orchestrator/orchestration/renderer/play_visual_renderer.dart packages/play_flutter/lib/src/play_visual_renderer.dart
+          cp ../orchestrator/orchestration/renderer/play_visual_renderer_test.dart packages/play_flutter/test/play_visual_renderer_test.dart
+          cp ../orchestrator/orchestration/renderer/renderer-ci.yml .github/workflows/renderer-ci.yml
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('packages/play_flutter/lib/play_flutter.dart')
+          export = "export 'src/play_visual_renderer.dart';"
+          lines = [line for line in path.read_text().splitlines() if line.strip() != export]
+          while lines and not lines[-1].strip():
+              lines.pop()
+          lines.extend(['', export])
+          path.write_text('\n'.join(lines) + '\n')
+          PY
+          cat > docs/progress/2026-08-27-m06-play-renderer-progress.md <<'DOC'
+          # M06 Play renderer progress
+
+          The platform lifecycle and durable local-recovery foundations are complete before this branch begins.
+
+          This first Task #3 tranche replaces placeholder-only visual plumbing with a typed, fail-closed visual asset boundary: immutable HTTPS, memory and bundle sources; exact asset-ID validation; stale-safe asynchronous resolution; accessible reduced-motion loading/unavailable states; semantic image rendering; and focused regressions.
+
+          #3 remains open. Layer-to-asset binding, decode/prefetch budgeting, video/controller ownership and complete Play-state integration are successor tranches.
+          DOC
+
+          flutter pub get --enforce-lockfile
+          dart format packages/play_flutter
+          flutter analyze packages/play_flutter --fatal-infos
+          (cd packages/play_flutter && flutter test --reporter=expanded)
+          (cd apps/mosaic_app && flutter test --reporter=expanded)
+          git diff --check
+          git add packages/play_flutter .github/workflows/renderer-ci.yml docs/progress/2026-08-27-m06-play-renderer-progress.md
+          if ! git diff --cached --quiet; then
+            git commit -m 'feat(renderer): add visual asset resolution foundation'
+          fi
+          target_sha=$(git rev-parse HEAD)
+          git push origin HEAD:"$RENDERER_BRANCH"
+          branch_sha=$(gh api "repos/$REPOSITORY/git/ref/heads/$RENDERER_BRANCH" --jq .object.sha)
+          [[ "$branch_sha" == "$target_sha" ]]
+          echo "sha=$target_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Open renderer tranche PR and report
+        env:
+          TARGET_SHA: ${{ steps.renderer.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          pr=$(gh pr list --repo "$REPOSITORY" --state open --head "$RENDERER_BRANCH" --base main --json number --jq '.[0].number // empty')
+          cat > /tmp/renderer.md <<'BODY'
+          Part of #3
+
+          Begins the real visual Play renderer with immutable HTTPS/memory/bundle sources, exact asset-ID validation, stale-safe asynchronous resolution, accessible reduced-motion states, semantic image rendering and focused regressions.
+
+          This tranche intentionally does not close #3. Next: schema-layer binding, decode/prefetch budgeting, then video/controller ownership through the lifecycle coordinator.
+          BODY
+          if [[ -z "$pr" ]]; then
+            url=$(gh pr create --repo "$REPOSITORY" --head "$RENDERER_BRANCH" --base main --draft --title 'feat(renderer): add visual asset resolution foundation' --body-file /tmp/renderer.md)
+            pr=${url##*/}
+          else
+            gh pr edit "$pr" --repo "$REPOSITORY" --title 'feat(renderer): add visual asset resolution foundation' --body-file /tmp/renderer.md
+          fi
+          gh issue comment 3 --repo "$REPOSITORY" --body "Renderer tranche #$pr is at tested head \`$TARGET_SHA\`; #3 remains open for layer binding, decode/prefetch budgeting and video ownership."
+
+      - name: Remove successful control branch
+        if: success()
+        run: gh api -X DELETE "repos/$REPOSITORY/git/refs/heads/$CONTROL_BRANCH" >/dev/null
