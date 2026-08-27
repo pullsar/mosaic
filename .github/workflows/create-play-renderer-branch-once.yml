@@ -1,0 +1,53 @@
+name: create-play-renderer-branch-once
+
+on:
+  push:
+    branches: ['agent/m06-play-renderer-bootstrap-20260827']
+    paths:
+      - '.github/workflows/create-play-renderer-branch-once.yml'
+
+permissions:
+  contents: write
+  issues: read
+
+jobs:
+  create:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: pullsar/mosaic
+      TARGET_BRANCH: agent/m06-play-renderer-20260827
+      BOOTSTRAP_BRANCH: agent/m06-play-renderer-bootstrap-20260827
+    steps:
+      - name: Wait for durable foundation closure
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 360); do
+            state=$(gh issue view 14 --repo "$REPOSITORY" --json state --jq .state)
+            if [[ "$state" == CLOSED ]]; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo 'Issue #14 did not close in time.' >&2
+          exit 1
+      - name: Create renderer branch at latest main
+        run: |
+          set -euo pipefail
+          main_sha=$(gh api "repos/$REPOSITORY/git/ref/heads/main" --jq .object.sha)
+          if gh api "repos/$REPOSITORY/git/ref/heads/$TARGET_BRANCH" >/dev/null 2>&1; then
+            existing=$(gh api "repos/$REPOSITORY/git/ref/heads/$TARGET_BRANCH" --jq .object.sha)
+            [[ "$existing" == "$main_sha" ]] || {
+              echo "$TARGET_BRANCH already exists at $existing, not current main $main_sha" >&2
+              exit 1
+            }
+          else
+            gh api -X POST "repos/$REPOSITORY/git/refs" \
+              -f ref="refs/heads/$TARGET_BRANCH" \
+              -f sha="$main_sha" >/dev/null
+          fi
+      - name: Remove temporary bootstrap branch
+        if: success()
+        run: |
+          gh api -X DELETE "repos/$REPOSITORY/git/refs/heads/$BOOTSTRAP_BRANCH"
