@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   flutter:
@@ -18,26 +18,16 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Flutter
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           flutter-version: '3.44.7'
           cache: true
-      - name: Resolve workspace
-        run: flutter pub get
-      - name: Format workspace
-        run: dart format .
-      - name: Commit bootstrap normalization
-        if: github.event_name == 'push' && github.ref == 'refs/heads/agent/flutter-m0-visual-foundation-20260827'
-        run: |
-          if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
-            git config user.name 'github-actions[bot]'
-            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git add -A
-            git commit -m 'style: normalize Dart workspace'
-            git push
-          fi
+      - name: Resolve locked workspace
+        run: flutter pub get --enforce-lockfile
+      - name: Verify formatting
+        run: dart format --output=none --set-exit-if-changed .
       - name: Analyze
         run: flutter analyze
       - name: Test play_schema
