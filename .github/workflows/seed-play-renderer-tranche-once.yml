@@ -1,0 +1,449 @@
+name: seed-play-renderer-tranche-once
+
+on:
+  push:
+    branches: ['agent/m06-play-renderer-bootstrap-20260827']
+    paths:
+      - '.github/workflows/seed-play-renderer-tranche-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: pullsar/mosaic
+      TARGET_BRANCH: agent/m06-play-renderer-20260827
+    steps:
+      - name: Wait for renderer branch
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 360); do
+            if gh api "repos/$REPOSITORY/git/ref/heads/$TARGET_BRANCH" >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo 'Renderer branch was not created in time.' >&2
+          exit 1
+      - name: Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.44.7'
+          cache: true
+      - name: Implement visual asset resolution foundation
+        run: |
+          set -euo pipefail
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}.git" repository
+          cd repository
+          git checkout "$TARGET_BRANCH"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          cat > packages/play_flutter/lib/src/play_visual_renderer.dart <<'DART'
+          import 'dart:async';
+          import 'dart:typed_data';
+
+          import 'package:flutter/material.dart';
+
+          sealed class PlayVisualSource {
+            const PlayVisualSource();
+
+            ImageProvider<Object> createImageProvider();
+          }
+
+          final class NetworkPlayVisualSource extends PlayVisualSource {
+            NetworkPlayVisualSource(Uri uri, {Map<String, String>? headers})
+              : uri = _validateUri(uri),
+                headers = headers == null
+                    ? null
+                    : Map<String, String>.unmodifiable(headers);
+
+            final Uri uri;
+            final Map<String, String>? headers;
+
+            static Uri _validateUri(Uri uri) {
+              if (!uri.isAbsolute || uri.scheme != 'https' || uri.host.isEmpty) {
+                throw ArgumentError.value(
+                  uri,
+                  'uri',
+                  'Play visuals require an absolute HTTPS URI.',
+                );
+              }
+              return uri;
+            }
+
+            @override
+            ImageProvider<Object> createImageProvider() =>
+                NetworkImage(uri.toString(), headers: headers);
+          }
+
+          final class MemoryPlayVisualSource extends PlayVisualSource {
+            MemoryPlayVisualSource(Uint8List bytes)
+              : bytes = Uint8List.fromList(bytes) {
+              if (bytes.isEmpty) {
+                throw ArgumentError.value(bytes, 'bytes', 'Image bytes are empty.');
+              }
+            }
+
+            final Uint8List bytes;
+
+            @override
+            ImageProvider<Object> createImageProvider() => MemoryImage(bytes);
+          }
+
+          final class BundlePlayVisualSource extends PlayVisualSource {
+            BundlePlayVisualSource(String assetName)
+              : assetName = assetName.trim() {
+              if (this.assetName.isEmpty) {
+                throw ArgumentError.value(
+                  assetName,
+                  'assetName',
+                  'Bundle asset name is empty.',
+                );
+              }
+            }
+
+            final String assetName;
+
+            @override
+            ImageProvider<Object> createImageProvider() => AssetImage(assetName);
+          }
+
+          final class PlayVisualAsset {
+            PlayVisualAsset({
+              required String id,
+              required this.source,
+              this.semanticLabel,
+              this.fit = BoxFit.cover,
+              this.alignment = Alignment.center,
+            }) : id = id.trim() {
+              if (this.id.isEmpty) {
+                throw ArgumentError.value(id, 'id', 'Visual asset ID is empty.');
+              }
+            }
+
+            final String id;
+            final PlayVisualSource source;
+            final String? semanticLabel;
+            final BoxFit fit;
+            final Alignment alignment;
+          }
+
+          abstract interface class PlayVisualAssetResolver {
+            Future<PlayVisualAsset?> resolve(String assetId);
+          }
+
+          typedef PlayVisualLookup =
+              FutureOr<PlayVisualAsset?> Function(String assetId);
+
+          final class CallbackPlayVisualAssetResolver
+              implements PlayVisualAssetResolver {
+            const CallbackPlayVisualAssetResolver(this.lookup);
+
+            final PlayVisualLookup lookup;
+
+            @override
+            Future<PlayVisualAsset?> resolve(String assetId) =>
+                Future<PlayVisualAsset?>.sync(() => lookup(assetId));
+          }
+
+          final class MapPlayVisualAssetResolver
+              implements PlayVisualAssetResolver {
+            MapPlayVisualAssetResolver(Map<String, PlayVisualAsset> assets)
+              : _assets = Map<String, PlayVisualAsset>.unmodifiable(assets);
+
+            final Map<String, PlayVisualAsset> _assets;
+
+            @override
+            Future<PlayVisualAsset?> resolve(String assetId) async =>
+                _assets[assetId];
+          }
+
+          typedef PlayVisualStateBuilder =
+              Widget Function(BuildContext context, String assetId);
+
+          final class ResolvedPlayVisual extends StatefulWidget {
+            const ResolvedPlayVisual({
+              required this.assetId,
+              required this.resolver,
+              this.loadingBuilder,
+              this.errorBuilder,
+              super.key,
+            });
+
+            final String assetId;
+            final PlayVisualAssetResolver resolver;
+            final PlayVisualStateBuilder? loadingBuilder;
+            final PlayVisualStateBuilder? errorBuilder;
+
+            @override
+            State<ResolvedPlayVisual> createState() => _ResolvedPlayVisualState();
+          }
+
+          final class _ResolvedPlayVisualState extends State<ResolvedPlayVisual> {
+            late Future<PlayVisualAsset?> _resolution;
+
+            @override
+            void initState() {
+              super.initState();
+              _resolution = _resolve();
+            }
+
+            @override
+            void didUpdateWidget(covariant ResolvedPlayVisual oldWidget) {
+              super.didUpdateWidget(oldWidget);
+              if (oldWidget.assetId != widget.assetId ||
+                  oldWidget.resolver != widget.resolver) {
+                _resolution = _resolve();
+              }
+            }
+
+            Future<PlayVisualAsset?> _resolve() async {
+              final id = widget.assetId.trim();
+              if (id.isEmpty) return null;
+              final asset = await widget.resolver.resolve(id);
+              if (asset != null && asset.id != id) {
+                throw StateError(
+                  'Resolver returned ${asset.id} while resolving $id.',
+                );
+              }
+              return asset;
+            }
+
+            @override
+            Widget build(BuildContext context) => FutureBuilder<PlayVisualAsset?>(
+              future: _resolution,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState != ConnectionState.done) {
+                  return widget.loadingBuilder?.call(context, widget.assetId) ??
+                      const _DefaultVisualLoading();
+                }
+                final asset = snapshot.data;
+                if (snapshot.hasError || asset == null) {
+                  return widget.errorBuilder?.call(context, widget.assetId) ??
+                      const PlayVisualUnavailable();
+                }
+                return PlayVisualImage(asset: asset);
+              },
+            );
+          }
+
+          final class PlayVisualImage extends StatelessWidget {
+            const PlayVisualImage({required this.asset, super.key});
+
+            final PlayVisualAsset asset;
+
+            @override
+            Widget build(BuildContext context) {
+              final disableAnimations =
+                  MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+              return Image(
+                image: asset.source.createImageProvider(),
+                width: double.infinity,
+                height: double.infinity,
+                fit: asset.fit,
+                alignment: asset.alignment,
+                filterQuality: FilterQuality.medium,
+                gaplessPlayback: true,
+                excludeFromSemantics: asset.semanticLabel == null,
+                semanticLabel: asset.semanticLabel,
+                frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+                  if (disableAnimations || wasSynchronouslyLoaded) return child;
+                  return AnimatedOpacity(
+                    opacity: frame == null ? 0 : 1,
+                    duration: const Duration(milliseconds: 160),
+                    child: child,
+                  );
+                },
+                errorBuilder: (context, error, stackTrace) =>
+                    const PlayVisualUnavailable(),
+              );
+            }
+          }
+
+          final class PlayVisualUnavailable extends StatelessWidget {
+            const PlayVisualUnavailable({super.key});
+
+            @override
+            Widget build(BuildContext context) => ColoredBox(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              child: const Semantics(
+                image: true,
+                label: 'Visual unavailable',
+                child: Center(
+                  child: ExcludeSemantics(
+                    child: Icon(Icons.image_not_supported_outlined),
+                  ),
+                ),
+              ),
+            );
+          }
+
+          final class _DefaultVisualLoading extends StatelessWidget {
+            const _DefaultVisualLoading();
+
+            @override
+            Widget build(BuildContext context) => ColoredBox(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              child: const Semantics(
+                image: true,
+                label: 'Loading visual',
+                child: Center(
+                  child: ExcludeSemantics(
+                    child: SizedBox.square(
+                      dimension: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }
+          DART
+
+          cat > packages/play_flutter/test/play_visual_renderer_test.dart <<'DART'
+          import 'dart:async';
+          import 'dart:convert';
+
+          import 'package:flutter/material.dart';
+          import 'package:flutter_test/flutter_test.dart';
+          import 'package:play_flutter/play_flutter.dart';
+
+          void main() {
+            test('network visuals require absolute HTTPS URIs', () {
+              expect(
+                () => NetworkPlayVisualSource(Uri.parse('http://example.com/a')),
+                throwsArgumentError,
+              );
+              expect(
+                () => NetworkPlayVisualSource(Uri.parse('/relative/a')),
+                throwsArgumentError,
+              );
+              expect(
+                NetworkPlayVisualSource(Uri.parse('https://example.com/a')).uri,
+                Uri.parse('https://example.com/a'),
+              );
+            });
+
+            test('map resolver returns only its exact registered asset', () async {
+              final asset = _asset('visual_a', 'Coast');
+              final resolver = MapPlayVisualAssetResolver({'visual_a': asset});
+
+              expect(await resolver.resolve('visual_a'), same(asset));
+              expect(await resolver.resolve('visual_b'), isNull);
+            });
+
+            testWidgets('resolved memory visual preserves semantic meaning', (
+              tester,
+            ) async {
+              final asset = _asset('visual_a', 'Atlantic coast');
+              await tester.pumpWidget(
+                MaterialApp(
+                  home: SizedBox.square(
+                    dimension: 100,
+                    child: ResolvedPlayVisual(
+                      assetId: 'visual_a',
+                      resolver: MapPlayVisualAssetResolver({'visual_a': asset}),
+                    ),
+                  ),
+                ),
+              );
+              await tester.pumpAndSettle();
+
+              final image = tester.widget<Image>(find.byType(Image));
+              expect(image.semanticLabel, 'Atlantic coast');
+              expect(image.fit, BoxFit.cover);
+            });
+
+            testWidgets('a stale resolution cannot replace a newer asset', (
+              tester,
+            ) async {
+              final first = Completer<PlayVisualAsset?>();
+              final second = Completer<PlayVisualAsset?>();
+              final resolver = CallbackPlayVisualAssetResolver(
+                (id) => id == 'visual_a' ? first.future : second.future,
+              );
+
+              await tester.pumpWidget(
+                MaterialApp(
+                  home: ResolvedPlayVisual(
+                    key: const ValueKey('visual'),
+                    assetId: 'visual_a',
+                    resolver: resolver,
+                  ),
+                ),
+              );
+              expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+              await tester.pumpWidget(
+                MaterialApp(
+                  home: ResolvedPlayVisual(
+                    key: const ValueKey('visual'),
+                    assetId: 'visual_b',
+                    resolver: resolver,
+                  ),
+                ),
+              );
+              first.complete(_asset('visual_a', 'Old visual'));
+              await tester.pump();
+              expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+              second.complete(_asset('visual_b', 'Current visual'));
+              await tester.pumpAndSettle();
+              final image = tester.widget<Image>(find.byType(Image));
+              expect(image.semanticLabel, 'Current visual');
+            });
+
+            testWidgets('missing or mismatched assets fail closed', (
+              tester,
+            ) async {
+              final resolver = CallbackPlayVisualAssetResolver(
+                (_) => _asset('different_id', 'Wrong visual'),
+              );
+              await tester.pumpWidget(
+                MaterialApp(
+                  home: ResolvedPlayVisual(
+                    assetId: 'requested_id',
+                    resolver: resolver,
+                  ),
+                ),
+              );
+              await tester.pumpAndSettle();
+
+              expect(
+                find.byIcon(Icons.image_not_supported_outlined),
+                findsOneWidget,
+              );
+              expect(find.byType(Image), findsNothing);
+            });
+          }
+
+          PlayVisualAsset _asset(String id, String label) => PlayVisualAsset(
+            id: id,
+            semanticLabel: label,
+            source: MemoryPlayVisualSource(
+              base64Decode(
+                'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+              ),
+            ),
+          );
+          DART
+
+          export_file=packages/play_flutter/lib/play_flutter.dart
+          export_line="export 'src/play_visual_renderer.dart';"
+          if ! grep -Fxq "$export_line" "$export_file"; then
+            printf '\n%s\n' "$export_line" >> "$export_file"
+          fi
+
+          flutter pub get --enforce-lockfile
+          dart format packages/play_flutter
+          flutter analyze packages/play_flutter --fatal-infos
+          (cd packages/play_flutter && flutter test --reporter=expanded)
+          git diff --check
+          git add packages/play_flutter
+          git commit -m 'feat(renderer): add visual asset resolution foundation'
+          git push origin "$TARGET_BRANCH"
