@@ -1,0 +1,98 @@
+name: platform-ci
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'apps/mosaic_app/**'
+      - 'packages/platform_contracts/**'
+      - 'packages/platform_flutter/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - '.github/workflows/platform-ci.yml'
+  pull_request:
+    paths:
+      - 'apps/mosaic_app/**'
+      - 'packages/platform_contracts/**'
+      - 'packages/platform_flutter/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - '.github/workflows/platform-ci.yml'
+
+concurrency:
+  group: platform-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  android-web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.44.7'
+          cache: true
+      - name: Resolve locked workspace
+        run: flutter pub get --enforce-lockfile
+      - name: Verify formatting
+        run: dart format --output=none --set-exit-if-changed .
+      - name: Analyze
+        run: flutter analyze
+      - name: Test platform contracts
+        working-directory: packages/platform_contracts
+        run: dart test
+      - name: Test Flutter platform adapters
+        working-directory: packages/platform_flutter
+        run: flutter test
+      - name: Test app shell
+        working-directory: apps/mosaic_app
+        run: flutter test
+      - name: Verify platform declarations
+        run: |
+          python3 - <<'PY'
+          import plistlib
+          for path in [
+              'apps/mosaic_app/ios/Runner/Info.plist',
+              'apps/mosaic_app/ios/Runner/PrivacyInfo.xcprivacy',
+          ]:
+              with open(path, 'rb') as fh:
+                  plistlib.load(fh)
+          PY
+          manifest=apps/mosaic_app/android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.CAMERA' "$manifest"
+          grep -q 'android.permission.RECORD_AUDIO' "$manifest"
+          grep -q 'android.permission.POST_NOTIFICATIONS' "$manifest"
+          if grep -Eq 'READ_MEDIA_IMAGES|READ_MEDIA_VIDEO|READ_EXTERNAL_STORAGE|ACCESS_FINE_LOCATION|ACCESS_COARSE_LOCATION' "$manifest"; then
+            echo 'Unexpected broad media/location permission'
+            exit 1
+          fi
+          grep -q 'PrivacyInfo.xcprivacy in Resources' apps/mosaic_app/ios/Runner.xcodeproj/project.pbxproj
+      - name: Build web host
+        working-directory: apps/mosaic_app
+        run: flutter build web --release
+      - name: Build Android host
+        working-directory: apps/mosaic_app
+        run: flutter build apk --debug
+
+  ios:
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.44.7'
+          cache: true
+      - name: Resolve locked workspace
+        run: flutter pub get --enforce-lockfile
+      - name: Build iOS simulator host
+        working-directory: apps/mosaic_app
+        run: flutter build ios --simulator --no-codesign
