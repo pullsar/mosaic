@@ -1,0 +1,33 @@
+name: lock-local-state-once
+
+on:
+  push:
+    branches: ['agent/m05-local-recovery-20260827']
+    paths:
+      - '.github/workflows/lock-local-state-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  lock:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.44.7'
+          cache: true
+      - name: Resolve and lock
+        run: |
+          flutter pub get
+          dart format packages/local_state
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add pubspec.lock packages/local_state
+          if ! git diff --cached --quiet; then
+            git commit -m 'chore(local): lock and format local state'
+            git push
+          fi
