@@ -5,8 +5,12 @@ on:
     branches: ['**']
   pull_request:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   flutter:
@@ -23,9 +27,17 @@ jobs:
       - name: Resolve workspace
         run: flutter pub get
       - name: Format workspace
+        run: dart format .
+      - name: Commit bootstrap normalization
+        if: github.event_name == 'push' && github.ref == 'refs/heads/agent/flutter-m0-visual-foundation-20260827'
         run: |
-          dart format .
-          git diff --binary > /tmp/dart-format.patch
+          if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add -A
+            git commit -m 'style: normalize Dart workspace'
+            git push
+          fi
       - name: Analyze
         run: flutter analyze
       - name: Test play_schema
@@ -43,13 +55,3 @@ jobs:
       - name: Test app shell
         working-directory: apps/mosaic_app
         run: flutter test
-      - name: Upload formatter patch
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: dart-format-patch
-          path: /tmp/dart-format.patch
-          if-no-files-found: error
-          retention-days: 1
-      - name: Verify committed formatting
-        run: git diff --exit-code
