@@ -5,6 +5,7 @@ on:
     branches: ['agent/m05-local-recovery-20260827']
     paths:
       - '.github/workflows/lock-local-state-once.yml'
+      - 'packages/local_state/pubspec.yaml'
 
 permissions:
   contents: write
