@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:analytics_contract/analytics_contract.dart';
 import 'package:local_state/local_state.dart';
+import 'package:sqlite3/sqlite3.dart';
 import 'package:test/test.dart';
 
 MosaicEventEnvelope _event(String id) => MosaicEventEnvelope(
@@ -65,6 +66,37 @@ void main() {
     }
   });
 
+  test('feed resume metadata is normalized, deduplicated, and bounded', () {
+    final store = MosaicLocalStore.openInMemory(maxFeedWindowRevisionIds: 3);
+    store.saveFeedResume(
+      cursor: 'cursor_3',
+      windowRevisionIds: [
+        ' rev_a ',
+        'rev_b',
+        'rev_a',
+        '',
+        'rev_c',
+        'rev_d',
+      ],
+    );
+
+    expect(store.loadFeedResume()?.windowRevisionIds, ['rev_a', 'rev_b', 'rev_c']);
+    store.close();
+  });
+
+  test('interest identifiers are canonicalized before persistence', () {
+    final store = MosaicLocalStore.openInMemory();
+    store.replaceInterests(InterestKind.interest, [
+      ' travel ',
+      'travel',
+      ' ',
+      'food',
+    ]);
+
+    expect(store.interests(InterestKind.interest), {'food', 'travel'});
+    store.close();
+  });
+
   test('duplicate event identity produces one outbox item', () {
     final store = MosaicLocalStore.openInMemory();
     store.enqueueEvent(_event('evt_1'));
@@ -91,6 +123,15 @@ void main() {
     store.close();
   });
 
+  test('non-positive due-event limits never expand into an unbounded query', () {
+    final store = MosaicLocalStore.openInMemory();
+    store.enqueueEvent(_event('evt_1'));
+
+    expect(store.dueEvents(limit: 0), isEmpty);
+    expect(store.dueEvents(limit: -1), isEmpty);
+    store.close();
+  });
+
   test('spool pressure drops low-value events before critical events', () {
     final store = MosaicLocalStore.openInMemory(
       policy: const OutboxPolicy(maxCount: 2, maxBytes: 100000),
@@ -99,35 +140,82 @@ void main() {
     store.enqueueEvent(_event('analytics_old'));
     store.enqueueEvent(_event('analytics_new'));
 
-    final ids = store
-        .dueEvents(limit: 10)
-        .map((event) => event.eventId)
-        .toSet();
+    final ids = store.dueEvents(limit: 10).map((event) => event.eventId).toSet();
     expect(ids, contains('critical'));
     expect(ids, contains('analytics_new'));
     expect(ids, isNot(contains('analytics_old')));
     store.close();
   });
 
-  test(
-    'critical pending mutation is never evicted solely to meet spool cap',
-    () {
-      final store = MosaicLocalStore.openInMemory(
-        policy: const OutboxPolicy(maxCount: 1, maxBytes: 100000),
-      );
-      store.enqueueEvent(
-        _event('critical_a'),
-        priority: OutboxPriority.critical,
-      );
-      store.enqueueEvent(
-        _event('critical_b'),
-        priority: OutboxPriority.critical,
+  test('age pruning preserves critical pending mutations', () {
+    final store = MosaicLocalStore.openInMemory(
+      policy: const OutboxPolicy(maxAge: Duration(days: 1)),
+    );
+    final old = DateTime.utc(2026, 8, 20);
+    store.enqueueEvent(_event('analytics_old'), createdAt: old);
+    store.enqueueEvent(
+      _event('critical_old'),
+      priority: OutboxPriority.critical,
+      createdAt: old,
+    );
+
+    store.pruneOutbox(now: DateTime.utc(2026, 8, 27));
+    final ids = store.dueEvents(limit: 10).map((event) => event.eventId).toSet();
+    expect(ids, {'critical_old'});
+    store.close();
+  });
+
+  test('critical pending mutation is never evicted solely to meet spool cap', () {
+    final store = MosaicLocalStore.openInMemory(
+      policy: const OutboxPolicy(maxCount: 1, maxBytes: 100000),
+    );
+    store.enqueueEvent(_event('critical_a'), priority: OutboxPriority.critical);
+    store.enqueueEvent(_event('critical_b'), priority: OutboxPriority.critical);
+
+    expect(store.outboxCount, 2);
+    store.close();
+  });
+
+  test('newer local schema is rejected without destructive quarantine', () {
+    final temp = Directory.systemTemp.createTempSync('mosaic-newer-schema-');
+    final path = '${temp.path}/mosaic.db';
+    try {
+      final newerVersion = MosaicLocalStore.schemaVersion + 1;
+      final raw = sqlite3.open(path);
+      raw.execute('pragma user_version = $newerVersion');
+      raw.close();
+
+      expect(
+        () => MosaicLocalStore.open(path),
+        throwsA(
+          isA<UnsupportedLocalSchemaException>()
+              .having((error) => error.foundVersion, 'foundVersion', newerVersion)
+              .having(
+                (error) => error.supportedVersion,
+                'supportedVersion',
+                MosaicLocalStore.schemaVersion,
+              ),
+        ),
       );
 
-      expect(store.outboxCount, 2);
-      store.close();
-    },
-  );
+      expect(
+        temp.listSync().whereType<File>().where(
+          (file) => file.path.contains('.corrupt.'),
+        ),
+        isEmpty,
+      );
+      final reopened = sqlite3.open(path);
+      final persistedVersion = reopened
+          .select('pragma user_version')
+          .first
+          .values
+          .first as int;
+      reopened.close();
+      expect(persistedVersion, newerVersion);
+    } finally {
+      temp.deleteSync(recursive: true);
+    }
+  });
 
   test('corrupt local database is quarantined and replaced safely', () {
     final temp = Directory.systemTemp.createTempSync('mosaic-corrupt-');
@@ -142,9 +230,10 @@ void main() {
       expect(store.getOrCreateActorId(), 'actor_after_recovery');
       store.close();
 
-      final quarantined = temp.listSync().whereType<File>().where(
-        (file) => file.path.contains('.corrupt.'),
-      );
+      final quarantined = temp
+          .listSync()
+          .whereType<File>()
+          .where((file) => file.path.contains('.corrupt.'));
       expect(quarantined, isNotEmpty);
     } finally {
       temp.deleteSync(recursive: true);
