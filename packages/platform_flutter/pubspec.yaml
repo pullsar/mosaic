@@ -1,0 +1,17 @@
+name: platform_flutter
+description: Flutter-specific platform adapters for Mosaic lifecycle, permissions and media picking.
+version: 0.1.0
+publish_to: none
+resolution: workspace
+environment:
+  sdk: '>=3.12.0 <4.0.0'
+  flutter: '>=3.44.0'
+dependencies:
+  flutter:
+    sdk: flutter
+  image_picker: ^1.2.3
+  permission_handler: ^13.0.1
+  platform_contracts: ^0.1.0
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
