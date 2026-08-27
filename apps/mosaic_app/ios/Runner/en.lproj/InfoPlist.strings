@@ -1,0 +1,3 @@
+"NSCameraUsageDescription" = "Create a Play with your camera.";
+"NSMicrophoneUsageDescription" = "Record audio for a Play.";
+"NSPhotoLibraryUsageDescription" = "Choose media for a Play.";

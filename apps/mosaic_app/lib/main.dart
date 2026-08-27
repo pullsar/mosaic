@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:platform_contracts/platform_contracts.dart';
@@ -21,14 +23,35 @@ final class _MosaicAppState extends State<MosaicApp> {
   @override
   void initState() {
     super.initState();
-    _lifecycle = FlutterLifecycleBridge(mediaCoordinator: _mediaCoordinator);
+    _lifecycle = FlutterLifecycleBridge(
+      mediaCoordinator: _mediaCoordinator,
+      onError: _reportPlatformError,
+    );
   }
 
   @override
   void dispose() {
     _lifecycle.dispose();
-    _mediaCoordinator.releaseAll();
+    unawaited(
+      _mediaCoordinator.releaseAll().catchError((
+        Object error,
+        StackTrace stackTrace,
+      ) {
+        _reportPlatformError(error, stackTrace);
+      }),
+    );
     super.dispose();
+  }
+
+  void _reportPlatformError(Object error, StackTrace stackTrace) {
+    FlutterError.reportError(
+      FlutterErrorDetails(
+        exception: error,
+        stack: stackTrace,
+        library: 'mosaic_app',
+        context: ErrorDescription('while releasing platform media'),
+      ),
+    );
   }
 
   @override

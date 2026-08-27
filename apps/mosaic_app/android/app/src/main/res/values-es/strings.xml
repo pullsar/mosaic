@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Mosaic</string>
+    <string name="permission_camera_purpose">Crea un Play con tu cámara.</string>
+    <string name="permission_microphone_purpose">Graba audio para un Play.</string>
+    <string name="permission_notifications_purpose">Recibe las novedades que elijas.</string>
+</resources>

@@ -55,6 +55,32 @@ abstract interface class PermissionGateway {
   Future<MosaicPermissionState> request(MosaicPermission permission);
 }
 
+/// User-initiated contexts that are allowed to request a platform permission.
+enum PermissionUseCase { cameraCapture, microphoneRecording, notificationOptIn }
+
+MosaicPermission permissionForUseCase(PermissionUseCase useCase) =>
+    switch (useCase) {
+      PermissionUseCase.cameraCapture => MosaicPermission.camera,
+      PermissionUseCase.microphoneRecording => MosaicPermission.microphone,
+      PermissionUseCase.notificationOptIn => MosaicPermission.notifications,
+    };
+
+/// Keeps permission requests contextual and deliberately exposes no eager
+/// request-all/startup API. Call [requestFromUserAction] only from the
+/// corresponding user gesture.
+final class ContextualPermissionService {
+  const ContextualPermissionService(this._gateway);
+
+  final PermissionGateway _gateway;
+
+  Future<MosaicPermissionState> check(PermissionUseCase useCase) =>
+      _gateway.check(permissionForUseCase(useCase));
+
+  Future<MosaicPermissionState> requestFromUserAction(
+    PermissionUseCase useCase,
+  ) => _gateway.request(permissionForUseCase(useCase));
+}
+
 enum PickedMediaKind { image, video }
 
 final class PickedMedia {
@@ -78,51 +104,83 @@ abstract interface class MediaPickerGateway {
 }
 
 /// A currently active native media resource owned by one visible Play.
+///
+/// [pause] and [release] must be safe to call more than once so lifecycle
+/// recovery can retry after a platform failure.
 abstract interface class ManagedMediaHandle {
   Future<void> pause();
   Future<void> release();
 }
 
+final class _SerializedOperations {
+  Future<void> _tail = Future<void>.value();
+
+  Future<T> run<T>(Future<T> Function() operation) {
+    final completer = Completer<T>();
+    _tail = _tail.then((_) async {
+      try {
+        completer.complete(await operation());
+      } catch (error, stackTrace) {
+        completer.completeError(error, stackTrace);
+      }
+    });
+    return completer.future;
+  }
+}
+
 /// Enforces the feed invariant that only one Play owns active native media.
+///
+/// All transitions are serialized. Rapid viewport/lifecycle changes cannot
+/// observe the same previous handle and accidentally leave a newer handle
+/// outside coordinator ownership.
 final class ActiveMediaCoordinator {
+  final _operations = _SerializedOperations();
   String? _ownerId;
   ManagedMediaHandle? _active;
 
   String? get ownerId => _ownerId;
   bool get hasActiveMedia => _active != null;
 
-  Future<void> activate(String ownerId, ManagedMediaHandle handle) async {
-    if (identical(_active, handle) && _ownerId == ownerId) return;
-    final previous = _active;
-    if (previous != null) {
-      await previous.pause();
-      await previous.release();
-    }
-    _ownerId = ownerId;
-    _active = handle;
-  }
+  Future<void> activate(String ownerId, ManagedMediaHandle handle) =>
+      _operations.run(() async {
+        if (identical(_active, handle)) {
+          _ownerId = ownerId;
+          return;
+        }
 
-  Future<void> suspend() async {
+        final previous = _active;
+        if (previous != null) {
+          await previous.pause();
+          await previous.release();
+        }
+        _ownerId = ownerId;
+        _active = handle;
+      });
+
+  Future<void> suspend() => _operations.run(() async {
     await _active?.pause();
-  }
+  });
 
-  Future<void> release(String ownerId) async {
+  Future<void> release(String ownerId) => _operations.run(() async {
     if (_ownerId != ownerId) return;
     final current = _active;
-    _ownerId = null;
-    _active = null;
-    await current?.release();
-  }
-
-  Future<void> releaseAll() async {
-    final current = _active;
-    _ownerId = null;
-    _active = null;
     if (current != null) {
       await current.pause();
       await current.release();
     }
-  }
+    _ownerId = null;
+    _active = null;
+  });
+
+  Future<void> releaseAll() => _operations.run(() async {
+    final current = _active;
+    if (current != null) {
+      await current.pause();
+      await current.release();
+    }
+    _ownerId = null;
+    _active = null;
+  });
 }
 
 abstract final class MosaicSettingsRoute {
