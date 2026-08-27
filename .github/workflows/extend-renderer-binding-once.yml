@@ -1,0 +1,307 @@
+name: extend-renderer-binding-once
+
+on:
+  push:
+    branches: ['agent/m06-renderer-binding-bootstrap-20260827']
+    paths:
+      - '.github/workflows/extend-renderer-binding-once.yml'
+
+permissions:
+  actions: read
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  extend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: pullsar/mosaic
+      CONTROL_BRANCH: agent/m05-m06-authoritative-reconcile-20260827
+      BOOTSTRAP_BRANCH: agent/m06-renderer-binding-bootstrap-20260827
+      TARGET_BRANCH: agent/m06-play-renderer-20260827
+      WORKFLOW_NAME: authoritative-m05-m06-reconcile-v2-once
+    steps:
+      - name: Wait for verified cache tranche
+        shell: bash
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 280); do
+            runs=$(gh api -X GET "repos/$REPOSITORY/actions/runs" -f branch="$CONTROL_BRANCH" -f per_page=100)
+            run=$(jq -c --arg name "$WORKFLOW_NAME" '[.workflow_runs[] | select(.name == $name)] | sort_by(.created_at) | last // empty' <<<"$runs")
+            if [[ -n "$run" && "$(jq -r .status <<<"$run")" == completed && "$(jq -r .conclusion <<<"$run")" == success ]]; then
+              [[ "$(gh issue view 13 --repo "$REPOSITORY" --json state --jq .state)" == CLOSED ]]
+              [[ "$(gh issue view 14 --repo "$REPOSITORY" --json state --jq .state)" == CLOSED ]]
+              source=$(gh api "repos/$REPOSITORY/contents/packages/play_flutter/lib/src/play_visual_renderer.dart?ref=$TARGET_BRANCH" --jq .content 2>/dev/null | base64 -d || true)
+              if grep -q 'final class CachingPlayVisualAssetResolver' <<<"$source"; then
+                gh api "repos/$REPOSITORY/contents/packages/play_flutter/test/play_visual_cache_test.dart?ref=$TARGET_BRANCH" >/dev/null
+                exit 0
+              fi
+            fi
+            sleep 15
+          done
+          echo 'Verified cache tranche did not become available.' >&2
+          exit 1
+
+      - name: Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.44.7'
+          cache: true
+
+      - name: Add reusable visual layer binding
+        id: implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}.git" workspace
+          cd workspace
+          git checkout "$TARGET_BRANCH"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin main
+          git merge --no-edit origin/main -m 'chore(renderer): sync latest main before layer binding'
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('packages/play_flutter/lib/src/play_visual_renderer.dart')
+          text = path.read_text()
+          marker = 'final class ResolvedPlayVisual extends StatefulWidget {'
+          if marker not in text:
+              raise SystemExit('ResolvedPlayVisual marker is missing')
+          if 'final class PlayVisualMediaBuilder<' not in text:
+              addition = r'''
+          typedef PlayVisualAssetIdSelector<T> = String? Function(T layer);
+          typedef PlayVisualLayerFallbackBuilder<T> =
+              Widget Function(BuildContext context, T layer);
+
+          /// Adapts an arbitrary Play layer model to the resolved visual renderer.
+          ///
+          /// Keeping the selector explicit avoids coupling rendering to one schema
+          /// revision while still providing a directly reusable `mediaBuilder` tear-off.
+          final class PlayVisualMediaBuilder<T> {
+            const PlayVisualMediaBuilder({
+              required this.resolver,
+              required this.assetIdOf,
+              this.fallbackBuilder,
+              this.loadingBuilder,
+              this.errorBuilder,
+              this.loadingSemanticLabel = 'Loading visual',
+              this.unavailableSemanticLabel = 'Visual unavailable',
+              this.useRepaintBoundary = true,
+            });
+
+            final PlayVisualAssetResolver resolver;
+            final PlayVisualAssetIdSelector<T> assetIdOf;
+            final PlayVisualLayerFallbackBuilder<T>? fallbackBuilder;
+            final PlayVisualStateBuilder? loadingBuilder;
+            final PlayVisualStateBuilder? errorBuilder;
+            final String loadingSemanticLabel;
+            final String unavailableSemanticLabel;
+            final bool useRepaintBoundary;
+
+            Widget call(BuildContext context, T layer) {
+              final assetId = assetIdOf(layer)?.trim();
+              final Widget visual;
+              if (assetId == null || assetId.isEmpty) {
+                visual = fallbackBuilder?.call(context, layer) ??
+                    PlayVisualUnavailable(
+                      semanticLabel: unavailableSemanticLabel,
+                    );
+              } else {
+                visual = ResolvedPlayVisual(
+                  assetId: assetId,
+                  resolver: resolver,
+                  loadingBuilder: loadingBuilder,
+                  errorBuilder: errorBuilder,
+                  loadingSemanticLabel: loadingSemanticLabel,
+                  unavailableSemanticLabel: unavailableSemanticLabel,
+                );
+              }
+              return useRepaintBoundary
+                  ? RepaintBoundary(child: visual)
+                  : visual;
+            }
+          }
+
+          '''
+              text = text.replace(marker, addition + marker, 1)
+          path.write_text(text)
+          PY
+
+          cat > packages/play_flutter/test/play_visual_media_builder_test.dart <<'DART'
+          import 'dart:convert';
+
+          import 'package:flutter/material.dart';
+          import 'package:flutter_test/flutter_test.dart';
+          import 'package:play_flutter/play_flutter.dart';
+
+          final class _Layer {
+            const _Layer(this.assetId);
+
+            final String? assetId;
+          }
+
+          void main() {
+            testWidgets('binds a selected layer asset to the real image renderer', (
+              tester,
+            ) async {
+              final asset = PlayVisualAsset(
+                id: 'visual_a',
+                semanticLabel: 'Coastal city',
+                source: MemoryPlayVisualSource(
+                  base64Decode(
+                    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+                  ),
+                ),
+              );
+              final builder = PlayVisualMediaBuilder<_Layer>(
+                resolver: MapPlayVisualAssetResolver({'visual_a': asset}),
+                assetIdOf: (layer) => layer.assetId,
+              );
+
+              await tester.pumpWidget(
+                MaterialApp(
+                  home: Builder(
+                    builder: (context) => builder.call(
+                      context,
+                      const _Layer('  visual_a  '),
+                    ),
+                  ),
+                ),
+              );
+              await tester.pumpAndSettle();
+
+              expect(find.byType(ResolvedPlayVisual), findsOneWidget);
+              final image = tester.widget<Image>(find.byType(Image));
+              expect(image.semanticLabel, 'Coastal city');
+              expect(
+                find.ancestor(
+                  of: find.byType(ResolvedPlayVisual),
+                  matching: find.byType(RepaintBoundary),
+                ),
+                findsWidgets,
+              );
+            });
+
+            testWidgets('uses the layer fallback when no asset ID is available', (
+              tester,
+            ) async {
+              final builder = PlayVisualMediaBuilder<_Layer>(
+                resolver: MapPlayVisualAssetResolver(const {}),
+                assetIdOf: (layer) => layer.assetId,
+                fallbackBuilder: (context, layer) => Text(
+                  'fallback:${layer.assetId ?? 'none'}',
+                ),
+              );
+
+              await tester.pumpWidget(
+                MaterialApp(
+                  home: Builder(
+                    builder: (context) => builder.call(
+                      context,
+                      const _Layer(null),
+                    ),
+                  ),
+                ),
+              );
+
+              expect(find.text('fallback:none'), findsOneWidget);
+              expect(find.byType(ResolvedPlayVisual), findsNothing);
+            });
+
+            testWidgets('can opt out of the renderer repaint boundary', (
+              tester,
+            ) async {
+              final builder = PlayVisualMediaBuilder<_Layer>(
+                resolver: MapPlayVisualAssetResolver(const {}),
+                assetIdOf: (layer) => layer.assetId,
+                useRepaintBoundary: false,
+              );
+
+              await tester.pumpWidget(
+                MaterialApp(
+                  home: Builder(
+                    builder: (context) => builder.call(
+                      context,
+                      const _Layer(null),
+                    ),
+                  ),
+                ),
+              );
+
+              final unavailable = find.byType(PlayVisualUnavailable);
+              expect(unavailable, findsOneWidget);
+              expect(
+                find.ancestor(
+                  of: unavailable,
+                  matching: find.byType(RepaintBoundary),
+                ),
+                findsNothing,
+              );
+            });
+          }
+          DART
+
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('docs/progress/2026-08-27-m06-play-renderer-progress.md')
+          text = path.read_text()
+          marker = '## Reusable layer binding'
+          if marker not in text:
+              text += '''
+
+          ## Reusable layer binding
+
+          A generic `PlayVisualMediaBuilder<T>` now turns any schema-layer model into the resolved renderer through an explicit asset-ID selector. It keeps schema revisions decoupled, provides a direct media-builder tear-off, preserves custom loading/error/fallback states, and isolates feed repaints by default.
+          '''
+          path.write_text(text)
+          PY
+
+          dart format packages/play_flutter
+          git diff --check
+          git add packages/play_flutter docs/progress/2026-08-27-m06-play-renderer-progress.md
+          if ! git diff --cached --quiet; then
+            git commit -m 'feat(renderer): bind Play layers to resolved visuals'
+          fi
+          target_sha=$(git rev-parse HEAD)
+
+          flutter pub get --enforce-lockfile
+          flutter analyze packages/play_flutter --fatal-infos
+          (cd packages/play_flutter && flutter test --reporter=expanded)
+          (cd apps/mosaic_app && flutter test --reporter=expanded)
+          git diff --exit-code
+
+          git push origin HEAD:"$TARGET_BRANCH"
+          branch_sha=$(gh api "repos/$REPOSITORY/git/ref/heads/$TARGET_BRANCH" --jq .object.sha)
+          [[ "$branch_sha" == "$target_sha" ]]
+          echo "sha=$target_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Refresh renderer PR checkpoint
+        env:
+          TARGET_SHA: ${{ steps.implementation.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          pr=$(gh pr list --repo "$REPOSITORY" --state open --head "$TARGET_BRANCH" --base main --json number --jq '.[0].number // empty')
+          [[ -n "$pr" ]]
+          cat > /tmp/body.md <<'BODY'
+          Part of #3
+
+          Implements three real visual-renderer tranches:
+
+          - immutable HTTPS/memory/bundle sources, exact asset-ID validation, stale-safe asynchronous resolution, semantic images and accessible reduced-motion states;
+          - explicit-capacity LRU resolution with duplicate-load coalescing, negative caching, retry-on-failure and stale-safe invalidation;
+          - a reusable generic layer binding with custom fallback/loading/error states and repaint isolation, suitable as a `PlaySurface.mediaBuilder` without coupling to one schema revision.
+
+          #3 remains open. Next: decode/prefetch budgeting, then video/controller ownership through the lifecycle coordinator.
+          BODY
+          gh pr edit "$pr" --repo "$REPOSITORY" --title 'feat(renderer): add visual asset resolution foundation' --body-file /tmp/body.md
+          gh issue comment 3 --repo "$REPOSITORY" --body "Reusable visual layer binding added to #$pr at tested head \`$TARGET_SHA\`; the renderer can now be plugged into a Play media builder without coupling to one schema revision."
+
+      - name: Remove successful bootstrap branch
+        if: success()
+        run: gh api -X DELETE "repos/$REPOSITORY/git/refs/heads/$BOOTSTRAP_BRANCH" >/dev/null
