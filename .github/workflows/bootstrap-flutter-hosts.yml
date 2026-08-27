@@ -1,4 +1,4 @@
-name: lock-flutter-platform-once
+name: link-ios-privacy-manifest-once
 
 on:
   push:
@@ -10,23 +10,41 @@ permissions:
   contents: write
 
 jobs:
-  lock:
+  patch:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Flutter
-        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
-        with:
-          flutter-version: '3.44.7'
-          cache: true
-      - name: Resolve and commit workspace lock
+      - name: Link PrivacyInfo.xcprivacy into Runner resources
         run: |
-          flutter pub get
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('apps/mosaic_app/ios/Runner.xcodeproj/project.pbxproj')
+          s = p.read_text()
+          if 'PrivacyInfo.xcprivacy in Resources' not in s:
+              s = s.replace(
+                  '\t\t3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */; };',
+                  '\t\t3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */; };\n\t\tAA1000020000000000000002 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AA1000010000000000000001 /* PrivacyInfo.xcprivacy */; };'
+              )
+              s = s.replace(
+                  '\t\t97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };',
+                  '\t\t97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };\n\t\tAA1000010000000000000001 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };'
+              )
+              s = s.replace(
+                  '\t\t\t\t97C147021CF9000F007C117D /* Info.plist */,',
+                  '\t\t\t\t97C147021CF9000F007C117D /* Info.plist */,\n\t\t\t\tAA1000010000000000000001 /* PrivacyInfo.xcprivacy */,'
+              )
+              s = s.replace(
+                  '\t\t\t\t3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */,',
+                  '\t\t\t\t3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */,\n\t\t\t\tAA1000020000000000000002 /* PrivacyInfo.xcprivacy in Resources */,'
+              )
+              p.write_text(s)
+          PY
+          grep -q 'PrivacyInfo.xcprivacy in Resources' apps/mosaic_app/ios/Runner.xcodeproj/project.pbxproj
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          if ! git diff --quiet pubspec.lock; then
-            git add pubspec.lock
-            git commit -m 'chore(platform): lock Flutter dependencies'
+          if ! git diff --quiet; then
+            git add apps/mosaic_app/ios/Runner.xcodeproj/project.pbxproj
+            git commit -m 'chore(ios): link privacy manifest resource'
             git push
           fi
