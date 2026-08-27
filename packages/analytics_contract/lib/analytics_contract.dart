@@ -13,6 +13,7 @@ abstract final class MosaicEventName {
 
 final class MosaicEventEnvelope {
   const MosaicEventEnvelope({
+    required this.eventId,
     required this.event,
     required this.occurredAt,
     required this.actorId,
@@ -23,6 +24,8 @@ final class MosaicEventEnvelope {
     this.payload = const {},
   });
 
+  /// Stable client-generated identity used for idempotent replay.
+  final String eventId;
   final String event;
   final int version;
   final DateTime occurredAt;
@@ -33,6 +36,7 @@ final class MosaicEventEnvelope {
   final Map<String, Object?> payload;
 
   Map<String, Object?> toJson() => {
+    'eventId': eventId,
     'event': event,
     'version': version,
     'occurredAt': occurredAt.toUtc().toIso8601String(),
