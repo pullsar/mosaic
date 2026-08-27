@@ -4,10 +4,8 @@ import 'package:play_schema/play_schema.dart';
 
 import 'visual_tokens.dart';
 
-typedef PlayMediaBuilder = Widget Function(
-  BuildContext context,
-  PresentationLayer layer,
-);
+typedef PlayMediaBuilder =
+    Widget Function(BuildContext context, PresentationLayer layer);
 
 final class PlaySurface extends StatefulWidget {
   const PlaySurface({
@@ -56,10 +54,7 @@ final class _PlaySurfaceState extends State<PlaySurface> {
           children: [
             for (final layer in media) _buildMedia(context, layer),
             _TextOverlay(layers: text.toList(growable: false)),
-            _InputOverlay(
-              input: state.input,
-              onAction: _apply,
-            ),
+            _InputOverlay(input: state.input, onAction: _apply),
           ],
         ),
       ),
@@ -80,8 +75,7 @@ final class _TextOverlay extends StatelessWidget {
       (layer) => layer.role == 'prompt' || layer.role == 'scenario',
     );
     final reveal = layers.where(
-      (layer) =>
-          layer.role == 'reveal_title' || layer.role == 'reveal_detail',
+      (layer) => layer.role == 'reveal_title' || layer.role == 'reveal_detail',
     );
     return IgnorePointer(
       child: Padding(
@@ -93,21 +87,21 @@ final class _TextOverlay extends StatelessWidget {
               Text(
                 layer.value ?? '',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      color: MosaicVisualTokens.foreground,
-                      fontWeight: FontWeight.w600,
-                      height: 1.08,
-                    ),
+                  color: MosaicVisualTokens.foreground,
+                  fontWeight: FontWeight.w600,
+                  height: 1.08,
+                ),
               ),
             const Spacer(),
             for (final layer in reveal)
               Text(
                 layer.value ?? '',
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      color: MosaicVisualTokens.foreground,
-                      fontWeight: layer.role == 'reveal_title'
-                          ? FontWeight.w600
-                          : FontWeight.w400,
-                    ),
+                  color: MosaicVisualTokens.foreground,
+                  fontWeight: layer.role == 'reveal_title'
+                      ? FontWeight.w600
+                      : FontWeight.w400,
+                ),
               ),
           ],
         ),
@@ -167,17 +161,17 @@ final class _ControlButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Semantics(
-        button: true,
-        label: label,
-        child: FilledButton(
-          onPressed: onPressed,
-          style: FilledButton.styleFrom(
-            foregroundColor: MosaicVisualTokens.foreground,
-            backgroundColor: MosaicVisualTokens.controlSurface,
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-            shape: const StadiumBorder(),
-          ),
-          child: Text(label),
-        ),
-      );
+    button: true,
+    label: label,
+    child: FilledButton(
+      onPressed: onPressed,
+      style: FilledButton.styleFrom(
+        foregroundColor: MosaicVisualTokens.foreground,
+        backgroundColor: MosaicVisualTokens.controlSurface,
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+        shape: const StadiumBorder(),
+      ),
+      child: Text(label),
+    ),
+  );
 }

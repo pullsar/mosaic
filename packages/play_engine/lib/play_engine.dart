@@ -56,18 +56,19 @@ final class PlayEngine {
   const PlayEngine();
 
   PlaySession start(PlayDocument play) => PlaySession(
-        play: play,
-        stateId: play.entryState,
-        ended: false,
-        attempts: 0,
-      );
+    play: play,
+    stateId: play.entryState,
+    ended: false,
+    attempts: 0,
+  );
 
   PlayResolution apply(PlaySession session, PlayAction action) {
     if (session.ended) throw StateError('Cannot act on an ended Play.');
     _assertCompatible(session.state.input.type, action);
 
     final evaluation = _evaluate(session.state.validation, action);
-    final transition = session.state.transitions[evaluation.outcome] ??
+    final transition =
+        session.state.transitions[evaluation.outcome] ??
         session.state.transitions['default'];
     if (transition == null) {
       throw StateError(
@@ -100,28 +101,30 @@ final class PlayEngine {
     final value = _actionValue(action);
     return switch (validation.type) {
       PlayValidatorType.none => _Evaluation(
-          outcome: action is ChoiceAction ? action.optionId : 'default',
-        ),
-      PlayValidatorType.equals => value == validation.value
-          ? const _Evaluation(outcome: 'correct', wasCorrect: true)
-          : const _Evaluation(outcome: 'incorrect', wasCorrect: false),
-      PlayValidatorType.orderedSequence => _listEquals(
-          value is List<String> ? value : const <String>[],
-          (validation.value as List).cast<String>(),
-        )
-          ? const _Evaluation(outcome: 'correct', wasCorrect: true)
-          : const _Evaluation(outcome: 'incorrect', wasCorrect: false),
+        outcome: action is ChoiceAction ? action.optionId : 'default',
+      ),
+      PlayValidatorType.equals =>
+        value == validation.value
+            ? const _Evaluation(outcome: 'correct', wasCorrect: true)
+            : const _Evaluation(outcome: 'incorrect', wasCorrect: false),
+      PlayValidatorType.orderedSequence =>
+        _listEquals(
+              value is List<String> ? value : const <String>[],
+              (validation.value as List).cast<String>(),
+            )
+            ? const _Evaluation(outcome: 'correct', wasCorrect: true)
+            : const _Evaluation(outcome: 'incorrect', wasCorrect: false),
       _ => throw UnsupportedError(
-          'Validator ${validation.type.name} is not executable in M0.',
-        ),
+        'Validator ${validation.type.name} is not executable in M0.',
+      ),
     };
   }
 
   Object? _actionValue(PlayAction action) => switch (action) {
-        TapAction() => null,
-        ChoiceAction(:final optionId) => optionId,
-        SequenceAction(:final values) => values,
-      };
+    TapAction() => null,
+    ChoiceAction(:final optionId) => optionId,
+    SequenceAction(:final values) => values,
+  };
 
   void _assertCompatible(PlayInputType input, PlayAction action) {
     final compatible = switch (input) {

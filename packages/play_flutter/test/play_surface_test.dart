@@ -48,7 +48,9 @@ void main() {
     });
 
     await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: PlaySurface(play: play))),
+      MaterialApp(
+        home: Scaffold(body: PlaySurface(play: play)),
+      ),
     );
     expect(find.text('Where is this?'), findsOneWidget);
     await tester.tap(find.text('Lisbon'));

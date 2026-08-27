@@ -6,9 +6,9 @@ import 'package:play_schema/play_schema.dart';
 import 'package:test/test.dart';
 
 PlayDocument fixture(String name) {
-  final raw = jsonDecode(
-    File('../play_schema/fixtures/$name').readAsStringSync(),
-  ) as Map<String, Object?>;
+  final raw =
+      jsonDecode(File('../play_schema/fixtures/$name').readAsStringSync())
+          as Map<String, Object?>;
   return PlayDocument.fromJson(raw);
 }
 

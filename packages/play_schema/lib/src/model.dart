@@ -29,11 +29,7 @@ enum PlayValidatorType {
   patternComparator,
 }
 
-T _enumFromWire<T extends Enum>(
-  List<T> values,
-  Object? raw,
-  String field,
-) {
+T _enumFromWire<T extends Enum>(List<T> values, Object? raw, String field) {
   if (raw is! String) {
     throw FormatException('$field must be a string');
   }
@@ -65,10 +61,13 @@ Map<String, Object?> _map(Object? raw, String field) {
 List<String> _strings(Object? raw, String field) {
   if (raw == null) return const [];
   if (raw is! List) throw FormatException('$field must be an array');
-  return raw.map((value) {
-    if (value is! String) throw FormatException('$field must contain strings');
-    return value;
-  }).toList(growable: false);
+  return raw
+      .map((value) {
+        if (value is! String)
+          throw FormatException('$field must contain strings');
+        return value;
+      })
+      .toList(growable: false);
 }
 
 final class PlayOption {
@@ -79,16 +78,16 @@ final class PlayOption {
   final String? assetId;
 
   factory PlayOption.fromJson(Map<String, Object?> json) => PlayOption(
-        id: json['id'] as String,
-        label: json['label'] as String,
-        assetId: json['assetId'] as String?,
-      );
+    id: json['id'] as String,
+    label: json['label'] as String,
+    assetId: json['assetId'] as String?,
+  );
 
   Map<String, Object?> toJson() => {
-        'id': id,
-        'label': label,
-        if (assetId != null) 'assetId': assetId,
-      };
+    'id': id,
+    'label': label,
+    if (assetId != null) 'assetId': assetId,
+  };
 }
 
 final class PresentationLayer {
@@ -122,12 +121,12 @@ final class PresentationLayer {
   }
 
   Map<String, Object?> toJson() => {
-        'type': type,
-        if (role != null) 'role': role,
-        if (value != null) 'value': value,
-        if (assetId != null) 'assetId': assetId,
-        ...properties,
-      };
+    'type': type,
+    if (role != null) 'role': role,
+    if (value != null) 'value': value,
+    if (assetId != null) 'assetId': assetId,
+    ...properties,
+  };
 }
 
 final class PlayInputDefinition {
@@ -149,17 +148,20 @@ final class PlayInputDefinition {
       options: rawOptions == null
           ? const []
           : (rawOptions as List)
-              .map((value) => PlayOption.fromJson(_map(value, 'input.options[]')))
-              .toList(growable: false),
+                .map(
+                  (value) =>
+                      PlayOption.fromJson(_map(value, 'input.options[]')),
+                )
+                .toList(growable: false),
     );
   }
 
   Map<String, Object?> toJson() => {
-        'type': _wireName(type),
-        if (label != null) 'label': label,
-        if (options.isNotEmpty)
-          'options': options.map((option) => option.toJson()).toList(),
-      };
+    'type': _wireName(type),
+    if (label != null) 'label': label,
+    if (options.isNotEmpty)
+      'options': options.map((option) => option.toJson()).toList(),
+  };
 }
 
 final class PlayValidationDefinition {
@@ -179,9 +181,9 @@ final class PlayValidationDefinition {
       );
 
   Map<String, Object?> toJson() => {
-        'type': _wireName(type),
-        if (value != null) 'value': value,
-      };
+    'type': _wireName(type),
+    if (value != null) 'value': value,
+  };
 }
 
 final class PlayStateDefinition {
@@ -209,18 +211,23 @@ final class PlayStateDefinition {
     final rawResponses = json['responses'];
     final responseMap = rawResponses == null
         ? const <String, Map<String, Object?>>{}
-        : _map(rawResponses, 'responses').map(
-            (key, value) => MapEntry(key, _map(value, 'responses.$key')),
-          );
+        : _map(
+            rawResponses,
+            'responses',
+          ).map((key, value) => MapEntry(key, _map(value, 'responses.$key')));
 
     return PlayStateDefinition(
       presentation: rawLayers
-          .map((value) =>
-              PresentationLayer.fromJson(_map(value, 'presentation.layers[]')))
+          .map(
+            (value) => PresentationLayer.fromJson(
+              _map(value, 'presentation.layers[]'),
+            ),
+          )
           .toList(growable: false),
       input: PlayInputDefinition.fromJson(_map(json['input'], 'input')),
-      validation:
-          PlayValidationDefinition.fromJson(_map(json['validation'], 'validation')),
+      validation: PlayValidationDefinition.fromJson(
+        _map(json['validation'], 'validation'),
+      ),
       transitions: transitionMap.map((key, value) {
         if (value is! String) {
           throw FormatException('transition.$key must be a string');
@@ -232,14 +239,14 @@ final class PlayStateDefinition {
   }
 
   Map<String, Object?> toJson() => {
-        'presentation': {
-          'layers': presentation.map((layer) => layer.toJson()).toList(),
-        },
-        'input': input.toJson(),
-        'validation': validation.toJson(),
-        if (responses.isNotEmpty) 'responses': responses,
-        'transition': transitions,
-      };
+    'presentation': {
+      'layers': presentation.map((layer) => layer.toJson()).toList(),
+    },
+    'input': input.toJson(),
+    'validation': validation.toJson(),
+    if (responses.isNotEmpty) 'responses': responses,
+    'transition': transitions,
+  };
 }
 
 final class PlaySource {
@@ -250,16 +257,16 @@ final class PlaySource {
   final String? provider;
 
   factory PlaySource.fromJson(Map<String, Object?> json) => PlaySource(
-        url: json['url'] as String,
-        title: json['title'] as String?,
-        provider: json['provider'] as String?,
-      );
+    url: json['url'] as String,
+    title: json['title'] as String?,
+    provider: json['provider'] as String?,
+  );
 
   Map<String, Object?> toJson() => {
-        'url': url,
-        if (title != null) 'title': title,
-        if (provider != null) 'provider': provider,
-      };
+    'url': url,
+    if (title != null) 'title': title,
+    if (provider != null) 'provider': provider,
+  };
 }
 
 final class PlayDocument {
@@ -305,15 +312,16 @@ final class PlayDocument {
         'classification',
       ),
       topics: List.unmodifiable(_strings(json['topics'], 'topics')),
-      learningTopics:
-          List.unmodifiable(_strings(json['learningTopics'], 'learningTopics')),
+      learningTopics: List.unmodifiable(
+        _strings(json['learningTopics'], 'learningTopics'),
+      ),
       estimatedDurationSec: json['estimatedDurationSec'] as int,
       assets: List.unmodifiable(_strings(json['assets'], 'assets')),
       sources: rawSources == null
           ? const []
           : (rawSources as List)
-              .map((source) => PlaySource.fromJson(_map(source, 'sources[]')))
-              .toList(growable: false),
+                .map((source) => PlaySource.fromJson(_map(source, 'sources[]')))
+                .toList(growable: false),
       entryState: json['entryState'] as String,
       states: Map.unmodifiable(
         rawStates.map(
@@ -327,17 +335,17 @@ final class PlayDocument {
   }
 
   Map<String, Object?> toJson() => {
-        'schemaVersion': schemaVersion,
-        'id': id,
-        'revisionId': revisionId,
-        'format': _wireName(format),
-        'classification': _wireName(classification),
-        'topics': topics,
-        'learningTopics': learningTopics,
-        'estimatedDurationSec': estimatedDurationSec,
-        'assets': assets,
-        'sources': sources.map((source) => source.toJson()).toList(),
-        'entryState': entryState,
-        'states': states.map((key, value) => MapEntry(key, value.toJson())),
-      };
+    'schemaVersion': schemaVersion,
+    'id': id,
+    'revisionId': revisionId,
+    'format': _wireName(format),
+    'classification': _wireName(classification),
+    'topics': topics,
+    'learningTopics': learningTopics,
+    'estimatedDurationSec': estimatedDurationSec,
+    'assets': assets,
+    'sources': sources.map((source) => source.toJson()).toList(),
+    'entryState': entryState,
+    'states': states.map((key, value) => MapEntry(key, value.toJson())),
+  };
 }

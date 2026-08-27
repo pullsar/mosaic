@@ -33,13 +33,13 @@ final class MosaicEventEnvelope {
   final Map<String, Object?> payload;
 
   Map<String, Object?> toJson() => {
-        'event': event,
-        'version': version,
-        'occurredAt': occurredAt.toUtc().toIso8601String(),
-        'actorId': actorId,
-        'sessionId': sessionId,
-        if (feedRequestId != null) 'feedRequestId': feedRequestId,
-        if (playRevisionId != null) 'playRevisionId': playRevisionId,
-        'payload': payload,
-      };
+    'event': event,
+    'version': version,
+    'occurredAt': occurredAt.toUtc().toIso8601String(),
+    'actorId': actorId,
+    'sessionId': sessionId,
+    if (feedRequestId != null) 'feedRequestId': feedRequestId,
+    if (playRevisionId != null) 'playRevisionId': playRevisionId,
+    'payload': payload,
+  };
 }
