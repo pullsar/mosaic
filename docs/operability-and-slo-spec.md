@@ -17,7 +17,7 @@ Every production surface must emit:
 - release/build identifiers;
 - feature/experiment configuration version.
 
-Recommended client crash/performance tooling: Sentry React Native.
+Recommended client crash/performance tooling: Sentry Flutter.
 
 ## 3. Critical paths
 
@@ -42,6 +42,8 @@ media_processing
 publish_validation
 moderation_action
 ```
+
+Flutter client telemetry also records frame build/raster timing, jank clusters, active Play type, and device refresh rate without attaching authored/user-sensitive payloads.
 
 ## 4. Initial service objectives
 
@@ -71,7 +73,7 @@ Targets are measured by supported platform/build and not hidden inside one globa
 
 ## 5. Experience budgets
 
-Measure separately by network tier and device class.
+Measure separately by network tier, refresh rate, and device class.
 
 Required metrics:
 
@@ -80,10 +82,21 @@ Required metrics:
 - Play visible → primary media ready;
 - video request → first frame;
 - tap-to-hear → audio-ready latency;
+- frame build/raster duration;
+- janky frames per Play/session;
 - creator capture → editable draft;
 - publish request → published/clear pending state.
 
 The feed shell and prompt must not wait for heavy media when the Play can be understood before it arrives.
+
+### Frame targets
+
+- 60 Hz devices: keep normal frame work inside ~16 ms;
+- 120 Hz-class paths: target ~8 ms where the device/platform supports it;
+- diagnose build and raster time separately;
+- performance regressions are reviewed by Play primitive and device class.
+
+The target is experienced smoothness, not a global average that hides bad devices or primitives.
 
 ## 6. Audio-specific budgets
 
@@ -115,7 +128,7 @@ Remote configuration must be able to disable or change without a client release:
 
 Every risky rollout should have a named rollback flag before release.
 
-GrowthBook is a preferred candidate for feature flags/experimentation, subject to license/deployment review.
+GrowthBook Flutter is a preferred candidate for feature flags/experimentation, subject to license/deployment review and isolated behind Mosaic's flag interface.
 
 ## 8. Release strategy
 
@@ -206,13 +219,13 @@ Published Play revisions and lineage must be recoverable independently of caches
 
 ## 14. Dependency hygiene
 
-- lockfile committed;
+- lockfiles committed;
 - dependency updates reviewed continuously;
 - automated vulnerability scanning;
 - SBOM generated for releases where practical;
 - licenses checked before adoption;
 - critical runtime dependencies pinned through normal semver/lockfile policy, not GitHub branches;
-- native dependency upgrades tested on representative devices.
+- Flutter SDK/native plugin upgrades tested on representative devices.
 
 ## 15. Capacity controls
 
@@ -235,6 +248,7 @@ One launch dashboard should show at minimum:
 - feed API p50/p95/p99;
 - Play start/completion/dismiss;
 - media first-frame/audio-ready failures;
+- frame/jank distribution by device/Play primitive;
 - crash-free sessions;
 - share-link opens/completions;
 - upload success/resume/failure;
@@ -247,6 +261,7 @@ One launch dashboard should show at minimum:
 Controlled beta requires:
 
 - crash/error reporting;
+- frame/runtime/media telemetry;
 - core traces/metrics;
 - remote kill switches;
 - staged rollout;
