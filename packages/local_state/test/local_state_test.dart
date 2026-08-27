@@ -70,17 +70,14 @@ void main() {
     final store = MosaicLocalStore.openInMemory(maxFeedWindowRevisionIds: 3);
     store.saveFeedResume(
       cursor: 'cursor_3',
-      windowRevisionIds: [
-        ' rev_a ',
-        'rev_b',
-        'rev_a',
-        '',
-        'rev_c',
-        'rev_d',
-      ],
+      windowRevisionIds: [' rev_a ', 'rev_b', 'rev_a', '', 'rev_c', 'rev_d'],
     );
 
-    expect(store.loadFeedResume()?.windowRevisionIds, ['rev_a', 'rev_b', 'rev_c']);
+    expect(store.loadFeedResume()?.windowRevisionIds, [
+      'rev_a',
+      'rev_b',
+      'rev_c',
+    ]);
     store.close();
   });
 
@@ -123,14 +120,17 @@ void main() {
     store.close();
   });
 
-  test('non-positive due-event limits never expand into an unbounded query', () {
-    final store = MosaicLocalStore.openInMemory();
-    store.enqueueEvent(_event('evt_1'));
+  test(
+    'non-positive due-event limits never expand into an unbounded query',
+    () {
+      final store = MosaicLocalStore.openInMemory();
+      store.enqueueEvent(_event('evt_1'));
 
-    expect(store.dueEvents(limit: 0), isEmpty);
-    expect(store.dueEvents(limit: -1), isEmpty);
-    store.close();
-  });
+      expect(store.dueEvents(limit: 0), isEmpty);
+      expect(store.dueEvents(limit: -1), isEmpty);
+      store.close();
+    },
+  );
 
   test('spool pressure drops low-value events before critical events', () {
     final store = MosaicLocalStore.openInMemory(
@@ -140,7 +140,10 @@ void main() {
     store.enqueueEvent(_event('analytics_old'));
     store.enqueueEvent(_event('analytics_new'));
 
-    final ids = store.dueEvents(limit: 10).map((event) => event.eventId).toSet();
+    final ids = store
+        .dueEvents(limit: 10)
+        .map((event) => event.eventId)
+        .toSet();
     expect(ids, contains('critical'));
     expect(ids, contains('analytics_new'));
     expect(ids, isNot(contains('analytics_old')));
@@ -160,21 +163,33 @@ void main() {
     );
 
     store.pruneOutbox(now: DateTime.utc(2026, 8, 27));
-    final ids = store.dueEvents(limit: 10).map((event) => event.eventId).toSet();
+    final ids = store
+        .dueEvents(limit: 10)
+        .map((event) => event.eventId)
+        .toSet();
     expect(ids, {'critical_old'});
     store.close();
   });
 
-  test('critical pending mutation is never evicted solely to meet spool cap', () {
-    final store = MosaicLocalStore.openInMemory(
-      policy: const OutboxPolicy(maxCount: 1, maxBytes: 100000),
-    );
-    store.enqueueEvent(_event('critical_a'), priority: OutboxPriority.critical);
-    store.enqueueEvent(_event('critical_b'), priority: OutboxPriority.critical);
+  test(
+    'critical pending mutation is never evicted solely to meet spool cap',
+    () {
+      final store = MosaicLocalStore.openInMemory(
+        policy: const OutboxPolicy(maxCount: 1, maxBytes: 100000),
+      );
+      store.enqueueEvent(
+        _event('critical_a'),
+        priority: OutboxPriority.critical,
+      );
+      store.enqueueEvent(
+        _event('critical_b'),
+        priority: OutboxPriority.critical,
+      );
 
-    expect(store.outboxCount, 2);
-    store.close();
-  });
+      expect(store.outboxCount, 2);
+      store.close();
+    },
+  );
 
   test('newer local schema is rejected without destructive quarantine', () {
     final temp = Directory.systemTemp.createTempSync('mosaic-newer-schema-');
@@ -189,7 +204,11 @@ void main() {
         () => MosaicLocalStore.open(path),
         throwsA(
           isA<UnsupportedLocalSchemaException>()
-              .having((error) => error.foundVersion, 'foundVersion', newerVersion)
+              .having(
+                (error) => error.foundVersion,
+                'foundVersion',
+                newerVersion,
+              )
               .having(
                 (error) => error.supportedVersion,
                 'supportedVersion',
@@ -205,11 +224,8 @@ void main() {
         isEmpty,
       );
       final reopened = sqlite3.open(path);
-      final persistedVersion = reopened
-          .select('pragma user_version')
-          .first
-          .values
-          .first as int;
+      final persistedVersion =
+          reopened.select('pragma user_version').first.values.first as int;
       reopened.close();
       expect(persistedVersion, newerVersion);
     } finally {
@@ -230,10 +246,9 @@ void main() {
       expect(store.getOrCreateActorId(), 'actor_after_recovery');
       store.close();
 
-      final quarantined = temp
-          .listSync()
-          .whereType<File>()
-          .where((file) => file.path.contains('.corrupt.'));
+      final quarantined = temp.listSync().whereType<File>().where(
+        (file) => file.path.contains('.corrupt.'),
+      );
       expect(quarantined, isNotEmpty);
     } finally {
       temp.deleteSync(recursive: true);

@@ -369,10 +369,7 @@ final class MosaicLocalStore {
     pruneOutbox(now: instant);
   }
 
-  List<PendingEvent> dueEvents({
-    DateTime? now,
-    int limit = 50,
-  }) {
+  List<PendingEvent> dueEvents({DateTime? now, int limit = 50}) {
     if (limit <= 0) return const [];
     final instant = (now ?? DateTime.now().toUtc()).toIso8601String();
     return _db
@@ -422,10 +419,11 @@ final class MosaicLocalStore {
 
   int get outboxBytes =>
       (_db
-          .select(
-            'select coalesce(sum(byte_size), 0) as bytes from event_outbox',
-          )
-          .first['bytes'] as int);
+              .select(
+                'select coalesce(sum(byte_size), 0) as bytes from event_outbox',
+              )
+              .first['bytes']
+          as int);
 
   void pruneOutbox({DateTime? now}) {
     final current = now ?? DateTime.now().toUtc();
@@ -446,10 +444,9 @@ final class MosaicLocalStore {
         [OutboxPriority.critical.value],
       );
       if (candidate.isEmpty) break;
-      _db.execute(
-        'delete from event_outbox where event_id = ?',
-        [candidate.first['event_id']],
-      );
+      _db.execute('delete from event_outbox where event_id = ?', [
+        candidate.first['event_id'],
+      ]);
     }
   }
 
