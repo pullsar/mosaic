@@ -1,3 +1,4 @@
+import 'capability.dart';
 import 'model.dart';
 
 enum PlayValidationSeverity { error, warning }
@@ -29,12 +30,12 @@ final class PlaySchemaValidator {
   List<PlayValidationIssue> validate(PlayDocument play) {
     final issues = <PlayValidationIssue>[];
 
-    if (play.schemaVersion != 1) {
+    if (!PlaySchemaSupport.supports(play.schemaVersion)) {
       issues.add(
-        const PlayValidationIssue(
+        PlayValidationIssue(
           code: 'schema_version',
           path: 'schemaVersion',
-          message: 'Only schemaVersion 1 is supported.',
+          message: 'schemaVersion ${play.schemaVersion} is not supported.',
         ),
       );
     }
