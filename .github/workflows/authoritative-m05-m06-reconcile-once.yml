@@ -1,0 +1,612 @@
+name: authoritative-m05-m06-reconcile-once
+
+on:
+  push:
+    branches: ['agent/m05-m06-authoritative-reconcile-20260827']
+    paths:
+      - '.github/workflows/authoritative-m05-m06-reconcile-once.yml'
+
+permissions:
+  actions: write
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: authoritative-m05-m06-reconcile
+  cancel-in-progress: false
+
+env:
+  REPOSITORY: pullsar/mosaic
+  FLUTTER_VERSION: '3.44.7'
+  CONTROL_BRANCH: agent/m05-m06-authoritative-reconcile-20260827
+
+jobs:
+  prepare-platform:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      skip: ${{ steps.state.outputs.skip }}
+      sha: ${{ steps.final.outputs.sha }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      FEATURE_BRANCH: agent/m05-platform-lifecycle-20260827
+    steps:
+      - name: Inspect issue state
+        id: state
+        shell: bash
+        run: |
+          set -euo pipefail
+          state=$(gh issue view 13 --repo "$REPOSITORY" --json state --jq .state)
+          if [[ "$state" == CLOSED ]]; then
+            echo 'skip=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'skip=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Cancel obsolete platform runs
+        if: steps.state.outputs.skip != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          runs=$(gh api -X GET "repos/$REPOSITORY/actions/runs" -f branch="$FEATURE_BRANCH" -f per_page=100)
+          jq -r '.workflow_runs[] | select(.status != "completed") | .id' <<<"$runs" | while read -r id; do
+            [[ -z "$id" ]] || gh api -X POST "repos/$REPOSITORY/actions/runs/$id/cancel" >/dev/null 2>&1 || true
+          done
+          sleep 15
+
+      - name: Checkout orchestration source
+        if: steps.state.outputs.skip != 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: orchestrator
+
+      - name: Checkout platform feature
+        if: steps.state.outputs.skip != 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/m05-platform-lifecycle-20260827
+          fetch-depth: 0
+          path: workspace
+
+      - name: Flutter
+        if: steps.state.outputs.skip != 'true'
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Reconcile current main and native resources
+        if: steps.state.outputs.skip != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C workspace config user.name 'github-actions[bot]'
+          git -C workspace config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C workspace fetch origin main
+          git -C workspace merge --no-edit origin/main -m 'chore(platform): sync latest main before native validation'
+
+          python3 orchestrator/orchestration/reconcile_platform.py workspace
+          (
+            cd workspace
+            flutter pub get
+            dart format apps/mosaic_app/lib packages/platform_contracts packages/platform_flutter
+            git diff --check
+          )
+
+          git -C workspace add -A
+          if ! git -C workspace diff --cached --quiet; then
+            git -C workspace commit -m 'fix(platform): finalize serialized lifecycle and native privacy resources'
+          fi
+          git -C workspace push origin HEAD:"$FEATURE_BRANCH"
+
+      - name: Publish exact target
+        id: final
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ '${{ steps.state.outputs.skip }}' == true ]]; then
+            sha=$(gh api "repos/$REPOSITORY/git/ref/heads/main" --jq .object.sha)
+          else
+            sha=$(git -C workspace rev-parse HEAD)
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+  validate-platform-linux:
+    needs: prepare-platform
+    if: needs.prepare-platform.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact platform head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare-platform.outputs.sha }}
+      - name: Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - name: Resolve locked workspace
+        run: flutter pub get --enforce-lockfile
+      - name: Verify formatting and analysis
+        run: |
+          dart format --output=none --set-exit-if-changed apps/mosaic_app/lib apps/mosaic_app/test packages
+          flutter analyze --fatal-infos
+      - name: Run Dart and Flutter contracts
+        run: |
+          (cd packages/play_schema && dart test)
+          (cd packages/play_runtime && dart test)
+          (cd packages/play_flutter && flutter test --reporter=expanded)
+          (cd packages/platform_contracts && dart test)
+          (cd packages/platform_flutter && flutter test --reporter=expanded)
+          (cd apps/mosaic_app && flutter test --reporter=expanded)
+      - name: Validate privacy and permission declarations
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import plistlib
+          from pathlib import Path
+
+          info_path = Path('apps/mosaic_app/ios/Runner/Info.plist')
+          privacy_path = Path('apps/mosaic_app/ios/Runner/PrivacyInfo.xcprivacy')
+          catalog_path = Path('apps/mosaic_app/ios/Runner/InfoPlist.xcstrings')
+          project_path = Path('apps/mosaic_app/ios/Runner.xcodeproj/project.pbxproj')
+
+          with info_path.open('rb') as handle:
+              info = plistlib.load(handle)
+          with privacy_path.open('rb') as handle:
+              privacy = plistlib.load(handle)
+          catalog = json.loads(catalog_path.read_text(encoding='utf-8'))
+          project = project_path.read_text(encoding='utf-8')
+
+          assert privacy['NSPrivacyTracking'] is False
+          assert catalog['sourceLanguage'] == 'en'
+          required = {
+              'NSCameraUsageDescription',
+              'NSMicrophoneUsageDescription',
+              'NSPhotoLibraryUsageDescription',
+          }
+          assert required <= catalog['strings'].keys()
+          for key in required:
+              localizations = catalog['strings'][key]['localizations']
+              assert {'en', 'fr'} <= localizations.keys()
+              assert info[key] == localizations['en']['stringUnit']['value']
+              for locale in ('en', 'fr'):
+                  unit = localizations[locale]['stringUnit']
+                  assert unit['state'] == 'translated'
+                  assert unit['value'].strip()
+          assert project.count('InfoPlist.xcstrings in Resources') == 2
+          assert 'PrivacyInfo.xcprivacy in Resources' in project
+          PY
+
+          manifest=apps/mosaic_app/android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.CAMERA' "$manifest"
+          grep -q 'android.permission.RECORD_AUDIO' "$manifest"
+          grep -q 'android.permission.POST_NOTIFICATIONS' "$manifest"
+          if grep -Eq 'READ_MEDIA_IMAGES|READ_MEDIA_VIDEO|READ_EXTERNAL_STORAGE|ACCESS_FINE_LOCATION|ACCESS_COARSE_LOCATION' "$manifest"; then
+            echo 'Unexpected broad media/location permission' >&2
+            exit 1
+          fi
+      - name: Build web host
+        working-directory: apps/mosaic_app
+        run: flutter build web --release
+      - name: Build Android host
+        working-directory: apps/mosaic_app
+        run: flutter build apk --debug
+
+  validate-platform-ios:
+    needs: prepare-platform
+    if: needs.prepare-platform.outputs.skip != 'true'
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact platform head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare-platform.outputs.sha }}
+      - name: Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - name: Resolve locked workspace
+        run: flutter pub get --enforce-lockfile
+      - name: Build iOS simulator host
+        working-directory: apps/mosaic_app
+        run: flutter build ios --simulator --no-codesign
+
+  merge-platform:
+    needs:
+      - prepare-platform
+      - validate-platform-linux
+      - validate-platform-ios
+    if: ${{ always() && needs.prepare-platform.result == 'success' && (needs.prepare-platform.outputs.skip == 'true' || (needs.validate-platform-linux.result == 'success' && needs.validate-platform-ios.result == 'success')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      main_sha: ${{ steps.final.outputs.main_sha }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      FEATURE_BRANCH: agent/m05-platform-lifecycle-20260827
+      TARGET_SHA: ${{ needs.prepare-platform.outputs.sha }}
+    steps:
+      - name: Merge exact validated platform head
+        id: merge
+        shell: bash
+        run: |
+          set -euo pipefail
+          state=$(gh issue view 13 --repo "$REPOSITORY" --json state --jq .state)
+          if [[ "$state" == CLOSED || '${{ needs.prepare-platform.outputs.skip }}' == true ]]; then
+            exit 0
+          fi
+
+          branch_sha=$(gh api "repos/$REPOSITORY/git/ref/heads/$FEATURE_BRANCH" --jq .object.sha)
+          [[ "$branch_sha" == "$TARGET_SHA" ]]
+          comparison=$(gh api "repos/$REPOSITORY/compare/main...$TARGET_SHA" --jq .status)
+          [[ "$comparison" == ahead || "$comparison" == identical ]]
+
+          if [[ "$comparison" == identical ]]; then
+            gh issue close 13 --repo "$REPOSITORY" --reason completed --comment 'Validated platform implementation was already present on main.'
+            gh api -X DELETE "repos/$REPOSITORY/git/refs/heads/$FEATURE_BRANCH" >/dev/null 2>&1 || true
+            exit 0
+          fi
+
+          pr=$(gh pr list --repo "$REPOSITORY" --state open --head "$FEATURE_BRANCH" --base main --json number --jq '.[0].number // empty')
+          cat > /tmp/platform-pr.md <<'BODY'
+          Closes #13
+
+          Completes the native/mobile lifecycle foundation: generated Android, iOS and web hosts; serialized single-active-Play media ownership; ordered lifecycle suspension and semantic recovery; contextual camera, microphone and notification permissions; scoped media picking with Android lost-data recovery; minimized manifests; linked iOS privacy declarations and localized purpose strings; reserved privacy/support/delete-account routes; and real Android, web and iOS simulator builds.
+
+          The exact head was validated by the authoritative Linux and macOS jobs before this SHA-fenced merge.
+          BODY
+          if [[ -z "$pr" ]]; then
+            url=$(gh pr create --repo "$REPOSITORY" --head "$FEATURE_BRANCH" --base main --title 'feat(platform): complete lifecycle and native host foundation' --body-file /tmp/platform-pr.md)
+            pr=${url##*/}
+          else
+            gh pr edit "$pr" --repo "$REPOSITORY" --title 'feat(platform): complete lifecycle and native host foundation' --body-file /tmp/platform-pr.md
+          fi
+
+          response=$(gh api -X PUT "repos/$REPOSITORY/pulls/$pr/merge" -f sha="$TARGET_SHA" -f merge_method=merge)
+          jq -e '.merged == true' <<<"$response" >/dev/null
+          gh issue close 13 --repo "$REPOSITORY" --reason completed >/dev/null 2>&1 || true
+          gh api -X DELETE "repos/$REPOSITORY/git/refs/heads/$FEATURE_BRANCH" >/dev/null 2>&1 || true
+
+      - name: Publish current main
+        id: final
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha=$(gh api "repos/$REPOSITORY/git/ref/heads/main" --jq .object.sha)
+          echo "main_sha=$sha" >> "$GITHUB_OUTPUT"
+
+  prepare-local-recovery:
+    needs: merge-platform
+    if: needs.merge-platform.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    outputs:
+      skip: ${{ steps.state.outputs.skip }}
+      sha: ${{ steps.final.outputs.sha }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      FEATURE_BRANCH: agent/m05-local-recovery-20260827
+    steps:
+      - name: Inspect issue state
+        id: state
+        shell: bash
+        run: |
+          set -euo pipefail
+          state=$(gh issue view 14 --repo "$REPOSITORY" --json state --jq .state)
+          if [[ "$state" == CLOSED ]]; then
+            echo 'skip=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'skip=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Cancel obsolete local-recovery runs
+        if: steps.state.outputs.skip != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          runs=$(gh api -X GET "repos/$REPOSITORY/actions/runs" -f branch="$FEATURE_BRANCH" -f per_page=100)
+          jq -r '.workflow_runs[] | select(.status != "completed") | .id' <<<"$runs" | while read -r id; do
+            [[ -z "$id" ]] || gh api -X POST "repos/$REPOSITORY/actions/runs/$id/cancel" >/dev/null 2>&1 || true
+          done
+          sleep 15
+
+      - name: Checkout orchestration source
+        if: steps.state.outputs.skip != 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: orchestrator
+
+      - name: Checkout local-recovery feature
+        if: steps.state.outputs.skip != 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/m05-local-recovery-20260827
+          fetch-depth: 0
+          path: workspace
+
+      - name: Flutter
+        if: steps.state.outputs.skip != 'true'
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Reconcile, lock and validate durable recovery
+        if: steps.state.outputs.skip != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C workspace config user.name 'github-actions[bot]'
+          git -C workspace config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C workspace fetch origin main
+          git -C workspace merge --no-edit origin/main -m 'chore(local): sync completed platform foundation'
+          (
+            cd workspace
+            flutter pub get
+          )
+          python3 orchestrator/orchestration/audit_local_recovery_v2.py workspace
+          (
+            cd workspace
+            dart format packages/local_state
+            dart analyze packages/local_state --fatal-infos
+            (cd packages/local_state && dart test --reporter=expanded)
+            git diff --check
+          )
+
+          git -C workspace add -A
+          if ! git -C workspace diff --cached --quiet; then
+            git -C workspace commit -m 'chore(local): finalize durable recovery foundation'
+          fi
+          git -C workspace push origin HEAD:"$FEATURE_BRANCH"
+
+      - name: Publish exact target
+        id: final
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ '${{ steps.state.outputs.skip }}' == true ]]; then
+            sha=$(gh api "repos/$REPOSITORY/git/ref/heads/main" --jq .object.sha)
+          else
+            sha=$(git -C workspace rev-parse HEAD)
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+  validate-local-recovery:
+    needs: prepare-local-recovery
+    if: needs.prepare-local-recovery.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact local-recovery head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare-local-recovery.outputs.sha }}
+      - name: Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - name: Resolve locked workspace
+        run: flutter pub get --enforce-lockfile
+      - name: Verify formatting and analysis
+        run: |
+          dart format --output=none --set-exit-if-changed apps/mosaic_app/lib apps/mosaic_app/test packages
+          flutter analyze --fatal-infos
+      - name: Exercise local recovery repeatedly
+        run: |
+          (cd packages/local_state && dart test --reporter=expanded)
+          (cd packages/local_state && dart test --concurrency=1 --reporter=expanded)
+          (cd packages/local_state && dart test --test-randomize-ordering-seed=94731 --reporter=expanded)
+      - name: Run complete Flutter/Dart contracts
+        run: |
+          (cd packages/play_schema && dart test)
+          (cd packages/play_runtime && dart test)
+          (cd packages/play_flutter && flutter test --reporter=expanded)
+          (cd packages/platform_contracts && dart test)
+          (cd packages/platform_flutter && flutter test --reporter=expanded)
+          (cd apps/mosaic_app && flutter test --reporter=expanded)
+      - name: Verify sqlite lock and recovery contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -A12 '^  sqlite3:$' pubspec.lock | grep -q 'version: "3.5.2"'
+          test -s docs/local-persistence-and-recovery.md
+
+  merge-local-recovery:
+    needs:
+      - prepare-local-recovery
+      - validate-local-recovery
+    if: ${{ always() && needs.prepare-local-recovery.result == 'success' && (needs.prepare-local-recovery.outputs.skip == 'true' || needs.validate-local-recovery.result == 'success') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      main_sha: ${{ steps.final.outputs.main_sha }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      FEATURE_BRANCH: agent/m05-local-recovery-20260827
+      TARGET_SHA: ${{ needs.prepare-local-recovery.outputs.sha }}
+    steps:
+      - name: Merge exact validated local-recovery head
+        shell: bash
+        run: |
+          set -euo pipefail
+          state=$(gh issue view 14 --repo "$REPOSITORY" --json state --jq .state)
+          if [[ "$state" == CLOSED || '${{ needs.prepare-local-recovery.outputs.skip }}' == true ]]; then
+            exit 0
+          fi
+
+          branch_sha=$(gh api "repos/$REPOSITORY/git/ref/heads/$FEATURE_BRANCH" --jq .object.sha)
+          [[ "$branch_sha" == "$TARGET_SHA" ]]
+          comparison=$(gh api "repos/$REPOSITORY/compare/main...$TARGET_SHA" --jq .status)
+          [[ "$comparison" == ahead || "$comparison" == identical ]]
+
+          if [[ "$comparison" == identical ]]; then
+            gh issue close 14 --repo "$REPOSITORY" --reason completed --comment 'Validated local-recovery implementation was already present on main.'
+            gh api -X DELETE "repos/$REPOSITORY/git/refs/heads/$FEATURE_BRANCH" >/dev/null 2>&1 || true
+            exit 0
+          fi
+
+          pr=$(gh pr list --repo "$REPOSITORY" --state open --head "$FEATURE_BRANCH" --base main --json number --jq '.[0].number // empty')
+          cat > /tmp/local-pr.md <<'BODY'
+          Closes #14
+
+          Adds the deliberately small sqlite3-backed process-death recovery layer for anonymous identity and binding, distinct interest state, bounded feed resume, creator drafts, local asset/upload metadata, stable event-ID outbox deduplication, bounded exponential retry, priority-aware spool pressure, schema migration and corrupt-database quarantine/recovery.
+
+          The exact head passed static SQL/dependency auditing, locked dependency resolution, analysis, restart/deduplication/backoff/spool/corruption tests under multiple schedules, and the complete Flutter/Dart contract suite before this SHA-fenced merge.
+          BODY
+          if [[ -z "$pr" ]]; then
+            url=$(gh pr create --repo "$REPOSITORY" --head "$FEATURE_BRANCH" --base main --title 'feat(local): add durable process-death recovery foundation' --body-file /tmp/local-pr.md)
+            pr=${url##*/}
+          else
+            gh pr edit "$pr" --repo "$REPOSITORY" --title 'feat(local): add durable process-death recovery foundation' --body-file /tmp/local-pr.md
+          fi
+
+          response=$(gh api -X PUT "repos/$REPOSITORY/pulls/$pr/merge" -f sha="$TARGET_SHA" -f merge_method=merge)
+          jq -e '.merged == true' <<<"$response" >/dev/null
+          gh issue close 14 --repo "$REPOSITORY" --reason completed >/dev/null 2>&1 || true
+          gh api -X DELETE "repos/$REPOSITORY/git/refs/heads/$FEATURE_BRANCH" >/dev/null 2>&1 || true
+
+      - name: Publish current main
+        id: final
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha=$(gh api "repos/$REPOSITORY/git/ref/heads/main" --jq .object.sha)
+          echo "main_sha=$sha" >> "$GITHUB_OUTPUT"
+
+  seed-renderer:
+    needs: merge-local-recovery
+    if: needs.merge-local-recovery.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_BRANCH: agent/m06-play-renderer-20260827
+    steps:
+      - name: Checkout orchestration source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: orchestrator
+      - name: Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - name: Stop obsolete renderer bootstraps
+        shell: bash
+        run: |
+          set -euo pipefail
+          for branch in \
+            agent/m06-play-renderer-bootstrap-20260827 \
+            agent/m06-renderer-ci-bootstrap-20260827 \
+            "$TARGET_BRANCH"; do
+            runs=$(gh api -X GET "repos/$REPOSITORY/actions/runs" -f branch="$branch" -f per_page=100 2>/dev/null || printf '{"workflow_runs":[]}')
+            jq -r '.workflow_runs[] | select(.status != "completed") | .id' <<<"$runs" | while read -r id; do
+              [[ -z "$id" ]] || gh api -X POST "repos/$REPOSITORY/actions/runs/$id/cancel" >/dev/null 2>&1 || true
+            done
+          done
+          for branch in agent/m06-play-renderer-bootstrap-20260827 agent/m06-renderer-ci-bootstrap-20260827; do
+            gh api -X DELETE "repos/$REPOSITORY/git/refs/heads/$branch" >/dev/null 2>&1 || true
+          done
+          sleep 10
+      - name: Implement and test visual asset tranche
+        id: implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}.git" workspace
+          cd workspace
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin main
+          if git ls-remote --exit-code --heads origin "$TARGET_BRANCH" >/dev/null 2>&1; then
+            git checkout "$TARGET_BRANCH"
+            git merge --no-edit origin/main -m 'chore(renderer): sync completed foundation'
+          else
+            git checkout -b "$TARGET_BRANCH" origin/main
+          fi
+
+          mkdir -p packages/play_flutter/lib/src packages/play_flutter/test .github/workflows docs/progress
+          cp ../orchestrator/orchestration/renderer/play_visual_renderer.dart packages/play_flutter/lib/src/play_visual_renderer.dart
+          cp ../orchestrator/orchestration/renderer/play_visual_renderer_test.dart packages/play_flutter/test/play_visual_renderer_test.dart
+          cp ../orchestrator/orchestration/renderer/renderer-ci.yml .github/workflows/renderer-ci.yml
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('packages/play_flutter/lib/play_flutter.dart')
+          export = "export 'src/play_visual_renderer.dart';"
+          lines = [line for line in path.read_text().splitlines() if line.strip() != export]
+          while lines and not lines[-1].strip():
+              lines.pop()
+          lines.extend(['', export])
+          path.write_text('\n'.join(lines) + '\n')
+          PY
+
+          cat > docs/progress/2026-08-27-m06-play-renderer-progress.md <<'DOC'
+          # M06 Play renderer progress
+
+          The platform lifecycle and durable local-recovery foundations are complete before this branch begins.
+
+          This first Task #3 tranche replaces placeholder-only visual plumbing with a typed, fail-closed visual asset boundary:
+
+          - immutable HTTPS, memory and bundle image sources;
+          - defensive byte/header ownership and exact asset-ID validation;
+          - asynchronous asset resolution that cannot display stale results after a Play changes;
+          - accessible loading/unavailable states with reduced-motion behavior;
+          - real image rendering with semantic labels, fit/alignment and gapless frame handoff;
+          - focused regressions for URI safety, resolver identity, memory ownership, stale completion, fail-closed mismatch and reduced motion.
+
+          This is deliberately not marked as completing #3. Video/controller ownership, layer-to-asset binding, prefetch/decode budgeting and full Play-state integration remain successor renderer tranches.
+          DOC
+
+          flutter pub get --enforce-lockfile
+          dart format packages/play_flutter
+          flutter analyze packages/play_flutter --fatal-infos
+          (cd packages/play_flutter && flutter test --reporter=expanded)
+          (cd apps/mosaic_app && flutter test --reporter=expanded)
+          git diff --check
+
+          git add packages/play_flutter .github/workflows/renderer-ci.yml docs/progress/2026-08-27-m06-play-renderer-progress.md
+          if ! git diff --cached --quiet; then
+            git commit -m 'feat(renderer): add visual asset resolution foundation'
+          fi
+          git push origin HEAD:"$TARGET_BRANCH"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Open or refresh renderer tranche PR
+        shell: bash
+        env:
+          TARGET_SHA: ${{ steps.implementation.outputs.sha }}
+        run: |
+          set -euo pipefail
+          branch_sha=$(gh api "repos/$REPOSITORY/git/ref/heads/$TARGET_BRANCH" --jq .object.sha)
+          [[ "$branch_sha" == "$TARGET_SHA" ]]
+          pr=$(gh pr list --repo "$REPOSITORY" --state open --head "$TARGET_BRANCH" --base main --json number --jq '.[0].number // empty')
+          cat > /tmp/renderer-pr.md <<'BODY'
+          Part of #3
+
+          Begins the real visual Play renderer with a typed asset boundary and fail-closed image path: immutable HTTPS/memory/bundle sources, exact asset-ID validation, stale-safe asynchronous resolution, accessible loading/error states, reduced-motion behavior, semantic image rendering and focused regressions.
+
+          This PR intentionally remains a tranche rather than closing #3. The next work binds schema layers to resolved assets, adds decode/prefetch budgeting, and integrates video/controller ownership with the lifecycle coordinator.
+          BODY
+          if [[ -z "$pr" ]]; then
+            url=$(gh pr create --repo "$REPOSITORY" --head "$TARGET_BRANCH" --base main --draft --title 'feat(renderer): add visual asset resolution foundation' --body-file /tmp/renderer-pr.md)
+            pr=${url##*/}
+          else
+            gh pr edit "$pr" --repo "$REPOSITORY" --title 'feat(renderer): add visual asset resolution foundation' --body-file /tmp/renderer-pr.md
+          fi
+          gh issue comment 3 --repo "$REPOSITORY" --body "Renderer tranche opened as #$pr at exact tested head \`$TARGET_SHA\`. It covers typed visual asset resolution and image rendering; #3 remains open for layer binding, decode/prefetch budgeting and video ownership."
+      - name: Remove successful orchestration branch
+        if: success()
+        shell: bash
+        run: gh api -X DELETE "repos/$REPOSITORY/git/refs/heads/$CONTROL_BRANCH" >/dev/null
