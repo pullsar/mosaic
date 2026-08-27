@@ -1,0 +1,34 @@
+name: bootstrap-flutter-hosts
+
+on:
+  push:
+    branches: ['agent/m05-platform-lifecycle-20260827']
+    paths:
+      - '.github/workflows/bootstrap-flutter-hosts.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.44.7'
+          cache: true
+      - name: Generate host projects in isolation
+        run: |
+          temp_dir=$(mktemp -d)
+          flutter create --platforms=android,ios,web --project-name mosaic_app --org com.pullsar --no-pub "$temp_dir/mosaic_app"
+          cp -R "$temp_dir/mosaic_app/android" apps/mosaic_app/android
+          cp -R "$temp_dir/mosaic_app/ios" apps/mosaic_app/ios
+          cp -R "$temp_dir/mosaic_app/web" apps/mosaic_app/web
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps/mosaic_app/android apps/mosaic_app/ios apps/mosaic_app/web
+          git commit -m 'chore(app): add Flutter Android iOS and web hosts'
+          git push
