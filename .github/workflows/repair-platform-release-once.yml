@@ -1,0 +1,93 @@
+name: repair-platform-release-once
+
+on:
+  push:
+    branches: ['agent/m05-platform-lifecycle-20260827']
+    paths:
+      - '.github/workflows/repair-platform-release-once.yml'
+
+permissions:
+  contents: write
+  issues: read
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout latest feature head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/m05-platform-lifecycle-20260827
+          fetch-depth: 0
+      - name: Flutter
+        if: ${{ !cancelled() }}
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.44.7'
+          cache: true
+      - name: Reconcile resources and remove stale temporary gates
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          state=$(gh issue view 13 --repo pullsar/mosaic --json state --jq .state)
+          if [[ "$state" != CLOSED ]]; then
+            python3 - <<'PY'
+          from pathlib import Path
+          import json
+
+          catalog = Path('apps/mosaic_app/ios/Runner/InfoPlist.xcstrings')
+          if not catalog.exists():
+              raise SystemExit('InfoPlist.xcstrings is missing')
+          json.loads(catalog.read_text())
+
+          path = Path('apps/mosaic_app/ios/Runner.xcodeproj/project.pbxproj')
+          text = path.read_text()
+          if 'InfoPlist.xcstrings in Resources' not in text:
+              replacements = [
+                  (
+                      '\t\tAA1000020000000000000002 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AA1000010000000000000001 /* PrivacyInfo.xcprivacy */; };',
+                      '\t\tAA1000020000000000000002 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AA1000010000000000000001 /* PrivacyInfo.xcprivacy */; };\n'
+                      '\t\tAA1000030000000000000003 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = AA1000040000000000000004 /* InfoPlist.xcstrings */; };',
+                  ),
+                  (
+                      '\t\tAA1000010000000000000001 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };',
+                      '\t\tAA1000010000000000000001 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };\n'
+                      '\t\tAA1000040000000000000004 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };',
+                  ),
+                  (
+                      '\t\t\t\tAA1000010000000000000001 /* PrivacyInfo.xcprivacy */,',
+                      '\t\t\t\tAA1000010000000000000001 /* PrivacyInfo.xcprivacy */,\n'
+                      '\t\t\t\tAA1000040000000000000004 /* InfoPlist.xcstrings */,',
+                  ),
+                  (
+                      '\t\t\t\tAA1000020000000000000002 /* PrivacyInfo.xcprivacy in Resources */,',
+                      '\t\t\t\tAA1000020000000000000002 /* PrivacyInfo.xcprivacy in Resources */,\n'
+                      '\t\t\t\tAA1000030000000000000003 /* InfoPlist.xcstrings in Resources */,',
+                  ),
+              ]
+              for old, new in replacements:
+                  if text.count(old) != 1:
+                      raise SystemExit(f'Expected one Xcode marker: {old!r}')
+                  text = text.replace(old, new, 1)
+          if '\t\t\t\tfr,' not in text:
+              old = '\t\t\t\ten,\n\t\t\t\tBase,'
+              if text.count(old) != 1:
+                  raise SystemExit('Could not add French known region')
+              text = text.replace(old, '\t\t\t\ten,\n\t\t\t\tfr,\n\t\t\t\tBase,', 1)
+          path.write_text(text)
+          PY
+            dart format apps/mosaic_app/lib packages/platform_contracts packages/platform_flutter
+          fi
+          rm -f \
+            .github/workflows/release-platform-lifecycle-once.yml \
+            apps/mosaic_app/.platform-release-gate
+          git rm .github/workflows/repair-platform-release-once.yml
+          git add apps/mosaic_app packages/platform_contracts packages/platform_flutter .github/workflows
+          if ! git diff --cached --quiet; then
+            git commit -m 'chore(platform): reconcile localized native resources'
+            git push origin HEAD:agent/m05-platform-lifecycle-20260827
+          fi
