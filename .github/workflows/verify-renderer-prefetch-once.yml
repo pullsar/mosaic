@@ -1,0 +1,164 @@
+name: verify-renderer-prefetch-once
+
+on:
+  push:
+    branches: ['agent/m06-renderer-prefetch-watchdog-20260827']
+    paths:
+      - '.github/workflows/verify-renderer-prefetch-once.yml'
+
+permissions:
+  actions: read
+  contents: write
+  issues: write
+  pull-requests: read
+
+jobs:
+  locate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 95
+    outputs:
+      conclusion: ${{ steps.wait.outputs.conclusion }}
+      run_id: ${{ steps.wait.outputs.run_id }}
+      renderer_sha: ${{ steps.renderer.outputs.sha }}
+      pr: ${{ steps.renderer.outputs.pr }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: pullsar/mosaic
+      BOOTSTRAP_BRANCH: agent/m06-renderer-prefetch-bootstrap-20260827
+      WATCHDOG_BRANCH: agent/m06-renderer-prefetch-watchdog-20260827
+      TARGET_BRANCH: agent/m06-play-renderer-20260827
+      WORKFLOW_NAME: extend-renderer-prefetch-once
+    steps:
+      - name: Wait for the prefetch tranche workflow
+        id: wait
+        shell: bash
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 360); do
+            runs=$(gh api -X GET "repos/$REPOSITORY/actions/runs" -f per_page=100)
+            run=$(jq -c --arg name "$WORKFLOW_NAME" --arg branch "$BOOTSTRAP_BRANCH" \
+              '[.workflow_runs[] | select(.name == $name and .head_branch == $branch)] | sort_by(.created_at) | last // empty' <<<"$runs")
+            if [[ -n "$run" ]]; then
+              run_id=$(jq -r .id <<<"$run")
+              status=$(jq -r .status <<<"$run")
+              echo "prefetch run $run_id: $status"
+              if [[ "$status" == completed ]]; then
+                conclusion=$(jq -r .conclusion <<<"$run")
+                echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+                echo "conclusion=$conclusion" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+            fi
+            sleep 15
+          done
+          echo 'The prefetch tranche did not complete in the verification window.' >&2
+          exit 1
+
+      - name: Preserve failed tranche diagnostics
+        if: steps.wait.outputs.conclusion != 'success'
+        shell: bash
+        env:
+          RUN_ID: ${{ steps.wait.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}.git" diagnostics
+          cd diagnostics
+          git checkout "$WATCHDOG_BRANCH"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          mkdir -p diagnostics
+          gh run view "$RUN_ID" --repo "$REPOSITORY" \
+            --json databaseId,status,conclusion,headSha,jobs \
+            > diagnostics/renderer-prefetch-run.json
+          gh run view "$RUN_ID" --repo "$REPOSITORY" --log-failed \
+            > diagnostics/renderer-prefetch-failure.log || true
+          git add diagnostics
+          git commit -m 'diagnostics(renderer): preserve failed prefetch logs'
+          git push origin HEAD:"$WATCHDOG_BRANCH"
+          failed=$(jq -r '[.jobs[] | select(.conclusion == "failure") | .name] | join(", ")' \
+            diagnostics/renderer-prefetch-run.json)
+          gh issue comment 3 --repo "$REPOSITORY" --body \
+            "Renderer decode/prefetch tranche stopped at ${failed:-an unknown job}. No failed head was promoted; logs are preserved on \`$WATCHDOG_BRANCH\` under \`diagnostics/\`."
+          exit 1
+
+      - name: Resolve the exact published renderer head
+        if: steps.wait.outputs.conclusion == 'success'
+        id: renderer
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha=$(gh api "repos/$REPOSITORY/git/ref/heads/$TARGET_BRANCH" --jq .object.sha)
+          pr=$(gh pr list --repo "$REPOSITORY" --state open \
+            --head "$TARGET_BRANCH" --base main \
+            --json number,headRefOid,isDraft --jq '.[0]')
+          [[ "$pr" != null ]]
+          [[ "$(jq -r .headRefOid <<<"$pr")" == "$sha" ]]
+          [[ "$(jq -r .isDraft <<<"$pr")" == true ]]
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "pr=$(jq -r .number <<<"$pr")" >> "$GITHUB_OUTPUT"
+
+  verify:
+    needs: locate
+    if: needs.locate.outputs.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: pullsar/mosaic
+      WATCHDOG_BRANCH: agent/m06-renderer-prefetch-watchdog-20260827
+      TARGET_BRANCH: agent/m06-play-renderer-20260827
+      TARGET_SHA: ${{ needs.locate.outputs.renderer_sha }}
+      PR_NUMBER: ${{ needs.locate.outputs.pr }}
+    steps:
+      - name: Checkout the exact renderer head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.locate.outputs.renderer_sha }}
+
+      - name: Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.44.7'
+          cache: true
+
+      - name: Verify implementation identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          source=packages/play_flutter/lib/src/play_visual_renderer.dart
+          grep -q 'final class CachingPlayVisualAssetResolver' "$source"
+          grep -q 'final class PlayVisualMediaBuilder<' "$source"
+          grep -q 'final class PlayVisualPrefetchController' "$source"
+          grep -q 'final Queue<Completer<void>> _permitWaiters' "$source"
+          grep -q 'int get activeOperations' "$source"
+          grep -q 'ImageProvider<Object> createImageProvider()' "$source"
+          grep -q 'this.repaintBoundaryKey' "$source"
+          test -s packages/play_flutter/test/play_visual_renderer_test.dart
+          test -s packages/play_flutter/test/play_visual_cache_test.dart
+          test -s packages/play_flutter/test/play_visual_media_builder_test.dart
+          test -s packages/play_flutter/test/play_visual_prefetch_test.dart
+          test -s docs/progress/2026-08-27-m06-play-renderer-progress.md
+
+      - name: Re-run exact-head analysis and tests independently
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter pub get --enforce-lockfile
+          dart format --output=none --set-exit-if-changed packages/play_flutter
+          flutter analyze packages/play_flutter --fatal-infos
+          (cd packages/play_flutter && flutter test --reporter=expanded)
+          (cd apps/mosaic_app && flutter test --reporter=expanded)
+          git diff --exit-code
+
+      - name: Publish independent verification and clean watchdog
+        shell: bash
+        run: |
+          set -euo pipefail
+          current=$(gh api "repos/$REPOSITORY/git/ref/heads/$TARGET_BRANCH" --jq .object.sha)
+          [[ "$current" == "$TARGET_SHA" ]]
+          pr_sha=$(gh pr view "$PR_NUMBER" --repo "$REPOSITORY" \
+            --json headRefOid --jq .headRefOid)
+          [[ "$pr_sha" == "$TARGET_SHA" ]]
+          gh issue comment 3 --repo "$REPOSITORY" --body \
+            "Independent renderer verification passed for PR #$PR_NUMBER at exact head \`$TARGET_SHA\`: visual resolution, bounded cache, reusable layer binding, decode hints and globally bounded superseding prefetch all re-analyzed and re-tested."
+          gh api -X DELETE "repos/$REPOSITORY/git/refs/heads/$WATCHDOG_BRANCH" >/dev/null
