@@ -5,13 +5,14 @@ import 'package:platform_contracts/platform_contracts.dart';
 
 typedef SemanticResumeCallback = FutureOr<void> Function();
 
-AppRuntimeState mapFlutterLifecycleState(AppLifecycleState state) => switch (state) {
-  AppLifecycleState.resumed => AppRuntimeState.resumed,
-  AppLifecycleState.inactive => AppRuntimeState.inactive,
-  AppLifecycleState.paused => AppRuntimeState.paused,
-  AppLifecycleState.hidden => AppRuntimeState.hidden,
-  AppLifecycleState.detached => AppRuntimeState.detached,
-};
+AppRuntimeState mapFlutterLifecycleState(AppLifecycleState state) =>
+    switch (state) {
+      AppLifecycleState.resumed => AppRuntimeState.resumed,
+      AppLifecycleState.inactive => AppRuntimeState.inactive,
+      AppLifecycleState.paused => AppRuntimeState.paused,
+      AppLifecycleState.hidden => AppRuntimeState.hidden,
+      AppLifecycleState.detached => AppRuntimeState.detached,
+    };
 
 final class FlutterLifecycleBridge {
   FlutterLifecycleBridge({

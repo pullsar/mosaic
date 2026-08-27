@@ -49,9 +49,12 @@ final class _MosaicAppState extends State<MosaicApp> {
       colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF262626)),
     ),
     routes: {
-      MosaicSettingsRoute.privacy: (_) => const _ReservedSettingsPage('Privacy'),
-      MosaicSettingsRoute.support: (_) => const _ReservedSettingsPage('Support'),
-      MosaicSettingsRoute.deleteAccount: (_) => const _ReservedSettingsPage('Delete account'),
+      MosaicSettingsRoute.privacy: (_) =>
+          const _ReservedSettingsPage('Privacy'),
+      MosaicSettingsRoute.support: (_) =>
+          const _ReservedSettingsPage('Support'),
+      MosaicSettingsRoute.deleteAccount: (_) =>
+          const _ReservedSettingsPage('Delete account'),
     },
     home: PlaySurface(
       play: _demoPlay,
@@ -67,9 +70,7 @@ final class _ReservedSettingsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    body: SafeArea(
-      child: Center(child: Text(label)),
-    ),
+    body: SafeArea(child: Center(child: Text(label))),
   );
 }
 

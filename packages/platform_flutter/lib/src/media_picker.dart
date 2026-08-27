@@ -2,7 +2,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:platform_contracts/platform_contracts.dart';
 
 final class FlutterMediaPickerGateway implements MediaPickerGateway {
-  FlutterMediaPickerGateway({ImagePicker? picker}) : _picker = picker ?? ImagePicker();
+  FlutterMediaPickerGateway({ImagePicker? picker})
+    : _picker = picker ?? ImagePicker();
 
   final ImagePicker _picker;
 
@@ -24,7 +25,9 @@ final class FlutterMediaPickerGateway implements MediaPickerGateway {
     if (response.isEmpty) return const [];
     if (response.exception != null) throw response.exception!;
 
-    final files = response.files ?? (response.file == null ? const <XFile>[] : [response.file!]);
+    final files =
+        response.files ??
+        (response.file == null ? const <XFile>[] : [response.file!]);
     final kind = response.type == RetrieveType.video
         ? PickedMediaKind.video
         : PickedMediaKind.image;

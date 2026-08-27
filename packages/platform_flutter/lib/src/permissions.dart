@@ -7,14 +7,16 @@ Permission permissionFor(MosaicPermission permission) => switch (permission) {
   MosaicPermission.notifications => Permission.notification,
 };
 
-MosaicPermissionState mapPermissionStatus(PermissionStatus status) => switch (status) {
-  PermissionStatus.granted ||
-  PermissionStatus.limited ||
-  PermissionStatus.provisional => MosaicPermissionState.granted,
-  PermissionStatus.denied => MosaicPermissionState.denied,
-  PermissionStatus.restricted => MosaicPermissionState.restricted,
-  PermissionStatus.permanentlyDenied => MosaicPermissionState.permanentlyDenied,
-};
+MosaicPermissionState mapPermissionStatus(PermissionStatus status) =>
+    switch (status) {
+      PermissionStatus.granted ||
+      PermissionStatus.limited ||
+      PermissionStatus.provisional => MosaicPermissionState.granted,
+      PermissionStatus.denied => MosaicPermissionState.denied,
+      PermissionStatus.restricted => MosaicPermissionState.restricted,
+      PermissionStatus.permanentlyDenied =>
+        MosaicPermissionState.permanentlyDenied,
+    };
 
 final class FlutterPermissionGateway implements PermissionGateway {
   const FlutterPermissionGateway();
