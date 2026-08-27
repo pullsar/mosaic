@@ -1,0 +1,388 @@
+name: extend-renderer-cache-once
+
+on:
+  push:
+    branches: ['agent/m06-renderer-cache-bootstrap-20260827']
+    paths:
+      - '.github/workflows/extend-renderer-cache-once.yml'
+
+permissions:
+  actions: read
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  extend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: pullsar/mosaic
+      CONTROL_BRANCH: agent/m05-m06-authoritative-reconcile-20260827
+      BOOTSTRAP_BRANCH: agent/m06-renderer-cache-bootstrap-20260827
+      TARGET_BRANCH: agent/m06-play-renderer-20260827
+      WORKFLOW_NAME: authoritative-m05-m06-reconcile-v2-once
+    steps:
+      - name: Wait for independently verified foundations
+        shell: bash
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 240); do
+            runs=$(gh api -X GET "repos/$REPOSITORY/actions/runs" -f branch="$CONTROL_BRANCH" -f per_page=100)
+            run=$(jq -c --arg name "$WORKFLOW_NAME" '[.workflow_runs[] | select(.name == $name)] | sort_by(.created_at) | last // empty' <<<"$runs")
+            if [[ -n "$run" && "$(jq -r .status <<<"$run")" == completed ]]; then
+              [[ "$(jq -r .conclusion <<<"$run")" == success ]]
+              [[ "$(gh issue view 13 --repo "$REPOSITORY" --json state --jq .state)" == CLOSED ]]
+              [[ "$(gh issue view 14 --repo "$REPOSITORY" --json state --jq .state)" == CLOSED ]]
+              gh api "repos/$REPOSITORY/contents/packages/play_flutter/lib/src/play_visual_renderer.dart?ref=$TARGET_BRANCH" >/dev/null
+              exit 0
+            fi
+            sleep 15
+          done
+          echo 'Verified renderer foundation did not become available.' >&2
+          exit 1
+
+      - name: Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.44.7'
+          cache: true
+
+      - name: Add bounded coalescing cache and regressions
+        id: implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}.git" workspace
+          cd workspace
+          git checkout "$TARGET_BRANCH"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin main
+          git merge --no-edit origin/main -m 'chore(renderer): sync latest main before cache tranche'
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('packages/play_flutter/lib/src/play_visual_renderer.dart')
+          text = path.read_text()
+          if "import 'dart:collection';" not in text:
+              text = text.replace("import 'dart:async';", "import 'dart:async';\nimport 'dart:collection';", 1)
+
+          marker = 'typedef PlayVisualStateBuilder ='
+          if marker not in text:
+              raise SystemExit('PlayVisualStateBuilder marker is missing')
+          if 'final class CachingPlayVisualAssetResolver' not in text:
+              addition = r'''
+          /// A bounded least-recently-used resolver that coalesces duplicate loads.
+          ///
+          /// Missing assets are cached just like present assets, while failures are
+          /// never cached. Invalidation detaches an in-flight request so its eventual
+          /// completion cannot repopulate stale state.
+          final class CachingPlayVisualAssetResolver
+              implements PlayVisualAssetResolver {
+            CachingPlayVisualAssetResolver(
+              this.delegate, {
+              this.capacity = 32,
+            }) {
+              if (capacity < 1) {
+                throw RangeError.range(capacity, 1, null, 'capacity');
+              }
+            }
+
+            final PlayVisualAssetResolver delegate;
+            final int capacity;
+            final LinkedHashMap<String, PlayVisualAsset?> _cache =
+                LinkedHashMap<String, PlayVisualAsset?>();
+            final Map<String, Future<PlayVisualAsset?>> _inFlight =
+                <String, Future<PlayVisualAsset?>>{};
+            final Map<String, int> _versions = <String, int>{};
+            int _epoch = 0;
+
+            int get cacheSize => _cache.length;
+            int get inFlightCount => _inFlight.length;
+
+            @override
+            Future<PlayVisualAsset?> resolve(String assetId) {
+              final id = _requireNonEmpty(assetId, 'assetId');
+              if (_cache.containsKey(id)) {
+                final cached = _cache.remove(id);
+                _cache[id] = cached;
+                return Future<PlayVisualAsset?>.value(cached);
+              }
+
+              final existing = _inFlight[id];
+              if (existing != null) return existing;
+
+              final epoch = _epoch;
+              final version = _versions[id] ?? 0;
+              late final Future<PlayVisualAsset?> request;
+              request = Future<PlayVisualAsset?>.sync(
+                () => delegate.resolve(id),
+              ).then((asset) {
+                if (asset != null && asset.id != id) {
+                  throw StateError(
+                    'Resolver returned ${asset.id} while resolving $id.',
+                  );
+                }
+                if (_epoch == epoch && (_versions[id] ?? 0) == version) {
+                  _remember(id, asset);
+                }
+                return asset;
+              }).whenComplete(() {
+                if (identical(_inFlight[id], request)) {
+                  _inFlight.remove(id);
+                }
+              });
+              _inFlight[id] = request;
+              return request;
+            }
+
+            void invalidate(String assetId) {
+              final id = _requireNonEmpty(assetId, 'assetId');
+              _cache.remove(id);
+              _inFlight.remove(id);
+              _versions.update(id, (value) => value + 1, ifAbsent: () => 1);
+            }
+
+            void clear() {
+              _cache.clear();
+              _inFlight.clear();
+              _versions.clear();
+              _epoch += 1;
+            }
+
+            void _remember(String id, PlayVisualAsset? asset) {
+              _cache.remove(id);
+              _cache[id] = asset;
+              while (_cache.length > capacity) {
+                _cache.remove(_cache.keys.first);
+              }
+            }
+          }
+
+          '''
+              text = text.replace(marker, addition + marker, 1)
+          path.write_text(text)
+          PY
+
+          cat > packages/play_flutter/test/play_visual_cache_test.dart <<'DART'
+          import 'dart:async';
+          import 'dart:collection';
+          import 'dart:typed_data';
+
+          import 'package:flutter_test/flutter_test.dart';
+          import 'package:play_flutter/play_flutter.dart';
+
+          final class _ControllableResolver implements PlayVisualAssetResolver {
+            int calls = 0;
+            final List<String> ids = <String>[];
+            final Queue<Completer<PlayVisualAsset?>> requests =
+                Queue<Completer<PlayVisualAsset?>>();
+
+            @override
+            Future<PlayVisualAsset?> resolve(String assetId) {
+              calls += 1;
+              ids.add(assetId);
+              final request = Completer<PlayVisualAsset?>();
+              requests.add(request);
+              return request.future;
+            }
+          }
+
+          final class _CountingResolver implements PlayVisualAssetResolver {
+            _CountingResolver(this.assets);
+
+            final Map<String, PlayVisualAsset?> assets;
+            final Map<String, int> calls = <String, int>{};
+
+            @override
+            Future<PlayVisualAsset?> resolve(String assetId) async {
+              calls.update(assetId, (value) => value + 1, ifAbsent: () => 1);
+              return assets[assetId];
+            }
+          }
+
+          void main() {
+            test('capacity must be positive', () {
+              expect(
+                () => CachingPlayVisualAssetResolver(
+                  MapPlayVisualAssetResolver(const {}),
+                  capacity: 0,
+                ),
+                throwsRangeError,
+              );
+            });
+
+            test('coalesces concurrent requests for the same asset', () async {
+              final delegate = _ControllableResolver();
+              final resolver = CachingPlayVisualAssetResolver(delegate);
+
+              final first = resolver.resolve('visual_a');
+              final second = resolver.resolve('visual_a');
+
+              expect(identical(first, second), isTrue);
+              expect(delegate.calls, 1);
+              expect(resolver.inFlightCount, 1);
+
+              final asset = _asset('visual_a');
+              delegate.requests.removeFirst().complete(asset);
+              expect(await first, same(asset));
+              expect(await second, same(asset));
+              expect(resolver.inFlightCount, 0);
+              expect(resolver.cacheSize, 1);
+            });
+
+            test('uses least-recently-used eviction', () async {
+              final delegate = _CountingResolver({
+                'visual_a': _asset('visual_a'),
+                'visual_b': _asset('visual_b'),
+                'visual_c': _asset('visual_c'),
+              });
+              final resolver = CachingPlayVisualAssetResolver(
+                delegate,
+                capacity: 2,
+              );
+
+              await resolver.resolve('visual_a');
+              await resolver.resolve('visual_b');
+              await resolver.resolve('visual_a');
+              await resolver.resolve('visual_c');
+              await resolver.resolve('visual_b');
+
+              expect(delegate.calls['visual_a'], 1);
+              expect(delegate.calls['visual_b'], 2);
+              expect(delegate.calls['visual_c'], 1);
+              expect(resolver.cacheSize, 2);
+            });
+
+            test('caches missing assets but never caches failures', () async {
+              final missing = _CountingResolver({'missing': null});
+              final resolver = CachingPlayVisualAssetResolver(missing);
+
+              expect(await resolver.resolve('missing'), isNull);
+              expect(await resolver.resolve('missing'), isNull);
+              expect(missing.calls['missing'], 1);
+
+              var failures = 0;
+              final failing = CachingPlayVisualAssetResolver(
+                CallbackPlayVisualAssetResolver((_) {
+                  failures += 1;
+                  throw StateError('load failed');
+                }),
+              );
+              await expectLater(failing.resolve('broken'), throwsStateError);
+              await expectLater(failing.resolve('broken'), throwsStateError);
+              expect(failures, 2);
+            });
+
+            test('invalidation prevents stale completion from repopulating cache', () async {
+              final delegate = _ControllableResolver();
+              final resolver = CachingPlayVisualAssetResolver(delegate);
+
+              final stale = resolver.resolve('visual_a');
+              resolver.invalidate('visual_a');
+              final fresh = resolver.resolve('visual_a');
+              expect(delegate.calls, 2);
+
+              final staleAsset = _asset('visual_a', label: 'stale');
+              final freshAsset = _asset('visual_a', label: 'fresh');
+              delegate.requests.removeFirst().complete(staleAsset);
+              delegate.requests.removeFirst().complete(freshAsset);
+
+              expect(await stale, same(staleAsset));
+              expect(await fresh, same(freshAsset));
+              expect(await resolver.resolve('visual_a'), same(freshAsset));
+              expect(delegate.calls, 2);
+            });
+
+            test('clear detaches every in-flight request and cache entry', () async {
+              final delegate = _ControllableResolver();
+              final resolver = CachingPlayVisualAssetResolver(delegate);
+
+              final stale = resolver.resolve('visual_a');
+              resolver.clear();
+              final fresh = resolver.resolve('visual_a');
+              expect(delegate.calls, 2);
+
+              delegate.requests.removeFirst().complete(_asset('visual_a'));
+              final freshAsset = _asset('visual_a', label: 'fresh');
+              delegate.requests.removeFirst().complete(freshAsset);
+              await stale;
+              expect(await fresh, same(freshAsset));
+              expect(await resolver.resolve('visual_a'), same(freshAsset));
+            });
+
+            test('rejects a mismatched delegated asset and does not cache it', () async {
+              var calls = 0;
+              final resolver = CachingPlayVisualAssetResolver(
+                CallbackPlayVisualAssetResolver((_) {
+                  calls += 1;
+                  return _asset('wrong_id');
+                }),
+              );
+
+              await expectLater(resolver.resolve('expected'), throwsStateError);
+              await expectLater(resolver.resolve('expected'), throwsStateError);
+              expect(calls, 2);
+            });
+          }
+
+          PlayVisualAsset _asset(String id, {String? label}) => PlayVisualAsset(
+            id: id,
+            semanticLabel: label,
+            source: MemoryPlayVisualSource(Uint8List.fromList(<int>[1, 2, 3])),
+          );
+          DART
+
+          cat >> docs/progress/2026-08-27-m06-play-renderer-progress.md <<'DOC'
+
+          ## Bounded resolution cache
+
+          The second tranche adds an explicit-capacity LRU resolver. Concurrent requests for one asset share a single future; missing assets are negatively cached; failures are retried; and invalidate/clear detach in-flight requests so stale completions cannot repopulate current state.
+          DOC
+
+          dart format packages/play_flutter
+          git diff --check
+          git add packages/play_flutter docs/progress/2026-08-27-m06-play-renderer-progress.md
+          if ! git diff --cached --quiet; then
+            git commit -m 'perf(renderer): bound and coalesce visual asset resolution'
+          fi
+          target_sha=$(git rev-parse HEAD)
+
+          flutter pub get --enforce-lockfile
+          flutter analyze packages/play_flutter --fatal-infos
+          (cd packages/play_flutter && flutter test --reporter=expanded)
+          (cd apps/mosaic_app && flutter test --reporter=expanded)
+          git diff --exit-code
+
+          git push origin HEAD:"$TARGET_BRANCH"
+          branch_sha=$(gh api "repos/$REPOSITORY/git/ref/heads/$TARGET_BRANCH" --jq .object.sha)
+          [[ "$branch_sha" == "$target_sha" ]]
+          echo "sha=$target_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Refresh renderer PR and issue checkpoint
+        env:
+          TARGET_SHA: ${{ steps.implementation.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          pr=$(gh pr list --repo "$REPOSITORY" --state open --head "$TARGET_BRANCH" --base main --json number --jq '.[0].number // empty')
+          [[ -n "$pr" ]]
+          cat > /tmp/body.md <<'BODY'
+          Part of #3
+
+          Implements the first two real visual-renderer tranches:
+
+          - immutable HTTPS/memory/bundle visual sources, exact asset-ID validation, stale-safe asynchronous resolution, semantic image rendering and accessible reduced-motion loading/error states;
+          - an explicit-capacity LRU resolver with in-flight request coalescing, negative caching, retry-on-failure and invalidation-safe stale completion handling.
+
+          #3 remains open. Next: bind schema layers to resolved assets and add decode/prefetch budgeting before video/controller ownership integration.
+          BODY
+          gh pr edit "$pr" --repo "$REPOSITORY" --title 'feat(renderer): add visual asset resolution foundation' --body-file /tmp/body.md
+          gh issue comment 3 --repo "$REPOSITORY" --body "Renderer cache tranche added to #$pr at tested head \`$TARGET_SHA\`: bounded LRU, duplicate-load coalescing, negative caching and stale-safe invalidation."
+
+      - name: Remove successful bootstrap branch
+        if: success()
+        run: gh api -X DELETE "repos/$REPOSITORY/git/refs/heads/$BOOTSTRAP_BRANCH" >/dev/null
