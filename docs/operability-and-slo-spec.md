@@ -130,6 +130,14 @@ Every risky rollout should have a named rollback flag before release.
 
 GrowthBook Flutter is a preferred candidate for feature flags/experimentation, subject to license/deployment review and isolated behind Mosaic's flag interface.
 
+### Failure defaults
+
+- config service unavailable → last-known-good config, then compiled safe defaults;
+- ranking unavailable → bounded curated fallback feed;
+- analytics unavailable → interaction continues with bounded local spool;
+- attribution provider unavailable → canonical Play URL still resolves;
+- moderation confidence unavailable → new/questionable UGC does not gain broad distribution.
+
 ## 8. Release strategy
 
 Use staged rollout:
@@ -146,8 +154,9 @@ For changes to runtime schema/primitives:
 
 - compatibility fixture tests pass;
 - old supported Play revisions still render;
+- client/server capability negotiation is tested;
 - new primitive can be remotely disabled;
-- server does not send unsupported schema versions to old clients.
+- server does not send unsupported schema/required primitives to old clients.
 
 ## 9. Incident classes
 
@@ -188,15 +197,35 @@ A ranking regression must be debuggable without reconstructing state from dashbo
 Analytics/recommendation events are asynchronous but must have:
 
 - versioned envelope;
+- globally/idempotently unique client event ID;
+- actor/session IDs;
+- client observed timestamp;
+- server receive timestamp;
 - local buffering where practical;
-- idempotency/deduplication identifiers;
 - bounded retry;
-- server ingestion validation;
+- server ingestion validation/deduplication;
 - dead-letter/error visibility.
 
-Loss of analytics must not block Play interaction, but prolonged event loss should page/alert because ranking quality depends on it.
+Do not use client wall-clock time for security/integrity ordering. Local spool is bounded by count/bytes/age and discards low-value telemetry before product-critical pending actions.
 
-## 12. Data protection
+Loss of analytics must not block Play interaction, but prolonged event loss should alert because ranking quality depends on it.
+
+## 12. Process-death recovery
+
+Treat ungraceful mobile process death as normal.
+
+Recover only durable product state:
+
+- anonymous actor identity;
+- onboarding/interests/learning intent;
+- bounded feed cursor/window metadata;
+- creator drafts and local asset/upload session references;
+- bounded unsent event spool;
+- pending optimistic mutations that can be replayed idempotently.
+
+Do not persist widget trees or native media-controller state.
+
+## 13. Data protection
 
 - secrets never appear in logs;
 - redact tokens and sensitive request fields;
@@ -204,7 +233,21 @@ Loss of analytics must not block Play interaction, but prolonged event loss shou
 - production debugging should use actor/session IDs, not raw personal data where avoidable;
 - retention is explicit by log/event class.
 
-## 13. Backups and recovery
+## 14. Store/privacy release engineering
+
+Every release train must verify:
+
+- iOS `PrivacyInfo.xcprivacy` is present/valid where required;
+- required-reason API declarations match the built app and third-party SDKs;
+- third-party SDK privacy/signature requirements are reviewed;
+- App Store privacy labels match actual data collection/use;
+- Google Play Data Safety declarations match actual collection/use;
+- privacy policy, retention/deletion, and account deletion routes are current;
+- permission-purpose strings match actual contextual permission flows.
+
+Adding/upgrading a native SDK is a privacy/release review event, not only a dependency change.
+
+## 15. Backups and recovery
 
 System-of-record PostgreSQL requires:
 
@@ -217,17 +260,18 @@ Object storage requires versioning/retention appropriate to accidental deletion 
 
 Published Play revisions and lineage must be recoverable independently of caches.
 
-## 14. Dependency hygiene
+## 16. Dependency hygiene
 
 - lockfiles committed;
 - dependency updates reviewed continuously;
 - automated vulnerability scanning;
 - SBOM generated for releases where practical;
 - licenses checked before adoption;
+- privacy/permission impact checked for native SDK changes;
 - critical runtime dependencies pinned through normal semver/lockfile policy, not GitHub branches;
 - Flutter SDK/native plugin upgrades tested on representative devices.
 
-## 15. Capacity controls
+## 17. Capacity and memory controls
 
 Protect services with:
 
@@ -238,9 +282,25 @@ Protect services with:
 - bounded candidate-set sizes;
 - bounded Play graph/resource limits.
 
+Client budgets are separately bounded for Play schemas, images, video/audio buffers, custom-render resources, creator local media, and event spool. On memory pressure, release speculative/prefetched resources before current Play state.
+
 Degrade optional work before core Play/feed availability.
 
-## 16. Launch dashboard
+## 18. Physical-device release matrix
+
+Before controlled beta smoke-test at minimum:
+
+- current iPhone;
+- older supported iPhone;
+- flagship Android;
+- lower/mid-range Android;
+- at least one 120 Hz device;
+- Bluetooth audio route;
+- Safari/Chrome mobile web.
+
+Cover feed jank/memory growth, media first frame, lifecycle suspend/resume, audio timing, process recovery, permission flows, and shared Play behavior.
+
+## 19. Launch dashboard
 
 One launch dashboard should show at minimum:
 
@@ -256,16 +316,22 @@ One launch dashboard should show at minimum:
 - reports/moderation queue;
 - current experiment/flag versions.
 
-## 17. Launch gate
+## 20. Launch gate
 
 Controlled beta requires:
 
+- strict locked Flutter CI green;
 - crash/error reporting;
 - frame/runtime/media telemetry;
 - core traces/metrics;
-- remote kill switches;
+- bounded offline event spool + idempotent ingestion;
+- process-death recovery for anonymous state/creator drafts;
+- schema/client capability negotiation;
+- remote kill switches and safe fallback behavior;
 - staged rollout;
 - backup/restore procedure;
 - incident ownership;
-- dependency/security scanning;
+- dependency/security/privacy scanning;
+- App Store/Play Store privacy/compliance checklist;
+- physical-device smoke matrix;
 - dashboards for feed, runtime, media, creator, and sharing paths.
