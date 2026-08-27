@@ -8,7 +8,7 @@ Mosaic media must be fast to create, resilient on poor networks, safe to publish
 
 ## 2. Creator acquisition sources
 
-Supported acquisition paths should converge on one asset pipeline:
+Supported acquisition paths converge on one asset pipeline:
 
 - camera video;
 - camera photo;
@@ -81,9 +81,7 @@ Requirements:
 - retry without duplicate assets;
 - user can continue editing metadata while upload runs.
 
-Recommended web tooling: Uppy + tus.
-
-Native implementation may use tus directly or an equivalent resumable transport behind a shared upload contract.
+Use a tus-class resumable protocol behind Mosaic's `UploadSession` contract. The specific Dart client remains replaceable and must be re-evaluated at implementation time for maintenance and platform coverage.
 
 ## 5. Source file handling
 
@@ -102,7 +100,7 @@ Originals are quarantined from public delivery until verification completes.
 
 ## 6. Canonical derivatives
 
-Runtime should consume a bounded media profile set rather than arbitrary creator files.
+Runtime consumes a bounded media profile set rather than arbitrary creator files.
 
 ### Images
 
@@ -138,9 +136,9 @@ Do not retain derivatives that serve no product use.
 
 ## 7. Media budgets
 
-Creator UI enforces product-level limits before upload when possible.
+Creator UI enforces product-level limits before upload where possible.
 
-Examples of configurable limits:
+Configurable limits include:
 
 - clip duration by template;
 - source upload maximum;
@@ -164,24 +162,43 @@ Include:
 - poster/placeholder;
 - whether the Play can begin without the heavy asset.
 
-The feed should prefetch a bounded next-window, not all upcoming video/audio.
+The feed prefetches a bounded next-window, not all upcoming video/audio.
 
-## 9. Creator capture
+## 9. Flutter creator capture
 
-Native capture should support the shortest useful loop:
+Start with Flutter's first-party `camera` plugin and platform media pickers for normal capture/import.
+
+Native creator capture should support the shortest useful loop:
 
 - open camera/mic quickly;
 - capture;
 - trim where needed;
 - retake;
 - use immediately in Quick Create/Remix;
-- background/resumable upload.
+- resumable/background-capable upload where platform constraints allow it.
 
-Do not ship a general-purpose video editor before templates demonstrate the need.
+Do not ship a general-purpose video editor before templates prove the need.
 
-VisionCamera is the preferred candidate for advanced native camera capture when Expo camera primitives are insufficient.
+A more specialized camera/native pipeline is introduced only when measured creator requirements exceed the first-party Flutter path.
 
-## 10. Rights metadata
+## 10. Capture state
+
+The local draft references a durable local asset record before upload starts.
+
+At minimum persist:
+
+- local asset ID;
+- local URI/path handle as allowed by platform;
+- media kind;
+- capture/import time;
+- upload session ID;
+- upload state/progress;
+- intended Play/draft reference;
+- rights declaration state.
+
+A completed local capture must never disappear merely because the network failed.
+
+## 11. Rights metadata
 
 Every creator-provided asset records:
 
@@ -196,7 +213,7 @@ Every creator-provided asset records:
 
 Asset rights are separate from template/Play-structure remix rights.
 
-## 11. Remix behavior
+## 12. Remix behavior
 
 When remixing:
 
@@ -205,17 +222,17 @@ When remixing:
 - reusable Mosaic media retains original attribution/rights lineage;
 - a creator cannot change inherited rights declarations for an upstream asset.
 
-## 12. Processing architecture
+## 13. Processing architecture
 
 Media processing is asynchronous and idempotent.
 
 Use explicit job states and deterministic derivative keys so retries do not create uncontrolled duplicates.
 
-A processor should be replaceable; Play/runtime code depends only on managed asset records and delivery URLs.
+A processor is replaceable; Play/runtime code depends only on managed asset records and delivery URLs.
 
 FFmpeg-class processing may be used server-side for normalization/transcoding.
 
-## 13. CDN and delivery
+## 14. CDN and delivery
 
 - assets are served through managed CDN URLs;
 - publication does not expose raw object-store paths;
@@ -224,7 +241,7 @@ FFmpeg-class processing may be used server-side for normalization/transcoding.
 - signed URLs are used for private/draft assets;
 - public published assets use safe immutable URLs where possible.
 
-## 14. Poor-network behavior
+## 15. Poor-network behavior
 
 Creator:
 
@@ -240,7 +257,21 @@ Consumer:
 - allow immediate swipe when media cannot load;
 - retain already-fetched Plays for continued use.
 
-## 15. Moderation hooks
+## 16. Flutter runtime lifecycle
+
+Media adapters must release inactive resources aggressively.
+
+Rules:
+
+- only bounded nearby video/audio controllers stay warm;
+- current Play owns active playback;
+- leaving viewport pauses/stops according to Play policy;
+- disposing a Play releases decoders, audio handles, timers, and custom painters/resources;
+- app lifecycle interruptions preserve semantic Play state without assuming media controller continuity.
+
+The feed must not accumulate native media resources as the user swipes.
+
+## 17. Moderation hooks
 
 Before an asset becomes recommendation-eligible:
 
@@ -252,7 +283,7 @@ Before an asset becomes recommendation-eligible:
 
 Mosaic never offers adult, erotic, or sexually explicit content.
 
-## 16. Observability
+## 18. Observability
 
 Measure:
 
@@ -264,8 +295,9 @@ Measure:
 - moderation latency;
 - first-frame/startup latency by derivative/network;
 - asset error rate in feed;
+- active media controller/resource counts during long swipe sessions;
 - abandoned creation attributable to media failure.
 
-## 17. Success test
+## 19. Success test
 
 A creator on an unreliable mobile connection can capture a useful clip, build a Play around it, leave/reopen the app, resume upload, preview the final normalized asset, and publish without redoing work.
