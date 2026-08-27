@@ -91,6 +91,7 @@ Formats:
 
 - [`docs/trust-rights-and-moderation-spec.md`](docs/trust-rights-and-moderation-spec.md) — remix rights, factual trust, moderation, takedown, appeals, and abuse resistance.
 - [`docs/operability-and-slo-spec.md`](docs/operability-and-slo-spec.md) — observability, SLOs, flags, rollback, incidents, and launch operations.
+- [`docs/platform-runtime-and-release-gotchas.md`](docs/platform-runtime-and-release-gotchas.md) — Flutter/web/media lifecycle, permissions, store compliance, offline recovery, and release-device gates.
 - [`docs/dependency-and-platform-decisions.md`](docs/dependency-and-platform-decisions.md) — Flutter stack, approved dependencies, abstraction boundaries, and dependency policy.
 - [`docs/implementation-plan.md`](docs/implementation-plan.md) — staged implementation and validation gates.
 
