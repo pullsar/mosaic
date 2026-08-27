@@ -1,0 +1,140 @@
+import 'dart:io';
+
+import 'package:analytics_contract/analytics_contract.dart';
+import 'package:local_state/local_state.dart';
+import 'package:test/test.dart';
+
+MosaicEventEnvelope _event(String id) => MosaicEventEnvelope(
+  eventId: id,
+  event: MosaicEventName.playStarted,
+  occurredAt: DateTime.utc(2026, 8, 27, 20),
+  actorId: 'actor_test',
+  sessionId: 'session_test',
+  playRevisionId: 'rev_test',
+);
+
+void main() {
+  test('durable semantic state survives close and reopen', () {
+    final temp = Directory.systemTemp.createTempSync('mosaic-local-');
+    final path = '${temp.path}/mosaic.db';
+    try {
+      var store = MosaicLocalStore.open(
+        path,
+        actorIdFactory: () => 'actor_fixed',
+      );
+      expect(store.getOrCreateActorId(), 'actor_fixed');
+      store.replaceInterests(InterestKind.interest, ['travel', 'food']);
+      store.replaceInterests(InterestKind.learning, ['piano']);
+      store.saveFeedResume(
+        cursor: 'cursor_2',
+        windowRevisionIds: ['rev_a', 'rev_b'],
+        updatedAt: DateTime.utc(2026, 8, 27, 20),
+      );
+      store.saveDraft(
+        CreatorDraft(
+          id: 'draft_1',
+          document: const {'format': 'guess'},
+          updatedAt: DateTime.utc(2026, 8, 27, 20),
+        ),
+      );
+      store.saveLocalAsset(
+        LocalAssetRecord(
+          id: 'asset_1',
+          path: '/tmp/photo.jpg',
+          kind: 'image',
+          uploadSessionId: 'upload_1',
+          uploadState: 'paused',
+          updatedAt: DateTime.utc(2026, 8, 27, 20),
+        ),
+      );
+      store.enqueueEvent(_event('evt_1'));
+      store.close();
+
+      store = MosaicLocalStore.open(path);
+      expect(store.getOrCreateActorId(), 'actor_fixed');
+      expect(store.interests(InterestKind.interest), {'food', 'travel'});
+      expect(store.interests(InterestKind.learning), {'piano'});
+      expect(store.loadFeedResume()?.cursor, 'cursor_2');
+      expect(store.loadFeedResume()?.windowRevisionIds, ['rev_a', 'rev_b']);
+      expect(store.loadDraft('draft_1')?.document['format'], 'guess');
+      expect(store.loadLocalAsset('asset_1')?.uploadSessionId, 'upload_1');
+      expect(store.dueEvents().single.eventId, 'evt_1');
+      store.close();
+    } finally {
+      temp.deleteSync(recursive: true);
+    }
+  });
+
+  test('duplicate event identity produces one outbox item', () {
+    final store = MosaicLocalStore.openInMemory();
+    store.enqueueEvent(_event('evt_1'));
+    store.enqueueEvent(_event('evt_1'));
+    expect(store.outboxCount, 1);
+    store.close();
+  });
+
+  test('failed delivery backs off and acknowledgement removes event', () {
+    final store = MosaicLocalStore.openInMemory();
+    final now = DateTime.utc(2026, 8, 27, 20);
+    store.enqueueEvent(_event('evt_retry'), createdAt: now);
+
+    store.markEventFailed('evt_retry', now: now);
+    expect(store.dueEvents(now: now), isEmpty);
+    final pending = store.dueEvents(now: now.add(const Duration(seconds: 2))).single;
+    expect(pending.attemptCount, 1);
+    expect(pending.nextAttemptAt, now.add(const Duration(seconds: 2)));
+
+    store.markEventSent('evt_retry');
+    expect(store.outboxCount, 0);
+    store.close();
+  });
+
+  test('spool pressure drops low-value events before critical events', () {
+    final store = MosaicLocalStore.openInMemory(
+      policy: const OutboxPolicy(maxCount: 2, maxBytes: 100000),
+    );
+    store.enqueueEvent(_event('critical'), priority: OutboxPriority.critical);
+    store.enqueueEvent(_event('analytics_old'));
+    store.enqueueEvent(_event('analytics_new'));
+
+    final ids = store.dueEvents(limit: 10).map((event) => event.eventId).toSet();
+    expect(ids, contains('critical'));
+    expect(ids, contains('analytics_new'));
+    expect(ids, isNot(contains('analytics_old')));
+    store.close();
+  });
+
+  test('critical pending mutation is never evicted solely to meet spool cap', () {
+    final store = MosaicLocalStore.openInMemory(
+      policy: const OutboxPolicy(maxCount: 1, maxBytes: 100000),
+    );
+    store.enqueueEvent(_event('critical_a'), priority: OutboxPriority.critical);
+    store.enqueueEvent(_event('critical_b'), priority: OutboxPriority.critical);
+
+    expect(store.outboxCount, 2);
+    store.close();
+  });
+
+  test('corrupt local database is quarantined and replaced safely', () {
+    final temp = Directory.systemTemp.createTempSync('mosaic-corrupt-');
+    final path = '${temp.path}/mosaic.db';
+    try {
+      File(path).writeAsStringSync('not a sqlite database');
+      final store = MosaicLocalStore.open(
+        path,
+        actorIdFactory: () => 'actor_after_recovery',
+      );
+      expect(store.userVersion, MosaicLocalStore.schemaVersion);
+      expect(store.getOrCreateActorId(), 'actor_after_recovery');
+      store.close();
+
+      final quarantined = temp
+          .listSync()
+          .whereType<File>()
+          .where((file) => file.path.contains('.corrupt.'));
+      expect(quarantined, isNotEmpty);
+    } finally {
+      temp.deleteSync(recursive: true);
+    }
+  });
+}
