@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "compat_v1_baseline_guess",
+  "revisionId": "rev_baseline",
+  "format": "guess",
+  "classification": "challenge",
+  "topics": ["compatibility"],
+  "learningTopics": [],
+  "estimatedDurationSec": 10,
+  "assets": [],
+  "sources": [],
+  "entryState": "guess",
+  "states": {
+    "guess": {
+      "presentation": {
+        "layers": [
+          {"type": "text", "role": "prompt", "value": "Pick one."}
+        ]
+      },
+      "input": {
+        "type": "single_choice",
+        "options": [
+          {"id": "a", "label": "A"},
+          {"id": "b", "label": "B"}
+        ]
+      },
+      "validation": {"type": "equals", "value": "a"},
+      "transition": {"correct": "$end", "incorrect": "$end"}
+    }
+  },
+  "compatFixtureNote": "Pinned v1 fixture. Keep rendering/decoding while v1 remains supported."
+}
