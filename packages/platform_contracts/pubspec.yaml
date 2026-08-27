@@ -1,0 +1,7 @@
+name: platform_contracts
+description: Replaceable platform/provider boundaries for Mosaic.
+version: 0.1.0
+publish_to: none
+resolution: workspace
+environment:
+  sdk: '>=3.12.0 <4.0.0'

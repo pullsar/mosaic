@@ -1,0 +1,11 @@
+name: mosaic_workspace
+publish_to: none
+environment:
+  sdk: '>=3.12.0 <4.0.0'
+workspace:
+  - apps/mosaic_app
+  - packages/play_schema
+  - packages/play_engine
+  - packages/play_flutter
+  - packages/analytics_contract
+  - packages/platform_contracts

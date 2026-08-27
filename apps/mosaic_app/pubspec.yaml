@@ -1,0 +1,21 @@
+name: mosaic_app
+description: Mosaic consumer and creator Flutter application.
+version: 0.1.0+1
+publish_to: none
+resolution: workspace
+environment:
+  sdk: '>=3.12.0 <4.0.0'
+  flutter: '>=3.44.0'
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^3.4.2
+  go_router: ^18.0.0
+  play_flutter: ^0.1.0
+  play_schema: ^0.1.0
+  sentry_flutter: ^9.28.0
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+flutter:
+  uses-material-design: true

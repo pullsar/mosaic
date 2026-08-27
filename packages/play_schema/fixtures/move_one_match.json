@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "play_move_one_match",
+  "revisionId": "rev_1",
+  "format": "solve",
+  "classification": "challenge",
+  "topics": ["puzzles", "logic"],
+  "learningTopics": [],
+  "estimatedDurationSec": 35,
+  "assets": ["puzzle_match_01"],
+  "sources": [],
+  "entryState": "solve",
+  "states": {
+    "solve": {
+      "presentation": {"layers": [
+        {"type": "canvas", "role": "media", "assetId": "puzzle_match_01"},
+        {"type": "text", "role": "prompt", "value": "Move one match."}
+      ]},
+      "input": {"type": "drag"},
+      "validation": {"type": "target_region", "value": "solution_a"},
+      "transition": {"correct": "reveal", "incorrect": "solve"}
+    },
+    "reveal": {
+      "presentation": {"layers": [{"type": "text", "role": "reveal_title", "value": "Solved"}]},
+      "input": {"type": "tap", "label": "Done"},
+      "validation": {"type": "none"},
+      "transition": {"default": "$end"}
+    }
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "id": "play_where_is_this_dubrovnik",
+  "revisionId": "rev_1",
+  "format": "guess",
+  "classification": "fact",
+  "topics": ["travel", "croatia", "beautiful-places"],
+  "learningTopics": ["geography"],
+  "estimatedDurationSec": 18,
+  "assets": ["clip_dubrovnik"],
+  "sources": [{"url": "https://whc.unesco.org/en/list/95/", "title": "Old City of Dubrovnik", "provider": "UNESCO"}],
+  "entryState": "guess",
+  "states": {
+    "guess": {
+      "presentation": {"layers": [
+        {"type": "video_clip", "role": "media", "assetId": "clip_dubrovnik"},
+        {"type": "text", "role": "prompt", "value": "Where is this?"}
+      ]},
+      "input": {"type": "single_choice", "options": [
+        {"id": "amalfi", "label": "Amalfi"},
+        {"id": "dubrovnik", "label": "Dubrovnik"},
+        {"id": "santorini", "label": "Santorini"},
+        {"id": "valletta", "label": "Valletta"}
+      ]},
+      "validation": {"type": "equals", "value": "dubrovnik"},
+      "transition": {"correct": "reveal", "incorrect": "reveal"}
+    },
+    "reveal": {
+      "presentation": {"layers": [
+        {"type": "text", "role": "reveal_title", "value": "Dubrovnik"},
+        {"type": "text", "role": "reveal_detail", "value": "Medieval walls wrap the old city."}
+      ]},
+      "input": {"type": "tap", "label": "Done"},
+      "validation": {"type": "none"},
+      "transition": {"default": "$end"}
+    }
+  }
+}
