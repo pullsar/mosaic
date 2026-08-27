@@ -1,0 +1,76 @@
+name: api-ci
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'apps/api/**'
+      - 'packages/analytics_contract/**'
+      - 'contracts/**'
+      - '.github/workflows/api-ci.yml'
+  pull_request:
+    paths:
+      - 'apps/api/**'
+      - 'packages/analytics_contract/**'
+      - 'contracts/**'
+      - '.github/workflows/api-ci.yml'
+
+concurrency:
+  group: api-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: mosaic
+          POSTGRES_USER: mosaic
+          POSTGRES_PASSWORD: mosaic
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mosaic -d mosaic"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://mosaic:mosaic@localhost:5432/mosaic
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: apps/api/package-lock.json
+      - name: Generate lockfile once
+        working-directory: apps/api
+        run: |
+          if [ ! -f package-lock.json ]; then
+            npm install --package-lock-only --ignore-scripts
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add package-lock.json
+            git commit -m 'chore(api): lock Node dependencies'
+            git push
+          fi
+      - name: Install
+        working-directory: apps/api
+        run: npm ci --ignore-scripts
+      - name: Typecheck
+        working-directory: apps/api
+        run: npm run typecheck
+      - name: Unit and integration tests
+        working-directory: apps/api
+        run: npm test
+      - name: Build
+        working-directory: apps/api
+        run: npm run build
