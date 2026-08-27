@@ -1,0 +1,105 @@
+name: release-platform-lifecycle-v2-once
+
+on:
+  push:
+    branches: ['agent/m05-platform-lifecycle-20260827']
+    paths:
+      - '.github/workflows/release-platform-lifecycle-v2-once.yml'
+
+permissions:
+  actions: read
+  contents: write
+  issues: read
+  pull-requests: write
+
+jobs:
+  merge-after-exact-head-gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: pullsar/mosaic
+      BRANCH: agent/m05-platform-lifecycle-20260827
+      MARKER: apps/mosaic_app/.platform-release-gate-v2
+      WORKFLOW: .github/workflows/release-platform-lifecycle-v2-once.yml
+    steps:
+      - name: Stop cleanly when already merged
+        id: state
+        run: |
+          state=$(gh issue view 13 --repo "$REPOSITORY" --json state --jq .state)
+          echo "issue=$state" >> "$GITHUB_OUTPUT"
+      - name: Wait for connector-authored exact-head marker
+        if: steps.state.outputs.issue != 'CLOSED'
+        id: target
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 60); do
+            target=$(gh api "repos/$REPOSITORY/git/ref/heads/$BRANCH" --jq .object.sha)
+            if gh api "repos/$REPOSITORY/contents/$MARKER?ref=$BRANCH" >/dev/null 2>&1; then
+              echo "sha=$target" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep 5
+          done
+          exit 1
+      - name: Wait for repository and native build gates
+        if: steps.state.outputs.issue != 'CLOSED'
+        env:
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 90); do
+            current=$(gh api "repos/$REPOSITORY/git/ref/heads/$BRANCH" --jq .object.sha)
+            [[ "$current" == "$TARGET_SHA" ]]
+            runs=$(gh api -X GET "repos/$REPOSITORY/actions/runs" -f head_sha="$TARGET_SHA" -f per_page=100)
+            platform=$(jq -r '[.workflow_runs[] | select(.name == "platform-ci")] | sort_by(.created_at) | last | if . == null then "missing:" else "\(.status):\(.conclusion // "")" end' <<<"$runs")
+            repository=$(jq -r '[.workflow_runs[] | select(.name == "ci")] | sort_by(.created_at) | last | if . == null then "missing:" else "\(.status):\(.conclusion // "")" end' <<<"$runs")
+            echo "platform-ci=$platform ci=$repository"
+            for gate in "$platform" "$repository"; do
+              status=${gate%%:*}
+              conclusion=${gate#*:}
+              if [[ "$status" == completed && "$conclusion" != success ]]; then
+                exit 1
+              fi
+            done
+            [[ "$platform" == completed:success && "$repository" == completed:success ]] && exit 0
+            sleep 20
+          done
+          exit 1
+      - name: Clean temporary files and merge
+        env:
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          set -euo pipefail
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}.git" repository
+          cd repository
+          git checkout "$BRANCH"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          state=$(gh issue view 13 --repo "$REPOSITORY" --json state --jq .state)
+          if [[ "$state" == CLOSED ]]; then
+            rm -f "$MARKER"
+            git rm "$WORKFLOW"
+            git add -u
+            git commit -m 'chore(platform): remove redundant release gate'
+            git push origin "$BRANCH"
+            exit 0
+          fi
+          git fetch origin main
+          [[ "$(git rev-parse HEAD)" == "$TARGET_SHA" ]]
+          git merge-base --is-ancestor origin/main HEAD
+          git rm "$WORKFLOW" "$MARKER"
+          git commit -m 'chore(platform): remove temporary release gate'
+          git push origin "$BRANCH"
+          pr=$(gh pr list --repo "$REPOSITORY" --state open --head "$BRANCH" --base main --json number --jq '.[0].number // empty')
+          if [[ -z "$pr" ]]; then
+            url=$(gh pr create --repo "$REPOSITORY" --head "$BRANCH" --base main --title 'feat(platform): complete lifecycle and native host foundation' --body $'Closes #13\n\nCompletes generated Android/iOS/web hosts, serialized single-active media ownership, ordered lifecycle recovery, contextual scoped permissions, Android lost-media recovery, minimized manifests, localized iOS purpose strings and privacy manifest linkage, reserved account-support routes, and exact native build validation.\n\nThe code-bearing parent passed repository CI and Android/web/iOS platform CI; the final child removes only this temporary gate.' )
+            pr=${url##*/}
+          fi
+          for _ in $(seq 1 24); do
+            mergeable=$(gh pr view "$pr" --repo "$REPOSITORY" --json mergeable --jq .mergeable)
+            [[ "$mergeable" != UNKNOWN ]] && break
+            sleep 5
+          done
+          [[ "$mergeable" == MERGEABLE ]]
+          gh pr merge "$pr" --repo "$REPOSITORY" --merge --delete-branch=false
