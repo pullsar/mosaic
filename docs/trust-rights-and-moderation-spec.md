@@ -219,6 +219,7 @@ Internal tooling must support:
 - suspend distribution immediately;
 - remove/tombstone asset;
 - mute creator distribution;
+- block/restrict creator account;
 - reverse mistaken actions;
 - audit who changed what and why.
 
@@ -246,11 +247,57 @@ Moderation and abuse systems may use operational signals needed for integrity, b
 - restrict sensitive abuse signals to internal systems;
 - retain audit/legal data only as justified.
 
-## 18. Launch gate
+## 18. UGC creator gate
+
+Before a user can publish or upload community-visible content:
+
+- creator accepts current Terms / creator rules;
+- prohibited content and rights responsibilities are clearly stated;
+- acceptance version/time is recorded;
+- account is eligible to publish;
+- privacy policy, support, and deletion routes are accessible in-app.
+
+If Terms materially change, require re-acceptance before new publication rather than silently treating prior acceptance as current.
+
+## 19. Mute vs block
+
+Keep recommendation preference and safety boundary distinct.
+
+### Mute creator
+
+- removes/reduces creator content from recommendation;
+- does not imply a safety action;
+- may be reversed quietly by the user.
+
+### Block creator/user
+
+- prevents future direct/social interaction where applicable;
+- suppresses that account's content from the blocking user's surfaces;
+- is available from report/profile safety paths;
+- must work even if recommendation systems are degraded.
+
+This distinction is required before public UGC/social sharing expands.
+
+## 20. Store/release trust checklist
+
+Before store submission or public UGC release verify:
+
+- report content and account flows are functional;
+- block account/user is functional;
+- creator Terms acceptance is enforced;
+- privacy policy link is accessible in-app;
+- account/data deletion path works;
+- moderation support/contact path exists;
+- App Store privacy manifest and privacy labels reflect actual SDK/data behavior;
+- Google Play Data Safety declarations match actual collection/use.
+
+## 21. Launch gate
 
 Controlled launch requires:
 
 - report flow;
+- block + mute distinction;
+- creator Terms acceptance;
 - distribution suspension;
 - asset/Play takedown;
 - rights declarations;
@@ -258,4 +305,5 @@ Controlled launch requires:
 - creator audit trail;
 - adult-content rejection path;
 - appeal intake;
+- privacy/support/deletion routes;
 - emergency kill switches.
