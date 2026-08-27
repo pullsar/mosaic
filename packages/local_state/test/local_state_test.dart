@@ -80,7 +80,9 @@ void main() {
 
     store.markEventFailed('evt_retry', now: now);
     expect(store.dueEvents(now: now), isEmpty);
-    final pending = store.dueEvents(now: now.add(const Duration(seconds: 2))).single;
+    final pending = store
+        .dueEvents(now: now.add(const Duration(seconds: 2)))
+        .single;
     expect(pending.attemptCount, 1);
     expect(pending.nextAttemptAt, now.add(const Duration(seconds: 2)));
 
@@ -97,23 +99,35 @@ void main() {
     store.enqueueEvent(_event('analytics_old'));
     store.enqueueEvent(_event('analytics_new'));
 
-    final ids = store.dueEvents(limit: 10).map((event) => event.eventId).toSet();
+    final ids = store
+        .dueEvents(limit: 10)
+        .map((event) => event.eventId)
+        .toSet();
     expect(ids, contains('critical'));
     expect(ids, contains('analytics_new'));
     expect(ids, isNot(contains('analytics_old')));
     store.close();
   });
 
-  test('critical pending mutation is never evicted solely to meet spool cap', () {
-    final store = MosaicLocalStore.openInMemory(
-      policy: const OutboxPolicy(maxCount: 1, maxBytes: 100000),
-    );
-    store.enqueueEvent(_event('critical_a'), priority: OutboxPriority.critical);
-    store.enqueueEvent(_event('critical_b'), priority: OutboxPriority.critical);
+  test(
+    'critical pending mutation is never evicted solely to meet spool cap',
+    () {
+      final store = MosaicLocalStore.openInMemory(
+        policy: const OutboxPolicy(maxCount: 1, maxBytes: 100000),
+      );
+      store.enqueueEvent(
+        _event('critical_a'),
+        priority: OutboxPriority.critical,
+      );
+      store.enqueueEvent(
+        _event('critical_b'),
+        priority: OutboxPriority.critical,
+      );
 
-    expect(store.outboxCount, 2);
-    store.close();
-  });
+      expect(store.outboxCount, 2);
+      store.close();
+    },
+  );
 
   test('corrupt local database is quarantined and replaced safely', () {
     final temp = Directory.systemTemp.createTempSync('mosaic-corrupt-');
@@ -128,10 +142,9 @@ void main() {
       expect(store.getOrCreateActorId(), 'actor_after_recovery');
       store.close();
 
-      final quarantined = temp
-          .listSync()
-          .whereType<File>()
-          .where((file) => file.path.contains('.corrupt.'));
+      final quarantined = temp.listSync().whereType<File>().where(
+        (file) => file.path.contains('.corrupt.'),
+      );
       expect(quarantined, isNotEmpty);
     } finally {
       temp.deleteSync(recursive: true);

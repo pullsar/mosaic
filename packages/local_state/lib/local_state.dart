@@ -230,7 +230,11 @@ final class MosaicLocalStore {
         document_json = excluded.document_json,
         updated_at = excluded.updated_at
       ''',
-      [draft.id, jsonEncode(draft.document), draft.updatedAt.toUtc().toIso8601String()],
+      [
+        draft.id,
+        jsonEncode(draft.document),
+        draft.updatedAt.toUtc().toIso8601String(),
+      ],
     );
   }
 
@@ -321,10 +325,7 @@ final class MosaicLocalStore {
     pruneOutbox(now: createdAt ?? DateTime.now().toUtc());
   }
 
-  List<PendingEvent> dueEvents({
-    DateTime? now,
-    int limit = 50,
-  }) {
+  List<PendingEvent> dueEvents({DateTime? now, int limit = 50}) {
     final instant = (now ?? DateTime.now().toUtc()).toIso8601String();
     return _db
         .select(
@@ -368,10 +369,16 @@ final class MosaicLocalStore {
   }
 
   int get outboxCount =>
-      (_db.select('select count(*) as count from event_outbox').first['count'] as int);
+      (_db.select('select count(*) as count from event_outbox').first['count']
+          as int);
 
   int get outboxBytes =>
-      (_db.select('select coalesce(sum(byte_size), 0) as bytes from event_outbox').first['bytes'] as int);
+      (_db
+              .select(
+                'select coalesce(sum(byte_size), 0) as bytes from event_outbox',
+              )
+              .first['bytes']
+          as int);
 
   void pruneOutbox({DateTime? now}) {
     final current = now ?? DateTime.now().toUtc();
@@ -532,7 +539,9 @@ String _randomUuidV4() {
   final bytes = List<int>.generate(16, (_) => random.nextInt(256));
   bytes[6] = (bytes[6] & 0x0f) | 0x40;
   bytes[8] = (bytes[8] & 0x3f) | 0x80;
-  final hex = bytes.map((value) => value.toRadixString(16).padLeft(2, '0')).join();
+  final hex = bytes
+      .map((value) => value.toRadixString(16).padLeft(2, '0'))
+      .join();
   return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
       '${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
 }
