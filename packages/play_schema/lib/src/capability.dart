@@ -29,29 +29,45 @@ final class PlayCapabilityEnvelope {
   final Set<String> validatorTypes;
   final Set<String> platformFlags;
 
-  factory PlayCapabilityEnvelope.launch() => const PlayCapabilityEnvelope(
+  /// Capabilities implemented by the M0 client/runtime today.
+  factory PlayCapabilityEnvelope.m0() => const PlayCapabilityEnvelope(
         schemaVersions: {1},
-        presentationTypes: {
-          'text',
-          'image',
-          'video_clip',
-          'audio',
-          'puzzle',
-          'piano',
-        },
-        inputTypes: {
-          'tap',
-          'single_choice',
-          'multiple_choice',
-          'drag',
-          'piano_key',
-        },
-        validatorTypes: {
-          'none',
-          'equals',
-          'ordered_sequence',
-        },
+        presentationTypes: {'text', 'image', 'video_clip', 'audio'},
+        inputTypes: {'tap', 'single_choice'},
+        validatorTypes: {'none', 'equals'},
       );
+
+  factory PlayCapabilityEnvelope.fromJson(Map<String, Object?> json) {
+    Set<String> strings(String key) {
+      final value = json[key];
+      if (value is! List) throw FormatException('$key must be an array');
+      return value.map((item) {
+        if (item is! String) {
+          throw FormatException('$key must contain strings');
+        }
+        return item;
+      }).toSet();
+    }
+
+    final versionsRaw = json['schemaVersions'];
+    if (versionsRaw is! List) {
+      throw const FormatException('schemaVersions must be an array');
+    }
+    final versions = versionsRaw.map((item) {
+      if (item is! int) {
+        throw const FormatException('schemaVersions must contain integers');
+      }
+      return item;
+    }).toSet();
+
+    return PlayCapabilityEnvelope(
+      schemaVersions: Set.unmodifiable(versions),
+      presentationTypes: Set.unmodifiable(strings('presentationTypes')),
+      inputTypes: Set.unmodifiable(strings('inputTypes')),
+      validatorTypes: Set.unmodifiable(strings('validatorTypes')),
+      platformFlags: Set.unmodifiable(strings('platformFlags')),
+    );
+  }
 
   Map<String, Object?> toJson() => {
         'schemaVersions': schemaVersions.toList()..sort(),
@@ -68,12 +84,14 @@ final class PlayRequirements {
     required this.presentationTypes,
     required this.inputTypes,
     required this.validatorTypes,
+    this.platformFlags = const {},
   });
 
   final int schemaVersion;
   final Set<String> presentationTypes;
   final Set<String> inputTypes;
   final Set<String> validatorTypes;
+  final Set<String> platformFlags;
 }
 
 final class PlayCompatibilityDecision {
@@ -148,11 +166,16 @@ final class PlayCompatibilityChecker {
         missing.add('validator:$type');
       }
     }
+    for (final flag in requirements.platformFlags) {
+      if (!capabilities.platformFlags.contains(flag)) {
+        missing.add('platform:$flag');
+      }
+    }
 
     if (missing.isNotEmpty) {
       return PlayCompatibilityDecision(
         status: PlayCompatibilityStatus.unsupportedPrimitive,
-        message: 'Play requires unsupported runtime primitives.',
+        message: 'Play requires unsupported runtime capabilities.',
         missingCapabilities: Set.unmodifiable(missing),
       );
     }
@@ -162,6 +185,8 @@ final class PlayCompatibilityChecker {
     );
   }
 
+  /// Inspects raw requirements before typed decoding so future primitives fail
+  /// closed as unsupported rather than throwing from enum parsing.
   PlayDecodeResult decode(
     Map<String, Object?> json,
     PlayCapabilityEnvelope capabilities,
@@ -188,6 +213,16 @@ final class PlayCompatibilityChecker {
     final presentationTypes = <String>{};
     final inputTypes = <String>{};
     final validatorTypes = <String>{};
+    final platformFlags = <String>{};
+
+    final flagsRaw = json['requiredPlatformFlags'];
+    if (flagsRaw != null) {
+      if (flagsRaw is! List) return null;
+      for (final value in flagsRaw) {
+        if (value is! String || value.isEmpty) return null;
+        platformFlags.add(value);
+      }
+    }
 
     for (final stateValue in statesRaw.values) {
       if (stateValue is! Map) return null;
@@ -222,6 +257,7 @@ final class PlayCompatibilityChecker {
       presentationTypes: Set.unmodifiable(presentationTypes),
       inputTypes: Set.unmodifiable(inputTypes),
       validatorTypes: Set.unmodifiable(validatorTypes),
+      platformFlags: Set.unmodifiable(platformFlags),
     );
   }
 }
