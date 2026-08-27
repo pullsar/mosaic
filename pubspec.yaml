@@ -9,3 +9,4 @@ workspace:
   - packages/play_flutter
   - packages/analytics_contract
   - packages/platform_contracts
+  - packages/platform_flutter
