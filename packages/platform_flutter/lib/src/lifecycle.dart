@@ -17,33 +17,29 @@ final class FlutterLifecycleBridge {
   FlutterLifecycleBridge({
     required this.mediaCoordinator,
     this.onSemanticResume,
-  }) : _listener = AppLifecycleListener(
-         onStateChange: (state) {},
-       ) {
-    _listener.dispose();
+  }) {
     _listener = AppLifecycleListener(onStateChange: _onStateChange);
   }
 
   final ActiveMediaCoordinator mediaCoordinator;
   final SemanticResumeCallback? onSemanticResume;
-  late AppLifecycleListener _listener;
+  late final AppLifecycleListener _listener;
 
   void _onStateChange(AppLifecycleState state) {
     unawaited(handleState(mapFlutterLifecycleState(state)));
   }
 
   Future<void> handleState(AppRuntimeState state) async {
-    switch (state) {
-      case AppRuntimeState.resumed:
-        final callback = onSemanticResume;
-        if (callback != null) await Future<void>.sync(callback);
-      case AppRuntimeState.inactive:
-      case AppRuntimeState.paused:
-      case AppRuntimeState.hidden:
-        await mediaCoordinator.suspend();
-      case AppRuntimeState.detached:
-        await mediaCoordinator.releaseAll();
+    if (state == AppRuntimeState.resumed) {
+      final callback = onSemanticResume;
+      if (callback != null) await Future<void>.sync(callback);
+      return;
     }
+    if (state == AppRuntimeState.detached) {
+      await mediaCoordinator.releaseAll();
+      return;
+    }
+    await mediaCoordinator.suspend();
   }
 
   void dispose() => _listener.dispose();
