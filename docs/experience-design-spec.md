@@ -13,7 +13,21 @@ Swipe if you don't want it.
 Play if you do.
 ```
 
-## 2. Product surfaces
+The Play itself is the interface. See [`visual-language-and-copy-spec.md`](visual-language-and-copy-spec.md) for the detailed brand, typography, copy, hierarchy, and attention rules.
+
+## 2. Visual attention rule
+
+Consumer Play surfaces target this attention budget:
+
+- ~88% primary content/supporting visual context;
+- ~9% controls/icons/motion/state feedback;
+- ~3% visible text.
+
+This is a hierarchy heuristic, not a literal pixel quota.
+
+If the initial Play state looks like a card of text with media attached, redesign it.
+
+## 3. Product surfaces
 
 Launch navigation:
 
@@ -25,19 +39,19 @@ Default landing surface. Full-screen feed.
 
 ### Saved
 
-Lightweight collections of items the user wants to revisit.
+Lightweight collections.
 
 ### Create
 
-Remix and Quick Create entry.
+Remix and Quick Create.
 
 ### Me
 
-Preferences, muted topics/creators, creator identity, basic settings.
+Preferences, muted topics/creators, creator identity, settings.
 
 No dashboard is shown on app open.
 
-## 3. Onboarding
+## 4. Onboarding
 
 Onboarding contains exactly two optional preference screens before feed entry.
 
@@ -45,52 +59,50 @@ Onboarding contains exactly two optional preference screens before feed entry.
 
 **What are you into?**
 
-UI:
+Use visual topic tiles/tag clusters with concise labels.
 
-- visual tag cloud;
-- clear selected state;
+Required behavior:
+
+- visual/icon/image support where useful;
+- obvious selected state;
 - search;
 - no minimum selection;
 - **Surprise me** escape.
 
-Purpose: seed entertainment/interest affinity.
-
 ### Screen 2
 
-**What do you want to learn more about?**
+**Want to learn more about?**
 
-UI:
+Use the same visual system. Broad topics may expand into subtopics.
 
-- same visual language;
-- broad topics can expand into subtopics;
-- no minimum selection;
-- Skip.
-
-Purpose: seed learning intent separately.
-
-### Rules
+Rules:
 
 - no third questionnaire;
-- no proficiency quiz during onboarding;
-- no request for creator expertise during onboarding;
-- feed begins immediately after completion/skip.
+- no prose explaining personalization;
+- no proficiency test;
+- no request for creator expertise;
+- no progress theater;
+- feed starts immediately after completion/skip.
 
-## 4. Feed shell
+## 5. Feed shell
 
 One Play owns the viewport.
 
-Persistent controls must be minimal and thumb-reachable.
+Persistent chrome is quiet and thumb-reachable.
 
-Required affordances:
+Default persistent actions:
 
 - Save;
-- More;
-- creator/topic attribution where useful;
-- progress only inside multi-state Plays, never as a session obligation.
+- Share where appropriate;
+- More.
 
-The content and interaction surface take visual priority over navigation chrome.
+Creator/topic attribution is secondary.
 
-## 5. Swipe behavior
+Do not build a TikTok-style tower of engagement metrics.
+
+Progress exists only inside a multi-state Play and never implies a session obligation.
+
+## 6. Swipe behavior
 
 Vertical swipe dismisses the current Play and advances.
 
@@ -99,36 +111,38 @@ Rules:
 - available from every Play state;
 - never blocked by incorrect answers;
 - never requires confirmation;
-- direct manipulation should not accidentally trigger feed swipe;
-- gesture arbitration must be primitive-aware;
+- direct manipulation does not accidentally trigger feed swipe;
+- gesture arbitration is primitive-aware;
 - current Play state may be preserved briefly for back navigation.
 
-## 6. Engagement behavior
+The gesture remains consistent even as Play content varies.
 
-A Play should communicate what to do in one glance.
+## 7. Engagement behavior
 
-Preferred interaction copy:
+A Play communicates the action in one glance.
+
+Preferred prompts:
 
 - **Where is this?**
-- **Which sounds warmer?**
+- **Which note?**
 - **Pick one.**
 - **Play it back.**
 - **Find the route.**
 - **What happens next?**
 - **Look closer.**
 
-Avoid explanatory preambles.
+No explanatory preamble.
 
-## 7. Guess pattern
+## 8. Guess pattern
 
 Structure:
 
 1. media/context;
-2. one short question;
+2. concise question;
 3. 2–5 options or direct input;
 4. immediate response;
-5. concise reveal;
-6. optional next action.
+5. short reveal;
+6. optional deeper action.
 
 Example:
 
@@ -140,17 +154,15 @@ Amalfi · Dubrovnik · Santorini · Valletta
 
 Result:
 
-**Dubrovnik, Croatia**
+**Dubrovnik**
 
-One useful fact.
+`Medieval walls wrap the old city.`
 
-No modal congratulation screen.
+No congratulation modal.
 
-## 8. Choose pattern
+## 9. Choose pattern
 
-Choose is not trivia.
-
-It should expose preference under a meaningful scenario.
+Choose is preference under meaningful context, not trivia.
 
 Weak:
 
@@ -158,45 +170,38 @@ Weak:
 
 Strong:
 
-> **Four-day getaway. Cheap pizza/burritos, warm nights, lots of walking.**
+> **Four days. Cheap food. Warm nights.**
 >
 > Lisbon · Marrakech
 
-A good Choose Play has at least one of:
+A good Choose Play uses at least one meaningful constraint:
 
 - budget;
 - occasion;
 - desire;
-- constraint;
 - role;
 - trade-off;
 - scenario.
 
-After choice, the Play may:
+After choice, the Play may show a concise comparison, ask one follow-up, record preference, or end.
 
-- show a concise comparison;
-- ask one follow-up;
-- personalize a recommendation signal;
-- end immediately.
+Do not manufacture a correct answer.
 
-Do not pretend preference has a correct answer.
+## 10. Solve pattern
 
-## 9. Solve pattern
-
-The challenge itself should occupy most of the screen.
+The challenge occupies most of the screen.
 
 Rules:
 
-- instructions visible without scrolling;
+- instruction fits in one glance;
 - manipulation starts immediately;
-- Reset appears only when useful;
+- Reset only when useful;
 - hint is optional;
-- solution/reveal is concise;
-- swipe remains available.
+- solution is concise;
+- swipe remains available;
+- score furniture appears only when score improves the game.
 
-Avoid score furniture unless score adds to the game.
-
-## 10. Play pattern
+## 11. Play pattern
 
 Play is direct interaction with media or objects.
 
@@ -209,20 +214,25 @@ Examples:
 - ordering;
 - drag/assembly.
 
-Controls should resemble the thing being manipulated, not generic form widgets.
+Controls should resemble the thing being manipulated, not generic forms.
 
-Example piano flow:
+Piano example:
 
-1. **Hear it**;
-2. sound plays;
-3. **Play it back**;
-4. keyboard appears;
-5. immediate response;
-6. replay or swipe.
+```text
+Hear
+ ↓
+Play it back
+ ↓
+keyboard
+ ↓
+immediate visual/audio/haptic result
+```
 
-## 11. Discover pattern
+Use text only where the interaction would otherwise be ambiguous.
 
-Discover is allowed to be mostly experiential.
+## 12. Discover pattern
+
+Discover may be primarily experiential.
 
 Examples:
 
@@ -234,25 +244,21 @@ Examples:
 - unusual object;
 - wildlife.
 
-Interaction is added only when natural.
-
-Good:
+Natural actions can include:
 
 - **Where is this?**
-- **Hear it**
+- **Hear**
 - **Look closer**
 - **What happened next?**
 - **Pray**
 
-Bad:
+Do not add an irrelevant quiz to force interactivity.
 
-Adding an irrelevant quiz to every image to satisfy an “interactive” metric.
-
-## 12. Short clips
+## 13. Short clips
 
 Short clips are media, not a separate feed type.
 
-Recommended use:
+Use for:
 
 - travel/location guessing;
 - cooking identification;
@@ -260,111 +266,112 @@ Recommended use:
 - before/after prediction;
 - musical identification;
 - movement/sports analysis;
-- historical/cultural scene.
+- historical/cultural scenes.
 
 Rules:
 
-- hook/action visible immediately;
-- clips remain short enough to start quickly;
+- subject is visible immediately;
+- prompt overlays only when needed;
 - captions when speech matters;
 - muted-first where appropriate;
-- no long passive clip simply because video is available.
+- no passive long clip simply because video exists;
+- primary action remains reachable without covering the subject.
 
-## 13. Audio
+## 14. Audio
 
-Default behavior:
+Default:
 
-**Tap to hear**
+**Hear**
 
-Mosaic may remember a user's sound preference after repeated behavior.
+Mosaic may remember sound preference after repeated behavior.
 
 Rules:
 
-- never surprise with loud playback;
-- replay must be obvious;
-- waveform is optional, not decorative requirement;
-- speech requires captions/transcript;
-- audio games need accessible alternatives where feasible.
+- no surprising loud autoplay;
+- replay is obvious;
+- waveform only if functional;
+- speech has transcript/captions;
+- timing-sensitive Plays use measured latency/tolerance;
+- accessible alternative where feasible.
 
-## 14. Feedback
+## 15. Feedback
 
-Feedback should be immediate and proportional.
+Feedback should be immediate and primarily sensory.
 
-Correct:
+Prefer:
 
-- small visual state change;
+- state/color/shape change;
+- object movement;
 - subtle haptic;
-- answer reveal.
-
-Incorrect:
-
-- show difference/answer;
-- allow another attempt where the format benefits;
-- no punitive copy.
+- sound;
+- concise reveal.
 
 Avoid:
 
-- full-screen celebrations after trivial actions;
+- `Great job!`;
+- `Amazing!`;
+- full-screen celebrations for trivial answers;
 - shame/failure language;
-- manipulative streak reinforcement.
+- streak reinforcement.
 
-## 15. Save
+The answer itself is usually the best feedback.
 
-Save must be one tap.
+## 16. Save, Share, More like this
 
-Automatic collection suggestions may be inferred from topic:
+### Save
 
-- Travel;
-- Restaurants;
-- Music;
-- Art;
-- Things to try.
+One tap. Saving does not imply homework.
 
-User can rename/create collections.
+### Share
 
-Saved items are not shown as incomplete work.
+Share the Play itself, not a marketing page.
 
-## 16. Remix entry
+### More like this
 
-Creation should appear contextually.
+Explicit ranking signal distinct from Save.
 
-Eligible Plays expose **Remix** in the More/action surface and optionally after completion.
+Place it in a secondary action surface unless testing proves it deserves a persistent control.
 
-Example:
+## 17. Remix entry
 
-**Make one like this**
+Creation appears in context.
 
-Remix opens directly into filled slots; never into an empty Studio.
+Eligible Plays expose:
 
-## 17. Quick Create
+**Remix**
 
-Create landing screen:
+or:
 
-**What are you making?**
+**Make yours**
 
-- Guess
-- Choose
-- Solve
-- Play
-- Discover
+Remix opens filled slots, never a blank Studio.
+
+## 18. Quick Create
+
+Create landing asks only:
+
+**Make:**
+
+Guess · Choose · Solve · Play · Discover
 
 After selection, show the smallest valid field set.
 
-Do not expose advanced layout controls until creator asks for Studio.
+Creator preview dominates the surface. Advanced settings remain hidden until requested.
 
-## 18. Copy system
+## 19. Copy system
 
-Copy is functional and concise.
+Consumer copy is sparse, literal, and functional.
 
-### Rules
+Rules:
 
-- hook in one glance;
-- verbs over explanations;
-- avoid product jargon in consumer UI;
-- do not call items “learning objects” or “microlearning”;
+- prompt preferably 2–6 words;
+- use verbs;
+- no product jargon;
 - no motivational filler;
-- no guilt copy;
-- no fake urgency.
+- no AI self-reference;
+- no fake urgency;
+- no conversational padding;
+- reveal is one short statement by default.
 
 Prefer:
 
@@ -382,121 +389,136 @@ Not:
 
 > Imagine you are planning a four-day holiday with a limited discretionary budget.
 
-## 19. Visual direction
+## 20. Typography
+
+Default cross-platform typeface: **Inter Variable** until brand testing justifies another choice.
+
+Use a small hierarchy:
+
+- prompt: Semibold;
+- option/control: Medium;
+- secondary/reveal detail: Regular;
+- metadata: Regular/Medium at reduced emphasis.
+
+Avoid Thin/Light functional text.
+
+Do not mix display fonts in v1.
+
+## 21. Visual direction
 
 - edge-to-edge media;
-- high visual contrast;
-- restrained glass surfaces for floating controls;
-- strong typography hierarchy;
-- content-specific color can dominate the viewport;
-- controls remain visually stable across Plays;
+- dominant subject/object;
+- restrained material/glass only for floating controls;
+- stable control positions;
 - minimal permanent chrome;
-- no card-within-card visual clutter.
+- no card-within-card clutter;
+- no decorative gradients/blur merely to look futuristic;
+- content-specific color may dominate the viewport;
+- visual hierarchy must survive small phones and large text settings.
 
-The system should feel refined and calm even when the content is playful.
+The system should feel refined and quiet around playful content.
 
-## 20. Motion
+## 22. Motion
 
-Motion communicates:
+Motion communicates state, cause/effect, hierarchy, and feed movement.
 
-- state transition;
-- correct/incorrect resolution;
-- drag/drop consequence;
-- feed movement;
-- hierarchy.
+Rules:
 
-Motion should not become constant ambient stimulation.
+- no ambient bouncing CTA;
+- no decorative continuous motion;
+- animations remain interruptible;
+- respect reduced motion;
+- use the smallest motion that makes the interaction clearer.
 
-Respect reduced-motion settings.
+## 23. Haptics
 
-## 21. Haptics
-
-Use selectively:
+Use selectively for:
 
 - answer lock;
 - successful placement;
 - rhythm/piano confirmation;
-- invalid move;
-- completion where meaningful.
+- invalid move where visual feedback is insufficient;
+- meaningful completion.
 
 Do not haptic every tap.
 
-## 22. Accessibility
+## 24. Accessibility
+
+Visual-first never means inaccessible.
 
 Required:
 
-- large touch targets;
-- semantic labels;
-- keyboard/switch alternatives where applicable;
+- generous touch targets;
+- semantic labels for icon-only controls;
 - no color-only result indication;
 - captions/transcripts;
 - reduced motion;
 - adequate contrast;
-- alternative to drag where practical;
-- scalable text without destroying interaction layout.
+- scalable text;
+- alternate controls for drag/gesture-only interactions where needed;
+- screen-reader ordering that follows the Play's logical action order.
 
-Accessibility requirements are part of Play publication validation.
+Accessibility metadata is part of publication validation.
 
-## 23. Loading behavior
+## 25. Loading behavior
 
-A swipe must never land on an empty spinner if avoidable.
+A normal swipe should not land on an empty spinner.
 
-Order of presentation:
+Presentation order:
 
-1. local/feed shell;
-2. prompt/placeholder derived from Play metadata;
+1. local shell/composition;
+2. lightweight visual placeholder when needed;
 3. primary media;
-4. secondary/deferred media.
+4. deferred secondary media.
 
 If required media fails:
 
-- retry silently where safe;
-- show compact recovery action;
-- allow immediate swipe.
+- retry safely;
+- expose compact recovery when needed;
+- keep swipe available.
 
-## 24. Poor network behavior
+## 26. Poor-network behavior
 
-- prefetch bounded next-window;
-- prefer lower media derivative first;
-- never download all upcoming video/audio;
-- degrade animations before interaction;
-- preserve already-fetched Plays for continued use;
-- send analytics asynchronously.
+- bounded next-window prefetch;
+- lower media derivative first when appropriate;
+- no blind prefetch of all audio/video;
+- preserve fetched Plays;
+- upload analytics asynchronously;
+- degrade decorative effects before degrading the core interaction.
 
-## 25. Safety UX
+## 27. Safety UX
 
-More menu contains:
+More menu includes:
 
 - Not interested;
+- More like this;
 - Mute topic;
 - Mute creator;
 - Report.
 
-Mosaic never offers adult, erotic, or sexually explicit content, and there is no mature-content preference toggle.
+Mosaic never offers adult, erotic, or sexually explicit content and has no mature-content toggle.
 
-## 26. Faith UX
+## 28. Faith UX
 
-Faith is an ordinary opt-in interest, not a universal system behavior.
+Faith is an opt-in interest, not universal behavior.
 
 Examples:
 
-**A short prayer for courage**  
+**Prayer for courage**  
 **Pray**
 
-or:
+or a sacred-art Discover Play.
 
-Sacred-art Discover Play.
+Users who do not select or engage faith content should not receive it through normal wildcard exploration.
 
-Users who do not select or engage with faith content should not receive it through normal ranking exploration.
+## 29. Notifications
 
-## 27. Notifications
-
-Launch notifications should be sparse and specific.
+Sparse and specific.
 
 Good:
 
-- **Sam challenged you to this.**
-- **A new piano Play from a creator you saved.**
+- **Sam challenged you.**
+- **New piano Play from Ada.**
 
 Bad:
 
@@ -504,22 +526,36 @@ Bad:
 - Don't lose your streak.
 - You haven't played today.
 
-## 28. Empty states
+## 30. Empty states
 
-Saved empty state:
+Use the object/action, not prose.
 
-> **Save anything worth coming back to.**
+Saved:
 
-Create empty state:
+> **Save anything worth keeping.**
 
-> **Remix a Play or make one.**
+Create:
 
-Avoid tutorials unless user asks.
+> **Remix or make one.**
 
-## 29. Success test
+Avoid tutorials unless requested.
 
-A first-time user should understand Mosaic by using it, not by reading about it.
+## 31. Performance acceptance
 
-Within the opening feed, they should experience at least two visibly different interaction types and understand the product promise:
+The interaction design is not accepted if visual effects cause obvious frame instability.
 
-> **This feed gives me things to do, not just things to watch.**
+Target:
+
+- 60 fps minimum experience goal;
+- 120 Hz devices remain meaningfully smooth;
+- no feed-critical intrinsic/layout excess;
+- no expensive glass/blur merely for decoration;
+- inactive audio/video/custom drawing resources are released quickly.
+
+## 32. Success test
+
+A first-time user should understand Mosaic by seeing and touching it, not by reading about it.
+
+Within the opening feed they should encounter at least two visibly different interactions and infer:
+
+> **This feed gives me things to do.**

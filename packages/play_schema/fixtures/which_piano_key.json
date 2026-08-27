@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "id": "play_which_piano_key",
+  "revisionId": "rev_1",
+  "format": "guess",
+  "classification": "challenge",
+  "topics": ["music", "piano"],
+  "learningTopics": ["ear-training"],
+  "estimatedDurationSec": 12,
+  "assets": ["audio_csharp4"],
+  "sources": [],
+  "entryState": "guess",
+  "states": {
+    "guess": {
+      "presentation": {"layers": [
+        {"type": "audio", "role": "media", "assetId": "audio_csharp4"},
+        {"type": "text", "role": "prompt", "value": "Which note?"}
+      ]},
+      "input": {"type": "single_choice", "options": [
+        {"id": "c4", "label": "C"},
+        {"id": "csharp4", "label": "C♯"},
+        {"id": "d4", "label": "D"}
+      ]},
+      "validation": {"type": "equals", "value": "csharp4"},
+      "transition": {"correct": "reveal", "incorrect": "reveal"}
+    },
+    "reveal": {
+      "presentation": {"layers": [{"type": "text", "role": "reveal_title", "value": "C♯"}]},
+      "input": {"type": "tap", "label": "Done"},
+      "validation": {"type": "none"},
+      "transition": {"default": "$end"}
+    }
+  }
+}

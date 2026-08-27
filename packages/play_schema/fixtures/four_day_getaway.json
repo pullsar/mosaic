@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "id": "play_four_day_getaway",
+  "revisionId": "rev_1",
+  "format": "choose",
+  "classification": "preference",
+  "topics": ["travel", "food", "city-breaks"],
+  "learningTopics": [],
+  "estimatedDurationSec": 20,
+  "assets": [],
+  "sources": [],
+  "entryState": "choice",
+  "states": {
+    "choice": {
+      "presentation": {"layers": [
+        {"type": "text", "role": "scenario", "value": "Four days. Cheap food. Warm nights. Lots of walking."}
+      ]},
+      "input": {"type": "single_choice", "options": [
+        {"id": "lisbon", "label": "Lisbon"},
+        {"id": "marrakech", "label": "Marrakech"}
+      ]},
+      "validation": {"type": "none"},
+      "transition": {"lisbon": "lisbon", "marrakech": "marrakech"}
+    },
+    "lisbon": {
+      "presentation": {"layers": [{"type": "text", "role": "reveal_title", "value": "Lisbon"}]},
+      "input": {"type": "tap", "label": "Done"},
+      "validation": {"type": "none"},
+      "transition": {"default": "$end"}
+    },
+    "marrakech": {
+      "presentation": {"layers": [{"type": "text", "role": "reveal_title", "value": "Marrakech"}]},
+      "input": {"type": "tap", "label": "Done"},
+      "validation": {"type": "none"},
+      "transition": {"default": "$end"}
+    }
+  }
+}

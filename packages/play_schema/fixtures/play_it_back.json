@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "play_play_it_back",
+  "revisionId": "rev_1",
+  "format": "play",
+  "classification": "challenge",
+  "topics": ["music", "piano"],
+  "learningTopics": ["ear-training"],
+  "estimatedDurationSec": 20,
+  "assets": ["audio_ceg"],
+  "sources": [],
+  "entryState": "playback",
+  "states": {
+    "playback": {
+      "presentation": {"layers": [
+        {"type": "audio", "role": "media", "assetId": "audio_ceg"},
+        {"type": "text", "role": "prompt", "value": "Play it back."}
+      ]},
+      "input": {"type": "piano_key"},
+      "validation": {"type": "ordered_sequence", "value": ["C4", "E4", "G4"]},
+      "transition": {"correct": "reveal", "incorrect": "reveal"}
+    },
+    "reveal": {
+      "presentation": {"layers": [{"type": "text", "role": "reveal_title", "value": "C · E · G"}]},
+      "input": {"type": "tap", "label": "Done"},
+      "validation": {"type": "none"},
+      "transition": {"default": "$end"}
+    }
+  }
+}

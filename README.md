@@ -2,101 +2,120 @@
 
 > **The feed you play.**
 
-Mosaic is a personalized feed of tiny interactive experiences built around what a person is into and what they want to learn. Every swipe can be dismissed immediately or engaged as a small **Guess, Choose, Solve, Play, or Discover** experience.
+Mosaic is a personalized feed of tiny interactive experiences built around what a person is into and what they want to learn. Every Play can be dismissed immediately or engaged as a small **Guess, Choose, Solve, Play, or Discover** experience.
 
-Examples include identifying a beautiful place from a short clip, playing back a piano phrase, solving a spatial puzzle, choosing a four-day getaway under specific constraints, recognizing an artwork, or answering a compact quiz about an interest.
+Examples: identify a beautiful place from a short clip, play back a piano phrase, solve a visual puzzle, choose a four-day getaway under real constraints, recognize an artwork, or answer a compact quiz about an interest.
 
 Mosaic is not a course product and not a passive short-video clone.
 
 ## Core loops
 
-Consumer:
-
 ```text
 FIND → PLAY → REACT → SWIPE
 ```
-
-Creator:
 
 ```text
 SEE → REMIX → PUBLISH → OTHERS PLAY
 ```
 
-Growth:
-
 ```text
 PLAY → SHARE → RECIPIENT PLAYS → RESPONDS / CONTINUES
 ```
 
-A shared public Play should work in the browser before the recipient installs Mosaic.
+A shared public Play works in the browser before the recipient installs Mosaic.
 
 ## Product principles
 
+- **The Play is the interface.** Content and direct interaction dominate chrome and copy.
+- **Visual first.** Consumer Play surfaces target roughly 88% primary content/supporting visuals, 9% controls/motion, and 3% visible text as an attention heuristic.
 - **Play, don't prescribe.** No forced routines, lessons, streak pressure, or completion gates.
-- **Interests and learning intent are separate signals.** Mosaic learns both what users already enjoy and what they want to know more about.
+- **Interests and learning intent are separate.** Mosaic learns both what users enjoy and what they want to know more about.
 - **Swipe is freedom.** Any Play can be dismissed instantly.
-- **Interaction beats passive consumption.** Short clips, images, audio, maps, and animation become playable media where appropriate.
-- **Value before registration.** Anonymous users can play before creating an account.
-- **Creation is the moat.** Remixable templates, resilient media capture/upload, and a constrained interaction runtime make interactive creation cheap enough to compound.
-- **The Play is the viral object.** Shares open directly into a playable experience, not an install wall.
-- **Quality over generated volume.** AI may assist creators, but factual content is source-backed and creator-approved.
-- **Rights follow lineage.** Structure remix rights and media reuse rights are enforced separately.
-- **No adult content.** Mosaic has no adult, erotic, or sexually explicit content mode.
+- **Value before registration.** Anonymous users can play first.
+- **Creation is the moat.** Templates, remix lineage, resilient media tooling, and a constrained Play runtime make interactive creation cheap enough to compound.
+- **The Play is the viral object.** Shares open into a playable experience, not an install wall.
+- **Quality over generated volume.** AI may assist creators; it does not author an unsourced feed.
+- **Rights follow lineage.** Structure, text, and media reuse rights are enforced separately.
+- **No adult content.** No adult, erotic, or sexually explicit content mode.
+
+## Technology
+
+Client/runtime: **Flutter + Dart**.
+
+Architecture:
+
+```text
+Play data
+  ↓
+play_schema     # pure Dart
+  ↓
+play_engine     # pure Dart
+  ↓
+play_flutter    # Flutter renderers
+  ↓
+iOS / Android / Web
+```
+
+The Flutter choice is product-specific: Mosaic needs predictable, highly controlled media, gesture, animation, drawing, and audio interactions across native and shared-web surfaces.
 
 ## Launch surface
 
-Primary navigation:
-
 **Play · Saved · Create · Me**
 
-Launch Play formats:
+Formats:
 
 1. **Guess** — identify a place, sound, object, period, dish, language, etc.
-2. **Choose** — make situated preference decisions with real constraints.
+2. **Choose** — preference decisions with meaningful constraints.
 3. **Solve** — compact logic, spatial, word, route, or pattern challenges.
-4. **Play** — manipulate sound, maps, rhythm, drawing, sequencing, or other direct interactions.
-5. **Discover** — worthwhile art, culture, travel, nature, history, faith, or curiosity content where forced gamification would weaken the experience.
+4. **Play** — manipulate sound, maps, rhythm, drawing, sequencing, and objects.
+5. **Discover** — art, culture, travel, nature, history, faith, or curiosity where forced gamification would weaken the experience.
 
 ## Documentation
 
 ### Product and experience
 
 - [`docs/product-spec.md`](docs/product-spec.md) — product contract and v1 scope.
-- [`docs/experience-design-spec.md`](docs/experience-design-spec.md) — feed behavior, onboarding, interaction patterns, copy, accessibility, and performance rules.
+- [`docs/experience-design-spec.md`](docs/experience-design-spec.md) — feed/onboarding/interaction behavior.
+- [`docs/visual-language-and-copy-spec.md`](docs/visual-language-and-copy-spec.md) — content hierarchy, 88/9/3 attention budget, typography, motion, and copy rules.
 - [`docs/growth-and-sharing-spec.md`](docs/growth-and-sharing-spec.md) — browser-playable sharing, challenges, deep links, and growth measurement.
-- [`docs/identity-and-account-lifecycle-spec.md`](docs/identity-and-account-lifecycle-spec.md) — anonymous-first identity, account merge, reset, and deletion behavior.
+- [`docs/identity-and-account-lifecycle-spec.md`](docs/identity-and-account-lifecycle-spec.md) — anonymous-first identity, account merge, reset, and deletion.
 
 ### Runtime, ranking, and creation
 
 - [`docs/play-runtime-spec.md`](docs/play-runtime-spec.md) — Play schema, state machine, media/input primitives, and runtime constraints.
-- [`docs/creator-platform-spec.md`](docs/creator-platform-spec.md) — Remix, Quick Create, Studio, templates, lineage, and creator supply loop.
-- [`docs/recommendation-and-analytics-spec.md`](docs/recommendation-and-analytics-spec.md) — interest/learning/interaction graphs, ranking, events, and success metrics.
-- [`docs/media-pipeline-spec.md`](docs/media-pipeline-spec.md) — capture/import, resumable upload, media normalization, CDN delivery, and rights metadata.
+- [`docs/creator-platform-spec.md`](docs/creator-platform-spec.md) — Remix, Quick Create, Studio, templates, lineage, and creator supply.
+- [`docs/recommendation-and-analytics-spec.md`](docs/recommendation-and-analytics-spec.md) — interest/learning/interaction graphs, ranking, events, and metrics.
+- [`docs/media-pipeline-spec.md`](docs/media-pipeline-spec.md) — capture/import, resumable upload, normalization, delivery, and rights metadata.
 
 ### Trust and engineering
 
-- [`docs/trust-rights-and-moderation-spec.md`](docs/trust-rights-and-moderation-spec.md) — remix rights, factual trust, moderation, takedown, appeals, and abuse-resistant reputation.
-- [`docs/operability-and-slo-spec.md`](docs/operability-and-slo-spec.md) — observability, SLOs, feature flags, rollback, incident response, and launch operations.
-- [`docs/dependency-and-platform-decisions.md`](docs/dependency-and-platform-decisions.md) — approved open-source shortlist, adoption stages, abstraction boundaries, and dependency policy.
-- [`docs/implementation-plan.md`](docs/implementation-plan.md) — staged implementation and validation gates tying all specifications together.
+- [`docs/trust-rights-and-moderation-spec.md`](docs/trust-rights-and-moderation-spec.md) — remix rights, factual trust, moderation, takedown, appeals, and abuse resistance.
+- [`docs/operability-and-slo-spec.md`](docs/operability-and-slo-spec.md) — observability, SLOs, flags, rollback, incidents, and launch operations.
+- [`docs/platform-runtime-and-release-gotchas.md`](docs/platform-runtime-and-release-gotchas.md) — Flutter/web/media lifecycle, permissions, store compliance, offline recovery, and release-device gates.
+- [`docs/dependency-and-platform-decisions.md`](docs/dependency-and-platform-decisions.md) — Flutter stack, approved dependencies, abstraction boundaries, and dependency policy.
+- [`docs/implementation-plan.md`](docs/implementation-plan.md) — staged implementation and validation gates.
 
 ## Current status
 
-**Specification / pre-implementation.**
+**Milestone 0 implementation in progress.**
 
-Implementation begins with the Play schema/engine and operational foundation, then a high-quality native vertical slice, anonymous personalized feed, and browser-playable sharing before widening creator supply.
+The first tranche establishes the Flutter workspace, pure-Dart Play schema/engine, analytics/platform contracts, CI, and reference fixtures before widening the UI.
 
 ## Controlled-beta test
 
-A feature belongs in the first release only if it materially improves one of these:
+A feature belongs in the first release only if it materially improves:
 
 ```text
 FIND → PLAY → REACT → SWIPE
 ```
 
+or
+
 ```text
 SEE → REMIX → PUBLISH → OTHERS PLAY
 ```
+
+or
 
 ```text
 PLAY → SHARE → RECIPIENT PLAYS

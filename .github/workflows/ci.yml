@@ -1,0 +1,47 @@
+name: ci
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  flutter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.44.7'
+          cache: true
+      - name: Resolve locked workspace
+        run: flutter pub get --enforce-lockfile
+      - name: Verify formatting
+        run: dart format --output=none --set-exit-if-changed .
+      - name: Analyze
+        run: flutter analyze
+      - name: Test play_schema
+        working-directory: packages/play_schema
+        run: dart test
+      - name: Test play_engine
+        working-directory: packages/play_engine
+        run: dart test
+      - name: Test analytics_contract
+        working-directory: packages/analytics_contract
+        run: dart test
+      - name: Test play_flutter
+        working-directory: packages/play_flutter
+        run: flutter test
+      - name: Test app shell
+        working-directory: apps/mosaic_app
+        run: flutter test

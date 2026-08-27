@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "id": "play_which_century",
+  "revisionId": "rev_1",
+  "format": "guess",
+  "classification": "fact",
+  "topics": ["art", "culture"],
+  "learningTopics": ["art-history"],
+  "estimatedDurationSec": 16,
+  "assets": ["artwork_01"],
+  "sources": [{"url": "https://www.metmuseum.org/", "provider": "The Metropolitan Museum of Art"}],
+  "entryState": "guess",
+  "states": {
+    "guess": {
+      "presentation": {"layers": [
+        {"type": "image", "role": "media", "assetId": "artwork_01"},
+        {"type": "text", "role": "prompt", "value": "Which century?"}
+      ]},
+      "input": {"type": "single_choice", "options": [
+        {"id": "16", "label": "16th"},
+        {"id": "18", "label": "18th"},
+        {"id": "20", "label": "20th"}
+      ]},
+      "validation": {"type": "equals", "value": "18"},
+      "transition": {"correct": "reveal", "incorrect": "reveal"}
+    },
+    "reveal": {
+      "presentation": {"layers": [{"type": "text", "role": "reveal_title", "value": "18th century"}]},
+      "input": {"type": "tap", "label": "Done"},
+      "validation": {"type": "none"},
+      "transition": {"default": "$end"}
+    }
+  }
+}
