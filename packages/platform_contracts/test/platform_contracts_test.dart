@@ -103,46 +103,52 @@ void main() {
     },
   );
 
-  test('pause failure still attempts release and preserves retry ownership', () async {
-    final coordinator = ActiveMediaCoordinator();
-    final events = <String>[];
-    final pauseFailure = StateError('pause failed');
-    final first = _Handle('first', events, pauseError: pauseFailure);
-    final second = _Handle('second', events);
-    await coordinator.activate('play_a', first);
+  test(
+    'pause failure still attempts release and preserves retry ownership',
+    () async {
+      final coordinator = ActiveMediaCoordinator();
+      final events = <String>[];
+      final pauseFailure = StateError('pause failed');
+      final first = _Handle('first', events, pauseError: pauseFailure);
+      final second = _Handle('second', events);
+      await coordinator.activate('play_a', first);
 
-    await expectLater(
-      coordinator.activate('play_b', second),
-      throwsA(same(pauseFailure)),
-    );
+      await expectLater(
+        coordinator.activate('play_b', second),
+        throwsA(same(pauseFailure)),
+      );
 
-    expect(first.pauseCount, 1);
-    expect(first.releaseCount, 1);
-    expect(coordinator.ownerId, 'play_a');
-    expect(coordinator.hasActiveMedia, isTrue);
-    expect(second.pauseCount, 0);
-  });
+      expect(first.pauseCount, 1);
+      expect(first.releaseCount, 1);
+      expect(coordinator.ownerId, 'play_a');
+      expect(coordinator.hasActiveMedia, isTrue);
+      expect(second.pauseCount, 0);
+    },
+  );
 
-  test('stale release cannot discard a replacement with the same owner ID', () async {
-    final coordinator = ActiveMediaCoordinator();
-    final events = <String>[];
-    final first = _Handle('first', events);
-    final replacement = _Handle('replacement', events);
+  test(
+    'stale release cannot discard a replacement with the same owner ID',
+    () async {
+      final coordinator = ActiveMediaCoordinator();
+      final events = <String>[];
+      final first = _Handle('first', events);
+      final replacement = _Handle('replacement', events);
 
-    await coordinator.activate('play_a', first);
-    await coordinator.activate('play_a', replacement);
-    await coordinator.release('play_a', expectedHandle: first);
+      await coordinator.activate('play_a', first);
+      await coordinator.activate('play_a', replacement);
+      await coordinator.release('play_a', expectedHandle: first);
 
-    expect(coordinator.ownerId, 'play_a');
-    expect(coordinator.hasActiveMedia, isTrue);
-    expect(replacement.pauseCount, 0);
-    expect(replacement.releaseCount, 0);
+      expect(coordinator.ownerId, 'play_a');
+      expect(coordinator.hasActiveMedia, isTrue);
+      expect(replacement.pauseCount, 0);
+      expect(replacement.releaseCount, 0);
 
-    await coordinator.release('play_a', expectedHandle: replacement);
-    expect(replacement.pauseCount, 1);
-    expect(replacement.releaseCount, 1);
-    expect(coordinator.hasActiveMedia, isFalse);
-  });
+      await coordinator.release('play_a', expectedHandle: replacement);
+      expect(replacement.pauseCount, 1);
+      expect(replacement.releaseCount, 1);
+      expect(coordinator.hasActiveMedia, isFalse);
+    },
+  );
 
   test('suspension pauses without discarding ownership', () async {
     final coordinator = ActiveMediaCoordinator();

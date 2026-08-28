@@ -165,19 +165,18 @@ final class ActiveMediaCoordinator {
   /// Supplying [expectedHandle] protects asynchronous widget disposal from
   /// releasing a replacement controller that has already taken over the same
   /// semantic owner ID.
-  Future<void> release(
-    String ownerId, {
-    ManagedMediaHandle? expectedHandle,
-  }) => _operations.run(() async {
-    if (_ownerId != ownerId) return;
-    final current = _active;
-    if (expectedHandle != null && !identical(current, expectedHandle)) return;
-    if (current != null) {
-      await _pauseAndRelease(current);
-    }
-    _ownerId = null;
-    _active = null;
-  });
+  Future<void> release(String ownerId, {ManagedMediaHandle? expectedHandle}) =>
+      _operations.run(() async {
+        if (_ownerId != ownerId) return;
+        final current = _active;
+        if (expectedHandle != null && !identical(current, expectedHandle))
+          return;
+        if (current != null) {
+          await _pauseAndRelease(current);
+        }
+        _ownerId = null;
+        _active = null;
+      });
 
   Future<void> releaseAll() => _operations.run(() async {
     final current = _active;
@@ -208,10 +207,7 @@ final class ActiveMediaCoordinator {
 
     final error = firstError;
     if (error != null) {
-      Error.throwWithStackTrace(
-        error,
-        firstStackTrace ?? StackTrace.current,
-      );
+      Error.throwWithStackTrace(error, firstStackTrace ?? StackTrace.current);
     }
   }
 }
