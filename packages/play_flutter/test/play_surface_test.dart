@@ -14,6 +14,13 @@ PlayDocument _fixture(String name) {
   return PlayDocument.fromJson(raw);
 }
 
+PlayCanvasAsset _canvasFixture(String name) {
+  final raw =
+      jsonDecode(File('fixtures/canvas/$name').readAsStringSync())
+          as Map<String, Object?>;
+  return PlayCanvasAsset.fromJson(raw);
+}
+
 void main() {
   testWidgets('renders concise prompt and advances a choice', (tester) async {
     final play = PlayDocument.fromJson({
@@ -143,11 +150,25 @@ void main() {
     expect(find.text('Done'), findsOneWidget);
   });
 
-  testWidgets('authored drag resolves target and brackets feed paging lock', (
+  testWidgets('matchstick Play renders and resolves entirely from data', (
     tester,
   ) async {
     final play = _fixture('move_one_match.json');
+    final unsolved = _canvasFixture('puzzle_match_01.json');
+    final solved = _canvasFixture('puzzle_match_01_solved.json');
     final manipulation = <bool>[];
+    final media = PlayMediaLayerBuilder(
+      ownerId: play.revisionId,
+      visualResolver: MapPlayVisualAssetResolver(const {}),
+      videoResolver: MapPlayVideoAssetResolver(const {}),
+      canvasResolver: MapPlayCanvasAssetResolver({
+        unsolved.id: unsolved,
+        solved.id: solved,
+      }),
+      mediaCoordinator: ActiveMediaCoordinator(),
+      videoControllerFactory: (_) =>
+          throw StateError('Video controller must not be requested.'),
+    );
 
     await tester.pumpWidget(
       MaterialApp(
@@ -157,6 +178,7 @@ void main() {
               dimension: 400,
               child: PlaySurface(
                 play: play,
+                mediaBuilder: media.call,
                 onDirectManipulationChanged: manipulation.add,
               ),
             ),
@@ -164,16 +186,26 @@ void main() {
         ),
       ),
     );
+    await tester.pumpAndSettle();
 
     expect(find.text('Move one match.'), findsOneWidget);
+    expect(
+      find.bySemanticsLabel('Matchstick equation: 6 plus 4 equals 4'),
+      findsOneWidget,
+    );
+
     await tester.drag(
       find.bySemanticsLabel('Move match'),
-      const Offset(176, -96),
+      const Offset(-56, -24),
     );
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     expect(manipulation, [true, false]);
-    expect(find.text('Solved'), findsOneWidget);
+    expect(find.text('8 − 4 = 4'), findsOneWidget);
+    expect(
+      find.bySemanticsLabel('Solved matchstick equation: 8 minus 4 equals 4'),
+      findsOneWidget,
+    );
     expect(find.text('Done'), findsOneWidget);
   });
 }
