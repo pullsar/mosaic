@@ -123,6 +123,43 @@ void main() {
     expect(result, isA<DecodedPlay>());
   });
 
+  test('authored input extension properties survive typed round-trip', () {
+    final play = PlayDocument.fromJson(_fixture('play_it_back.json'));
+    final input = play.states['playback']!.input;
+
+    expect(input.properties['keys'], [
+      'C4',
+      'D4',
+      'E4',
+      'F4',
+      'G4',
+      'A4',
+      'B4',
+    ]);
+    expect(input.properties['sequenceLength'], 3);
+
+    final encoded = play.toJson();
+    final states = encoded['states']! as Map<String, Object?>;
+    final playback = states['playback']! as Map<String, Object?>;
+    final encodedInput = playback['input']! as Map<String, Object?>;
+    expect(encodedInput['type'], 'piano_key');
+    expect(encodedInput['sequenceLength'], 3);
+    expect(encodedInput['keys'], input.properties['keys']);
+  });
+
+  test('reserved input fields cannot be overridden by extension properties', () {
+    const input = PlayInputDefinition(
+      type: PlayInputType.pianoKey,
+      label: 'Play',
+      properties: {'type': 'drag', 'label': 'Wrong', 'sequenceLength': 3},
+    );
+
+    final encoded = input.toJson();
+    expect(encoded['type'], 'piano_key');
+    expect(encoded['label'], 'Play');
+    expect(encoded['sequenceLength'], 3);
+  });
+
   test('malformed raw capability shape returns MalformedPlay', () {
     final raw = {..._fixture('where_is_this.json'), 'states': 'broken'};
     final result = const PlayCompatibilityChecker().decode(
