@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {
+  MediaOutputPublicationError,
   processFfmpegDerivative,
   type MediaFfmpegWorkerRepository,
+  type MediaOutputPublisher,
   type MediaOutputVerifier,
   type MediaProcessRunner,
 } from '../src/media_ffmpeg_worker.js';
@@ -198,7 +200,13 @@ const successfulVerifier: MediaOutputVerifier = async (request) => {
   return verifiedPlayback;
 };
 
-test('worker claims, runs, verifies and completes with the exact leased claim', async () => {
+const successfulPublisher: MediaOutputPublisher = async (request) => {
+  assert.equal(request.outputPath, '/tmp/mosaic/playback.mp4');
+  assert.equal(request.storageKey, 'public/asset_worker/playback.mp4');
+  assert.equal(request.verifiedOutput.videoCodec, 'h264');
+};
+
+test('worker claims, runs, verifies, publishes and completes with the exact leased claim', async () => {
   const repository = new FakeRepository(derivative(playbackPlan()));
   const result = await processFfmpegDerivative(
     repository,
@@ -210,6 +218,7 @@ test('worker claims, runs, verifies and completes with the exact leased claim', 
       outputStorageKey: 'public/asset_worker/playback.mp4',
     },
     successfulVerifier,
+    successfulPublisher,
     {
       leaseMs: 60_000,
       timeoutMs: 10_000,
@@ -238,6 +247,7 @@ test('caption jobs are left for the transcript worker without taking a lease', a
       outputStorageKey: 'public/asset_worker/captions.vtt',
     },
     successfulVerifier,
+    successfulPublisher,
     {
       leaseMs: 60_000,
       timeoutMs: 10_000,
@@ -253,8 +263,9 @@ test('caption jobs are left for the transcript worker without taking a lease', a
   assert.equal(runnerCalled, false);
 });
 
-test('output mismatch fails the active claim instead of publishing an unverified derivative', async () => {
+test('output mismatch fails the active claim before publication', async () => {
   const repository = new FakeRepository(derivative(playbackPlan()));
+  let publishCalled = false;
   const result = await processFfmpegDerivative(
     repository,
     {
@@ -265,6 +276,9 @@ test('output mismatch fails the active claim instead of publishing an unverified
       outputStorageKey: 'public/asset_worker/playback.mp4',
     },
     async () => ({...verifiedPlayback, videoCodec: 'hevc'}),
+    async () => {
+      publishCalled = true;
+    },
     {
       leaseMs: 60_000,
       timeoutMs: 10_000,
@@ -275,6 +289,36 @@ test('output mismatch fails the active claim instead of publishing an unverified
   assert.equal(result.status, 'failed');
   assert.equal(result.errorCode, 'media_output_invalid');
   assert.equal(repository.lastErrorCode, 'media_output_invalid');
+  assert.equal(repository.readyCalls, 0);
+  assert.equal(repository.failedCalls, 1);
+  assert.equal(publishCalled, false);
+});
+
+test('publication failure never marks a local-only artifact ready', async () => {
+  const repository = new FakeRepository(derivative(playbackPlan()));
+  const result = await processFfmpegDerivative(
+    repository,
+    {
+      assetId,
+      derivativeKey,
+      inputPath: '/tmp/mosaic/source.mov',
+      outputPath: '/tmp/mosaic/playback.mp4',
+      outputStorageKey: 'public/asset_worker/playback.mp4',
+    },
+    successfulVerifier,
+    async () => {
+      throw new MediaOutputPublicationError('object store unavailable');
+    },
+    {
+      leaseMs: 60_000,
+      timeoutMs: 10_000,
+      runProcess: successfulRunner,
+    },
+  );
+
+  assert.equal(result.status, 'failed');
+  assert.equal(result.errorCode, 'media_publish_failed');
+  assert.equal(repository.lastErrorCode, 'media_publish_failed');
   assert.equal(repository.readyCalls, 0);
   assert.equal(repository.failedCalls, 1);
 });
@@ -295,6 +339,7 @@ test('process timeout becomes a stable retryable derivative failure code', async
       verifierCalled = true;
       return verifiedPlayback;
     },
+    successfulPublisher,
     {
       leaseMs: 60_000,
       timeoutMs: 10_000,
@@ -323,6 +368,7 @@ test('stale completion cannot overwrite a replacement worker claim', async () =>
       outputStorageKey: 'public/asset_worker/playback.mp4',
     },
     successfulVerifier,
+    successfulPublisher,
     {
       leaseMs: 60_000,
       timeoutMs: 10_000,
@@ -349,6 +395,7 @@ test('worker configuration requires process timeout to leave lease-completion ma
         outputStorageKey: 'public/asset_worker/playback.mp4',
       },
       successfulVerifier,
+      successfulPublisher,
       {leaseMs: 40_000, timeoutMs: 10_000, runProcess: successfulRunner},
     ),
     /leave at least 30000 ms/,
