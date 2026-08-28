@@ -315,7 +315,9 @@ final class PlaySchemaValidator {
       );
     }
 
-    if (keys != null && expected.any((note) => !keys.contains(note))) {
+    final availableKeys = keys;
+    if (availableKeys != null &&
+        expected.any((note) => !availableKeys.contains(note))) {
       issues.add(
         PlayValidationIssue(
           code: 'piano_expected_key_missing',

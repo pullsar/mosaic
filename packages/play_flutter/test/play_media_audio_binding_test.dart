@@ -40,7 +40,7 @@ void main() {
       ),
     );
 
-    const layer = PresentationLayer(
+    final layer = PresentationLayer(
       type: 'audio',
       role: 'media',
       assetId: 'audio_1',

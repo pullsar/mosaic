@@ -59,7 +59,7 @@ final class SoLoudAudioEngine implements AudioEngine {
       rethrow;
     } finally {
       if (identical(_pendingLoads[id], loading)) {
-        _pendingLoads.remove(id);
+        _pendingLoads.remove(id)?.ignore();
       }
     }
   }
@@ -73,7 +73,7 @@ final class SoLoudAudioEngine implements AudioEngine {
   @override
   Future<void> schedule(String assetId, Duration offset) async {
     if (offset.isNegative) {
-      throw RangeError.value(offset, 'offset', 'must not be negative');
+      throw ArgumentError.value(offset, 'offset', 'must not be negative');
     }
     final source = _source(assetId);
     final atTime = _soloud.getEngineTime() + offset;
