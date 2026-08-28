@@ -102,4 +102,43 @@ void main() {
     expect(find.byType(PlayInputUnavailable), findsOneWidget);
     expect(find.byType(PlayDragInput), findsNothing);
   });
+
+  testWidgets('PlaySurface exposes missing media integration as unavailable', (
+    tester,
+  ) async {
+    final play = PlayDocument.fromJson({
+      'schemaVersion': 1,
+      'id': 'missing_media_router',
+      'revisionId': 'rev_1',
+      'format': 'guess',
+      'classification': 'challenge',
+      'topics': ['test'],
+      'learningTopics': <String>[],
+      'estimatedDurationSec': 10,
+      'assets': ['image_a'],
+      'sources': <Object>[],
+      'entryState': 'active',
+      'states': {
+        'active': {
+          'presentation': {
+            'layers': [
+              {'type': 'image', 'role': 'media', 'assetId': 'image_a'},
+              {'type': 'text', 'role': 'prompt', 'value': 'Identify it.'},
+            ],
+          },
+          'input': {'type': 'tap', 'label': 'Done'},
+          'validation': {'type': 'none'},
+          'transition': {'default': r'$end'},
+        },
+      },
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(home: Scaffold(body: PlaySurface(play: play))),
+    );
+
+    expect(find.byType(PlayMediaUnavailable), findsOneWidget);
+    expect(find.bySemanticsLabel('Unsupported media: image'), findsOneWidget);
+    expect(find.text('Identify it.'), findsOneWidget);
+  });
 }
