@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "play_move_one_match",
-  "revisionId": "rev_1",
+  "revisionId": "rev_2",
   "format": "solve",
   "classification": "challenge",
   "topics": ["puzzles", "logic"],
