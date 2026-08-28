@@ -6,17 +6,46 @@ import {
   createMediaOutputPublisher,
   LocalMediaObjectStore,
 } from './media_object_store.js';
+import {
+  createS3MediaSourceMaterializer,
+  S3CompatibleMediaStorage,
+} from './media_s3_storage.js';
 import {PostgresMediaRepository} from './media_repository.js';
 import {loadMediaWorkerConfig} from './media_worker_config.js';
 import {
   createLocalMediaSourceMaterializer,
+  type MediaSourceMaterializer,
   runMediaWorkerLoop,
 } from './media_worker_runtime.js';
+import type {MediaOutputPublisher} from './media_ffmpeg_worker.js';
 
 async function main(): Promise<void> {
   const config = loadMediaWorkerConfig();
   await mkdir(config.workRoot, {recursive: true, mode: 0o700});
-  await mkdir(config.objectRoot, {recursive: true, mode: 0o750});
+
+  let publisher: MediaOutputPublisher;
+  let sourceMaterializer: MediaSourceMaterializer;
+  if (config.storageMode === 'local') {
+    await mkdir(config.objectRoot, {recursive: true, mode: 0o750});
+    publisher = createMediaOutputPublisher(
+      new LocalMediaObjectStore({rootPath: config.objectRoot}),
+    );
+    sourceMaterializer = createLocalMediaSourceMaterializer(config.sourceRoot);
+  } else {
+    const storage = new S3CompatibleMediaStorage({
+      endpoint: config.s3Endpoint,
+      bucket: config.s3Bucket,
+      region: config.s3Region,
+      accessKeyId: config.s3AccessKeyId,
+      secretAccessKey: config.s3SecretAccessKey,
+      requestTimeoutMs: config.storageTimeoutMs,
+      ...(config.s3SessionToken === undefined
+        ? {}
+        : {sessionToken: config.s3SessionToken}),
+    });
+    publisher = createMediaOutputPublisher(storage);
+    sourceMaterializer = createS3MediaSourceMaterializer(storage);
+  }
 
   const pool = new Pool({connectionString: config.databaseUrl});
   const repository = new PostgresMediaRepository(pool);
@@ -24,10 +53,6 @@ async function main(): Promise<void> {
   const verifier = createFfprobeOutputVerifier({
     executable: config.ffprobeExecutable,
   });
-  const publisher = createMediaOutputPublisher(
-    new LocalMediaObjectStore({rootPath: config.objectRoot}),
-  );
-  const sourceMaterializer = createLocalMediaSourceMaterializer(config.sourceRoot);
   const controller = new AbortController();
   const stop = (): void => controller.abort();
   process.once('SIGTERM', stop);
