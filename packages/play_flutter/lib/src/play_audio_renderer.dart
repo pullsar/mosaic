@@ -248,27 +248,28 @@ final class _OwnedPlayAudioState extends State<OwnedPlayAudio> {
     final engine = widget.engine;
     final coordinator = widget.coordinator;
     final ownerId = _requireAudioText(widget.ownerId, 'ownerId');
+    final handle = _AudioMediaHandle(engine, asset.id);
+
+    _handle = handle;
+    _handleCoordinator = coordinator;
+    _handleOwnerId = ownerId;
 
     try {
       await engine.load(asset.id, asset.uri);
     } on Object catch (error, stackTrace) {
       try {
-        await engine.release(asset.id);
+        await handle.release();
+        _clearHandle(handle);
       } on Object catch (cleanupError, cleanupStackTrace) {
         _reportError(asset, cleanupError, cleanupStackTrace);
       }
       Error.throwWithStackTrace(error, stackTrace);
     }
 
-    final handle = _AudioMediaHandle(engine, asset.id);
     if (!_isCurrent(generation) || !widget.active) {
-      await handle.release();
+      await _releaseCurrent();
       return null;
     }
-
-    _handle = handle;
-    _handleCoordinator = coordinator;
-    _handleOwnerId = ownerId;
     return handle;
   }
 
