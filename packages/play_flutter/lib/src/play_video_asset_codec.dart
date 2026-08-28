@@ -11,6 +11,7 @@ abstract final class PlayVideoAssetCodec {
     final semanticLabel = json['semanticLabel'];
     final autoplayRaw = json['autoplay'];
     final mutedRaw = json['muted'];
+    final formatRaw = json['format'];
     if (id is! String || id.trim().isEmpty) {
       throw const FormatException('Video asset requires a non-empty id.');
     }
@@ -40,7 +41,37 @@ abstract final class PlayVideoAssetCodec {
       semanticLabel: semanticLabel as String?,
       autoplay: autoplay,
       muted: muted,
+      format: _format(formatRaw),
     );
+  }
+
+  static PlayVideoFormatMetadata? _format(Object? raw) {
+    if (raw == null) return null;
+    if (raw is! Map) {
+      throw const FormatException('Video format metadata must be an object.');
+    }
+    final json = Map<String, Object?>.from(raw);
+    String? stringValue(String key) {
+      final value = json[key];
+      if (value == null) return null;
+      if (value is! String) {
+        throw FormatException('Video format $key must be a string.');
+      }
+      return value;
+    }
+
+    try {
+      return PlayVideoFormatMetadata(
+        container: stringValue('container'),
+        videoCodec: stringValue('videoCodec'),
+        videoProfile: stringValue('videoProfile'),
+        audioCodec: stringValue('audioCodec'),
+      );
+    } on ArgumentError catch (error) {
+      throw FormatException(
+        error.message?.toString() ?? 'Invalid video format.',
+      );
+    }
   }
 
   static PlayVideoSource _source(Map<String, Object?> json) {
