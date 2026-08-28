@@ -175,20 +175,9 @@ void main() {
     );
     final manipulation = <bool>[];
 
-    Widget surface(PlayDragInputSpec spec) => MaterialApp(
-      home: Scaffold(
-        body: SizedBox.square(
-          dimension: 400,
-          child: PlayDragInput(
-            spec: spec,
-            onTarget: (_) {},
-            onManipulationChanged: manipulation.add,
-          ),
-        ),
-      ),
+    await tester.pumpWidget(
+      _dragTestSurface(first, manipulation),
     );
-
-    await tester.pumpWidget(surface(first));
     final gesture = await tester.startGesture(
       tester.getCenter(find.bySemanticsLabel('Move match')),
     );
@@ -196,7 +185,9 @@ void main() {
     await tester.pump();
     expect(manipulation, [true]);
 
-    await tester.pumpWidget(surface(replacement));
+    await tester.pumpWidget(
+      _dragTestSurface(replacement, manipulation),
+    );
     await tester.pump();
 
     expect(manipulation, [true, false]);
@@ -224,20 +215,7 @@ void main() {
     );
     final manipulation = <bool>[];
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: SizedBox.square(
-            dimension: 400,
-            child: PlayDragInput(
-              spec: spec,
-              onTarget: (_) {},
-              onManipulationChanged: manipulation.add,
-            ),
-          ),
-        ),
-      ),
-    );
+    await tester.pumpWidget(_dragTestSurface(spec, manipulation));
     final gesture = await tester.startGesture(
       tester.getCenter(find.bySemanticsLabel('Move match')),
     );
@@ -252,3 +230,19 @@ void main() {
     await gesture.cancel();
   });
 }
+
+Widget _dragTestSurface(
+  PlayDragInputSpec spec,
+  List<bool> manipulation,
+) => MaterialApp(
+  home: Scaffold(
+    body: SizedBox.square(
+      dimension: 400,
+      child: PlayDragInput(
+        spec: spec,
+        onTarget: (_) {},
+        onManipulationChanged: manipulation.add,
+      ),
+    ),
+  ),
+);
