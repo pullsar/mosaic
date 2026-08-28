@@ -7,8 +7,8 @@ import 'play_video_renderer.dart';
 /// `video_player` plugin.
 ///
 /// Background playback is disabled and short feed clips never keep the display
-/// awake on their own. Mosaic's shared [ActiveMediaCoordinator] remains the
-/// authority for foreground/offscreen ownership and release.
+/// awake on their own. Mosaic's shared media coordinator remains the authority
+/// for foreground/offscreen ownership and release.
 final class VideoPlayerPlayController implements PlayVideoController {
   VideoPlayerPlayController(PlayVideoAsset asset)
     : _controller = _controllerFor(asset.source);
@@ -46,9 +46,9 @@ final class VideoPlayerPlayController implements PlayVideoController {
   @override
   Future<void> release() async {
     if (_released) return;
+    await _controller.dispose();
     _released = true;
     _initialized = false;
-    await _controller.dispose();
   }
 
   @override
