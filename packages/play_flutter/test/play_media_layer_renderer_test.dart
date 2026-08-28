@@ -9,9 +9,13 @@ final class _VideoController implements PlayVideoController {
   var playCount = 0;
   var pauseCount = 0;
   var releaseCount = 0;
+  final List<bool> muteValues = <bool>[];
 
   @override
   Future<void> initialize() async => initializeCount += 1;
+
+  @override
+  Future<void> setMuted(bool muted) async => muteValues.add(muted);
 
   @override
   Future<void> play() async => playCount += 1;
@@ -161,7 +165,9 @@ void main() {
     expect((widget as Text).data, 'unsupported:audio');
   });
 
-  testWidgets('resolved video acquires the declared Play owner', (tester) async {
+  testWidgets('resolved video acquires the declared Play owner muted', (
+    tester,
+  ) async {
     final coordinator = ActiveMediaCoordinator();
     final controller = _VideoController();
     final asset = PlayVideoAsset(
@@ -191,6 +197,7 @@ void main() {
     await tester.pump();
 
     expect(controller.initializeCount, 1);
+    expect(controller.muteValues, [true]);
     expect(controller.playCount, 1);
     expect(coordinator.owns('play_revision_1', controller), isTrue);
     expect(find.text('video-view'), findsOneWidget);

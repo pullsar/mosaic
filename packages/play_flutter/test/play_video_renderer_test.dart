@@ -10,6 +10,7 @@ final class _FakeVideoController implements PlayVideoController {
     this.name, {
     this.initializeGate,
     this.initializeError,
+    this.muteError,
     this.playError,
     this.releaseError,
   });
@@ -17,9 +18,11 @@ final class _FakeVideoController implements PlayVideoController {
   final String name;
   final Completer<void>? initializeGate;
   final Object? initializeError;
+  final Object? muteError;
   final Object? playError;
   final Object? releaseError;
   final List<String> events = <String>[];
+  final List<bool> muteValues = <bool>[];
   var initializeCount = 0;
   var playCount = 0;
   var pauseCount = 0;
@@ -33,6 +36,14 @@ final class _FakeVideoController implements PlayVideoController {
     final error = initializeError;
     if (error != null) throw error;
     events.add('$name.initialize:end');
+  }
+
+  @override
+  Future<void> setMuted(bool muted) async {
+    muteValues.add(muted);
+    events.add('$name.muted:$muted');
+    final error = muteError;
+    if (error != null) throw error;
   }
 
   @override
@@ -72,11 +83,16 @@ final class _ReplacementHandle implements ManagedMediaHandle {
   Future<void> release() async => releaseCount += 1;
 }
 
-PlayVideoAsset _asset(String id, {bool autoplay = true}) => PlayVideoAsset(
+PlayVideoAsset _asset(
+  String id, {
+  bool autoplay = true,
+  bool muted = true,
+}) => PlayVideoAsset(
   id: id,
   semanticLabel: 'Video $id',
   source: NetworkPlayVideoSource(Uri.parse('https://cdn.example.com/$id.mp4')),
   autoplay: autoplay,
+  muted: muted,
 );
 
 Future<void> _settleOwnership(WidgetTester tester) async {
@@ -108,7 +124,7 @@ void main() {
     },
   );
 
-  testWidgets('initializes, acquires ownership, autoplays, and renders', (
+  testWidgets('initializes, mutes, acquires ownership, autoplays, and renders', (
     tester,
   ) async {
     final coordinator = ActiveMediaCoordinator();
@@ -127,10 +143,67 @@ void main() {
     await _settleOwnership(tester);
 
     expect(controller.initializeCount, 1);
+    expect(controller.muteValues, [true]);
     expect(controller.playCount, 1);
+    expect(
+      controller.events.take(4),
+      [
+        'first.initialize:start',
+        'first.initialize:end',
+        'first.muted:true',
+        'first.play',
+      ],
+    );
     expect(coordinator.owns('play_a', controller), isTrue);
     expect(find.text('view:first'), findsOneWidget);
     expect(find.bySemanticsLabel('Video video_a'), findsOneWidget);
+  });
+
+  testWidgets('audible autoplay is rejected before play', (tester) async {
+    final coordinator = ActiveMediaCoordinator();
+    final controller = _FakeVideoController('audible');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: OwnedPlayVideo(
+          ownerId: 'play_a',
+          asset: _asset('video_a', muted: false),
+          coordinator: coordinator,
+          controllerFactory: (_) => controller,
+        ),
+      ),
+    );
+    await _settleOwnership(tester);
+
+    expect(controller.muteValues, [false]);
+    expect(controller.playCount, 0);
+    expect(controller.releaseCount, 1);
+    expect(coordinator.hasActiveMedia, isFalse);
+    expect(find.byType(PlayVideoUnavailable), findsOneWidget);
+  });
+
+  testWidgets('unmuted video may initialize when autoplay is disabled', (
+    tester,
+  ) async {
+    final coordinator = ActiveMediaCoordinator();
+    final controller = _FakeVideoController('manual');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: OwnedPlayVideo(
+          ownerId: 'play_a',
+          asset: _asset('video_a', autoplay: false, muted: false),
+          coordinator: coordinator,
+          controllerFactory: (_) => controller,
+        ),
+      ),
+    );
+    await _settleOwnership(tester);
+
+    expect(controller.muteValues, [false]);
+    expect(controller.playCount, 0);
+    expect(coordinator.owns('play_a', controller), isTrue);
+    expect(find.text('view:manual'), findsOneWidget);
   });
 
   testWidgets(
@@ -243,6 +316,7 @@ void main() {
     expect(first.playCount, 0);
     expect(first.releaseCount, 1);
     expect(second.initializeCount, 1);
+    expect(second.muteValues, [true]);
     expect(second.playCount, 1);
     expect(coordinator.owns('play_a', second), isTrue);
     expect(find.text('view:second'), findsOneWidget);
@@ -287,6 +361,34 @@ void main() {
 
     expect(stale.playCount, 1);
     expect(coordinator.owns('play_a', replacement), isTrue);
+  });
+
+  testWidgets('mute failure releases the controller and fails closed', (
+    tester,
+  ) async {
+    final coordinator = ActiveMediaCoordinator();
+    final muteFailure = StateError('mute failed');
+    final controller = _FakeVideoController('broken-mute', muteError: muteFailure);
+    final observed = <Object>[];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: OwnedPlayVideo(
+          ownerId: 'play_a',
+          asset: _asset('video_a'),
+          coordinator: coordinator,
+          controllerFactory: (_) => controller,
+          onError: (asset, error, stackTrace) => observed.add(error),
+        ),
+      ),
+    );
+    await _settleOwnership(tester);
+
+    expect(controller.playCount, 0);
+    expect(controller.releaseCount, 1);
+    expect(coordinator.hasActiveMedia, isFalse);
+    expect(find.byType(PlayVideoUnavailable), findsOneWidget);
+    expect(observed, contains(same(muteFailure)));
   });
 
   testWidgets('autoplay failure releases ownership and fails closed', (

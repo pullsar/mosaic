@@ -55,6 +55,7 @@ final class PlayVideoAsset {
     required this.source,
     String? semanticLabel,
     this.autoplay = true,
+    this.muted = true,
   }) : id = _requireVideoText(id, 'id'),
        semanticLabel = _normalizeVideoText(semanticLabel);
 
@@ -62,6 +63,9 @@ final class PlayVideoAsset {
   final PlayVideoSource source;
   final String? semanticLabel;
   final bool autoplay;
+
+  /// Autoplay is permitted only through an explicitly muted controller state.
+  final bool muted;
 }
 
 /// Provider-neutral native video controller owned by one visible Play.
@@ -70,6 +74,7 @@ final class PlayVideoAsset {
 /// intentionally ephemeral and must never be serialized into local state.
 abstract interface class PlayVideoController implements ManagedMediaHandle {
   Future<void> initialize();
+  Future<void> setMuted(bool muted);
   Future<void> play();
   Widget buildView(BuildContext context);
 }
@@ -215,6 +220,7 @@ final class _OwnedPlayVideoState extends State<OwnedPlayVideo> {
       _controllerOwnerId = ownerId;
 
       await controller.initialize();
+      await controller.setMuted(asset.muted);
       if (!_isCurrent(generation) || !widget.active) {
         await _releaseCurrent();
         return;
@@ -227,6 +233,9 @@ final class _OwnedPlayVideoState extends State<OwnedPlayVideo> {
       }
 
       if (asset.autoplay) {
+        if (!asset.muted) {
+          throw StateError('Audible video autoplay is not permitted.');
+        }
         await controller.play();
       }
       if (!_isCurrent(generation) || !widget.active) {
