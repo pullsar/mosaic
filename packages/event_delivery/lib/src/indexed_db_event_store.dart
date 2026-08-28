@@ -484,13 +484,25 @@ StateError _requestFailure(String operation, web.DOMException? error) {
 
 void _validatePolicy(EventOutboxPolicy policy) {
   if (policy.maxCount <= 0) {
-    throw ArgumentError.value(policy.maxCount, 'policy.maxCount', 'must be positive');
+    throw ArgumentError.value(
+      policy.maxCount,
+      'policy.maxCount',
+      'must be positive',
+    );
   }
   if (policy.maxBytes <= 0) {
-    throw ArgumentError.value(policy.maxBytes, 'policy.maxBytes', 'must be positive');
+    throw ArgumentError.value(
+      policy.maxBytes,
+      'policy.maxBytes',
+      'must be positive',
+    );
   }
   if (policy.maxAge.isNegative) {
-    throw ArgumentError.value(policy.maxAge, 'policy.maxAge', 'must not be negative');
+    throw ArgumentError.value(
+      policy.maxAge,
+      'policy.maxAge',
+      'must not be negative',
+    );
   }
   if (policy.maxBackoff.isNegative) {
     throw ArgumentError.value(
