@@ -5,14 +5,14 @@ import 'package:play_schema/play_schema.dart';
 
 void main() {
   test('piano spec is authored, bounded, and sequence-aware', () {
-    const input = PlayInputDefinition(
+    final input = PlayInputDefinition(
       type: PlayInputType.pianoKey,
       properties: {
         'keys': ['C4', 'E4', 'G4'],
         'sequenceLength': 3,
       },
     );
-    const validation = PlayValidationDefinition(
+    final validation = PlayValidationDefinition(
       type: PlayValidatorType.orderedSequence,
       value: ['C4', 'E4', 'G4'],
     );
@@ -24,14 +24,14 @@ void main() {
   });
 
   test('piano spec fails closed on malformed authored keys', () {
-    const input = PlayInputDefinition(
+    final input = PlayInputDefinition(
       type: PlayInputType.pianoKey,
       properties: {
         'keys': ['C4', 'C4'],
         'sequenceLength': 2,
       },
     );
-    const validation = PlayValidationDefinition(
+    final validation = PlayValidationDefinition(
       type: PlayValidatorType.orderedSequence,
       value: ['C4', 'C4'],
     );
@@ -69,7 +69,7 @@ void main() {
   });
 
   test('drag spec rejects out-of-bounds authored targets', () {
-    const input = PlayInputDefinition(
+    final input = PlayInputDefinition(
       type: PlayInputType.drag,
       properties: {
         'dragOrigin': {'x': 0.1, 'y': 0.1},
