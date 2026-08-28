@@ -63,7 +63,10 @@ Future<void> _settle(WidgetTester tester) async {
 
 void _expectPoster(WidgetTester tester) {
   expect(find.byType(Image), findsOneWidget);
-  expect(tester.widget<Image>(find.byType(Image)).semanticLabel, 'Travel clip poster');
+  expect(
+    tester.widget<Image>(find.byType(Image)).semanticLabel,
+    'Travel clip poster',
+  );
 }
 
 void main() {
