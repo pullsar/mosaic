@@ -227,7 +227,7 @@ void main() {
     expect(observed.whereType<StateError>(), isNotEmpty);
   });
 
-  testWidgets('load failure attempts cleanup without acquiring ownership', (
+  testWidgets('load failure releases acquired ownership and fails closed', (
     tester,
   ) async {
     final engine = _FakeAudioEngine()..loadError = StateError('load failed');
@@ -243,7 +243,7 @@ void main() {
     await tester.tap(find.text('Hear'));
     await tester.pumpAndSettle();
 
-    expect(engine.events, ['load:audio_a', 'release:audio_a']);
+    expect(engine.events, ['load:audio_a', 'stop:audio_a', 'release:audio_a']);
     expect(coordinator.hasActiveMedia, isFalse);
     expect(find.byType(PlayAudioUnavailable), findsOneWidget);
   });
@@ -353,6 +353,61 @@ void main() {
     expect(engine.events, ['load:audio_a', 'play:audio_a', 'stop:audio_a']);
     expect(coordinator.hasActiveMedia, isTrue);
     expect(find.text('Replay'), findsOneWidget);
+  });
+
+  testWidgets('same-asset handoff releases predecessor before successor load', (
+    tester,
+  ) async {
+    final engine = _FakeAudioEngine();
+    final coordinator = ActiveMediaCoordinator();
+    final asset = _asset('audio_a');
+
+    Widget surface({required bool includeSecond}) => MaterialApp(
+      home: Column(
+        children: [
+          OwnedPlayAudio(
+            key: const ValueKey('first-audio'),
+            ownerId: 'play_a',
+            asset: asset,
+            engine: engine,
+            coordinator: coordinator,
+          ),
+          if (includeSecond)
+            OwnedPlayAudio(
+              key: const ValueKey('second-audio'),
+              ownerId: 'play_b',
+              asset: asset,
+              engine: engine,
+              coordinator: coordinator,
+            ),
+        ],
+      ),
+    );
+
+    await tester.pumpWidget(surface(includeSecond: false));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Hear'));
+    await tester.pumpAndSettle();
+
+    await tester.pumpWidget(surface(includeSecond: true));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const ValueKey('second-audio')),
+        matching: find.text('Hear'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(engine.events, [
+      'load:audio_a',
+      'play:audio_a',
+      'stop:audio_a',
+      'release:audio_a',
+      'load:audio_a',
+      'play:audio_a',
+    ]);
+    expect(coordinator.ownerId, 'play_b');
   });
 
   testWidgets(

@@ -116,7 +116,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Which century?'), findsOneWidget);
-    expect(find.bySemanticsLabel('Artwork detail'), findsOneWidget);
+    final image = tester.widget<Image>(find.byType(Image));
+    expect(image.semanticLabel, 'Artwork detail');
+    expect(image.excludeFromSemantics, isFalse);
     expect(find.byType(PlayVisualUnavailable), findsNothing);
 
     await tester.tap(find.text('18th'));

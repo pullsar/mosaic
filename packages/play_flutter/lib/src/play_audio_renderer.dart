@@ -252,11 +252,19 @@ final class _OwnedPlayAudioState extends State<OwnedPlayAudio> {
     _handleOwnerId = ownerId;
 
     try {
+      // Transfer coordinator ownership before loading. This guarantees a
+      // predecessor using the same logical asset ID is fully stopped and
+      // released before a shared engine creates/reuses the successor source.
+      await coordinator.activate(ownerId, handle);
+      if (!_isCurrent(generation) || !widget.active) {
+        await _releaseCurrent();
+        return null;
+      }
+
       await engine.load(asset.id, asset.uri);
     } on Object catch (error, stackTrace) {
       try {
-        await handle.release();
-        _clearHandle(handle);
+        await _releaseCurrent();
       } on Object catch (cleanupError, cleanupStackTrace) {
         _reportError(asset, cleanupError, cleanupStackTrace);
       }

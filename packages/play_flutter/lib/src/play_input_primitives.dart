@@ -170,6 +170,7 @@ final class _PianoKey extends StatelessWidget {
       child: Semantics(
         button: true,
         label: note,
+        excludeSemantics: true,
         child: Material(
           color: background,
           shape: RoundedRectangleBorder(

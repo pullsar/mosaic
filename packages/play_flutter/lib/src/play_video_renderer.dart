@@ -149,7 +149,6 @@ final class _OwnedPlayVideoState extends State<OwnedPlayVideo> {
         oldWidget.ownerId != widget.ownerId ||
         !identical(oldWidget.asset, widget.asset) ||
         !identical(oldWidget.coordinator, widget.coordinator) ||
-        oldWidget.controllerFactory != widget.controllerFactory ||
         oldWidget.active != widget.active;
     if (configurationChanged) {
       _scheduleReconcile();
@@ -359,7 +358,12 @@ final class _OwnedPlayVideoState extends State<OwnedPlayVideo> {
       final semanticLabel = widget.asset.semanticLabel;
       content = semanticLabel == null
           ? view
-          : Semantics(container: true, label: semanticLabel, child: view);
+          : Semantics(
+              container: true,
+              label: semanticLabel,
+              excludeSemantics: true,
+              child: view,
+            );
     }
 
     return widget.useRepaintBoundary

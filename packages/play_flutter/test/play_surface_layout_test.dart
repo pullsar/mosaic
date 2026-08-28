@@ -37,6 +37,13 @@ void main() {
       Size? mediaSize;
       const surfaceSize = Size(320, 640);
       const insets = EdgeInsets.only(top: 40, bottom: 30);
+      tester.view
+        ..physicalSize = surfaceSize
+        ..devicePixelRatio = 1;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
 
       await tester.pumpWidget(
         MaterialApp(
