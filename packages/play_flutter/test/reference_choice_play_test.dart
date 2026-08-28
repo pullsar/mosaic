@@ -44,7 +44,7 @@ void main() {
     final play = _playFixture('four_day_getaway.json');
     final mood = _canvasFixture('getaway_mood_01.json');
     final media = PlayMediaLayerBuilder(
-      ownerId: play.revisionId,
+      ownerId: playMediaOwnerId(play),
       visualResolver: MapPlayVisualAssetResolver(const {}),
       videoResolver: MapPlayVideoAssetResolver(const {}),
       canvasResolver: MapPlayCanvasAssetResolver({mood.id: mood}),
