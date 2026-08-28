@@ -1,0 +1,110 @@
+name: fix-renderer-acceptance-once
+
+on:
+  push:
+    branches:
+      - agent/m06-play-renderer-20260828
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/m06-play-renderer-20260828
+      - name: Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.44.7'
+          cache: true
+      - name: Resolve locked workspace
+        run: flutter pub get --enforce-lockfile
+      - name: Apply acceptance fixes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace(path_str, old, new, count=1):
+              path = Path(path_str)
+              text = path.read_text()
+              if text.count(old) < count:
+                  raise SystemExit(f'missing expected text in {path}: {old!r}')
+              path.write_text(text.replace(old, new, count))
+
+          replace(
+              'packages/play_flutter/lib/src/play_video_renderer.dart',
+              "        oldWidget.controllerFactory != widget.controllerFactory ||\n",
+              '',
+          )
+          replace(
+              'packages/play_flutter/lib/src/play_video_renderer.dart',
+              "          : Semantics(container: true, label: semanticLabel, child: view);",
+              "          : Semantics(\n              container: true,\n              label: semanticLabel,\n              excludeSemantics: true,\n              child: view,\n            );",
+          )
+          replace(
+              'packages/play_flutter/lib/src/play_input_primitives.dart',
+              "        button: true,\n        label: note,\n        child: Material(",
+              "        button: true,\n        label: note,\n        excludeSemantics: true,\n        child: Material(",
+          )
+
+          audio_path = Path('packages/play_flutter/lib/src/play_audio_renderer.dart')
+          audio = audio_path.read_text()
+          old = """    try {\n      await engine.load(asset.id, asset.uri);\n    } on Object catch (error, stackTrace) {\n      try {\n        await handle.release();\n        _clearHandle(handle);\n      } on Object catch (cleanupError, cleanupStackTrace) {\n        _reportError(asset, cleanupError, cleanupStackTrace);\n      }\n      Error.throwWithStackTrace(error, stackTrace);\n    }\n\n    if (!_isCurrent(generation) || !widget.active) {\n      await _releaseCurrent();\n      return null;\n    }\n"""
+          new = """    try {\n      // Transfer coordinator ownership before loading. This guarantees a\n      // predecessor using the same logical asset ID is fully stopped and\n      // released before a shared engine creates/reuses the successor source.\n      await coordinator.activate(ownerId, handle);\n      if (!_isCurrent(generation) || !widget.active) {\n        await _releaseCurrent();\n        return null;\n      }\n\n      await engine.load(asset.id, asset.uri);\n    } on Object catch (error, stackTrace) {\n      try {\n        await _releaseCurrent();\n      } on Object catch (cleanupError, cleanupStackTrace) {\n        _reportError(asset, cleanupError, cleanupStackTrace);\n      }\n      Error.throwWithStackTrace(error, stackTrace);\n    }\n\n    if (!_isCurrent(generation) || !widget.active) {\n      await _releaseCurrent();\n      return null;\n    }\n"""
+          if old not in audio:
+              raise SystemExit('audio load block changed unexpectedly')
+          audio_path.write_text(audio.replace(old, new, 1))
+
+          replace(
+              'packages/play_flutter/test/reference_visual_media_play_test.dart',
+              "    expect(find.bySemanticsLabel('Artwork detail'), findsOneWidget);",
+              "    final image = tester.widget<Image>(find.byType(Image));\n    expect(image.semanticLabel, 'Artwork detail');\n    expect(image.excludeFromSemantics, isFalse);",
+          )
+
+          layout_path = Path('packages/play_flutter/test/play_surface_layout_test.dart')
+          layout = layout_path.read_text()
+          marker = """      const surfaceSize = Size(320, 640);\n      const insets = EdgeInsets.only(top: 40, bottom: 30);\n\n      await tester.pumpWidget(\n"""
+          replacement = """      const surfaceSize = Size(320, 640);\n      const insets = EdgeInsets.only(top: 40, bottom: 30);\n      tester.view\n        ..physicalSize = surfaceSize\n        ..devicePixelRatio = 1;\n      addTearDown(() {\n        tester.view.resetPhysicalSize();\n        tester.view.resetDevicePixelRatio();\n      });\n\n      await tester.pumpWidget(\n"""
+          if marker not in layout:
+              raise SystemExit('layout viewport marker changed unexpectedly')
+          layout_path.write_text(layout.replace(marker, replacement, 1))
+
+          audio_test_path = Path('packages/play_flutter/test/play_audio_renderer_test.dart')
+          tests = audio_test_path.read_text()
+          tests = tests.replace(
+              "testWidgets('load failure attempts cleanup without acquiring ownership', (",
+              "testWidgets('load failure releases acquired ownership and fails closed', (",
+              1,
+          )
+          tests = tests.replace(
+              "    expect(engine.events, ['load:audio_a', 'release:audio_a']);",
+              "    expect(engine.events, [\n      'load:audio_a',\n      'stop:audio_a',\n      'release:audio_a',\n    ]);",
+              1,
+          )
+          insert_before = """  testWidgets(\n    'stale external replacement is never released by audio teardown',\n"""
+          new_test = """  testWidgets(\n    'same-asset handoff releases predecessor before successor load',\n    (tester) async {\n      final engine = _FakeAudioEngine();\n      final coordinator = ActiveMediaCoordinator();\n      final asset = _asset('audio_a');\n\n      Widget surface({required bool includeSecond}) => MaterialApp(\n        home: Column(\n          children: [\n            OwnedPlayAudio(\n              key: const ValueKey('first-audio'),\n              ownerId: 'play_a',\n              asset: asset,\n              engine: engine,\n              coordinator: coordinator,\n            ),\n            if (includeSecond)\n              OwnedPlayAudio(\n                key: const ValueKey('second-audio'),\n                ownerId: 'play_b',\n                asset: asset,\n                engine: engine,\n                coordinator: coordinator,\n              ),\n          ],\n        ),\n      );\n\n      await tester.pumpWidget(surface(includeSecond: false));\n      await tester.pumpAndSettle();\n      await tester.tap(find.text('Hear'));\n      await tester.pumpAndSettle();\n\n      await tester.pumpWidget(surface(includeSecond: true));\n      await tester.pumpAndSettle();\n      await tester.tap(\n        find.descendant(\n          of: find.byKey(const ValueKey('second-audio')),\n          matching: find.text('Hear'),\n        ),\n      );\n      await tester.pumpAndSettle();\n\n      expect(engine.events, [\n        'load:audio_a',\n        'play:audio_a',\n        'stop:audio_a',\n        'release:audio_a',\n        'load:audio_a',\n        'play:audio_a',\n      ]);\n      expect(coordinator.ownerId, 'play_b');\n    },\n  );\n\n"""
+          if insert_before not in tests:
+              raise SystemExit('audio test insertion marker changed unexpectedly')
+          audio_test_path.write_text(tests.replace(insert_before, new_test + insert_before, 1))
+          PY
+      - name: Canonical format
+        run: dart format packages/play_flutter/lib/src/play_video_renderer.dart packages/play_flutter/lib/src/play_input_primitives.dart packages/play_flutter/lib/src/play_audio_renderer.dart packages/play_flutter/test/reference_visual_media_play_test.dart packages/play_flutter/test/play_surface_layout_test.dart packages/play_flutter/test/play_audio_renderer_test.dart
+      - name: Analyze
+        run: flutter analyze
+      - name: Test renderer
+        working-directory: packages/play_flutter
+        run: flutter test
+      - name: Remove one-shot workflow
+        run: git rm .github/workflows/fix-renderer-acceptance-once.yml
+      - name: Commit fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add packages/play_flutter
+          git commit -am "fix(renderer): harden media handoff and acceptance semantics"
+          git push origin HEAD:agent/m06-play-renderer-20260828
