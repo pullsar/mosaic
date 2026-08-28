@@ -106,7 +106,8 @@ abstract interface class MediaPickerGateway {
 /// A currently active native media resource owned by one visible Play.
 ///
 /// [pause] and [release] must be safe to call more than once so lifecycle
-/// recovery can retry after a platform failure.
+/// recovery can retry after a platform failure. Coordinated cleanup still
+/// attempts [release] when [pause] fails and preserves the first failure.
 abstract interface class ManagedMediaHandle {
   Future<void> pause();
   Future<void> release();
