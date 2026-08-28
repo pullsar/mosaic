@@ -261,6 +261,7 @@ test(
       );
       assert.equal(captionPlans.length, 1);
 
+      const expected = new Map<string, string>();
       for (let index = 0; index < 2; index += 1) {
         const assetId = `transcript_${index}_${suffix}`;
         await mediaRepo.createAsset(assetId, actorId, 'audio');
@@ -272,17 +273,24 @@ test(
           durationMs: 4_000,
           metadata: {verified: true},
         });
-        await mediaRepo.registerDerivative(assetId, captionPlans[0]!);
+        const registered = await mediaRepo.registerDerivative(assetId, captionPlans[0]!);
+        expected.set(assetId, registered.derivative.derivativeKey);
       }
 
-      assert.equal(
-        await dispatcherA.claimNext(
-          FFMPEG_MEDIA_PROCESSORS,
-          60_000,
-          `ffmpeg_cannot_take_caption_${suffix}`,
-        ),
-        null,
+      // The suite shares one PostgreSQL database, so an FFmpeg claim may consume
+      // unrelated work left by another test. The invariant is that it cannot
+      // mutate either caption created above.
+      await dispatcherA.claimNext(
+        FFMPEG_MEDIA_PROCESSORS,
+        60_000,
+        `ffmpeg_probe_${suffix}`,
       );
+      for (const [assetId, derivativeKey] of expected) {
+        assert.equal(
+          (await mediaRepo.getDerivative(assetId, derivativeKey))?.state,
+          'pending',
+        );
+      }
 
       const [first, second] = await Promise.all([
         dispatcherA.claimNext(
@@ -307,13 +315,54 @@ test(
         assert.equal(claim.derivative.plan.processor, TRANSCRIPT_MEDIA_PROCESSOR);
         assert.equal(claim.derivative.state, 'processing');
       }
-      assert.equal(
-        await dispatcherA.claimNext(
+
+      const observed = new Set<string>();
+      const recordExpected = (claim: typeof first): void => {
+        if (!expected.has(claim.derivative.assetId)) return;
+        assert.equal(
+          claim.derivative.derivativeKey,
+          expected.get(claim.derivative.assetId),
+        );
+        observed.add(claim.derivative.assetId);
+      };
+      recordExpected(first);
+      recordExpected(second);
+
+      const eligible = await pool.query<{count: string}>(
+        `select count(*)::text as count
+         from media_derivatives d
+         join media_assets a on a.id = d.asset_id
+         where a.state <> 'revoked'
+           and a.source_sha256 = d.source_sha256
+           and d.plan->>'processor' = $1
+           and (
+             d.state in ('pending', 'failed')
+             or (d.state = 'processing' and d.lease_expires_at <= now())
+           )`,
+        [TRANSCRIPT_MEDIA_PROCESSOR],
+      );
+      const remainingEligible = Number(eligible.rows[0]?.count ?? '0');
+      assert.ok(Number.isSafeInteger(remainingEligible) && remainingEligible >= 0);
+
+      for (
+        let index = 0;
+        index < remainingEligible && observed.size < expected.size;
+        index += 1
+      ) {
+        const claim = await dispatcherA.claimNext(
           [TRANSCRIPT_MEDIA_PROCESSOR],
           60_000,
-          `transcript_none_${suffix}`,
-        ),
-        null,
+          `transcript_drain_${index}_${suffix}`,
+        );
+        assert.ok(claim);
+        assert.equal(claim.derivative.purpose, 'captions');
+        assert.equal(claim.derivative.plan.processor, TRANSCRIPT_MEDIA_PROCESSOR);
+        recordExpected(claim);
+      }
+
+      assert.deepEqual(
+        [...observed].sort(),
+        [...expected.keys()].sort(),
       );
     } finally {
       await pool.end();
