@@ -137,4 +137,118 @@ void main() {
     expect(targets, ['solution_a']);
     expect(manipulation, [true, false]);
   });
+
+  testWidgets('replacing a drag spec mid-gesture releases the feed lock', (
+    tester,
+  ) async {
+    final first = PlayDragInputSpec(
+      origin: const Offset(0.1, 0.5),
+      size: const Size(0.2, 0.1),
+      handleLabel: 'Move match',
+      targets: const [
+        PlayDragTarget(
+          id: 'solution_a',
+          rect: PlayNormalizedRect(
+            x: 0.6,
+            y: 0.2,
+            width: 0.2,
+            height: 0.2,
+          ),
+        ),
+      ],
+    );
+    final replacement = PlayDragInputSpec(
+      origin: const Offset(0.2, 0.5),
+      size: const Size(0.2, 0.1),
+      handleLabel: 'Move match',
+      targets: const [
+        PlayDragTarget(
+          id: 'solution_b',
+          rect: PlayNormalizedRect(
+            x: 0.6,
+            y: 0.2,
+            width: 0.2,
+            height: 0.2,
+          ),
+        ),
+      ],
+    );
+    final manipulation = <bool>[];
+
+    Widget surface(PlayDragInputSpec spec) => MaterialApp(
+      home: Scaffold(
+        body: SizedBox.square(
+          dimension: 400,
+          child: PlayDragInput(
+            spec: spec,
+            onTarget: (_) {},
+            onManipulationChanged: manipulation.add,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(surface(first));
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.bySemanticsLabel('Move match')),
+    );
+    await gesture.moveBy(const Offset(20, 0));
+    await tester.pump();
+    expect(manipulation, [true]);
+
+    await tester.pumpWidget(surface(replacement));
+    await tester.pump();
+
+    expect(manipulation, [true, false]);
+    await gesture.cancel();
+  });
+
+  testWidgets('disposing a drag mid-gesture releases the feed lock', (
+    tester,
+  ) async {
+    final spec = PlayDragInputSpec(
+      origin: const Offset(0.1, 0.5),
+      size: const Size(0.2, 0.1),
+      handleLabel: 'Move match',
+      targets: const [
+        PlayDragTarget(
+          id: 'solution_a',
+          rect: PlayNormalizedRect(
+            x: 0.6,
+            y: 0.2,
+            width: 0.2,
+            height: 0.2,
+          ),
+        ),
+      ],
+    );
+    final manipulation = <bool>[];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox.square(
+            dimension: 400,
+            child: PlayDragInput(
+              spec: spec,
+              onTarget: (_) {},
+              onManipulationChanged: manipulation.add,
+            ),
+          ),
+        ),
+      ),
+    );
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.bySemanticsLabel('Move match')),
+    );
+    await gesture.moveBy(const Offset(20, 0));
+    await tester.pump();
+    expect(manipulation, [true]);
+
+    await tester.pumpWidget(const MaterialApp(home: SizedBox.shrink()));
+    await tester.pump();
+
+    expect(manipulation, [true, false]);
+    await gesture.cancel();
+  });
 }
