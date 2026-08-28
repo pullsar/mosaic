@@ -62,25 +62,28 @@ final class _PlaySurfaceState extends State<PlaySurface> {
     final state = _session.state;
     final media = state.presentation.where((layer) => layer.role == 'media');
     final text = state.presentation.where((layer) => layer.type == 'text');
+    final input = _InputOverlay(
+      input: state.input,
+      validation: state.validation,
+      inputEpoch: _session.attempts,
+      onAction: _apply,
+      onDirectManipulationChanged: widget.onDirectManipulationChanged,
+    );
 
     return ColoredBox(
       color: MosaicVisualTokens.surface,
-      child: SafeArea(
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            for (final layer in media) _buildMedia(context, layer),
-            _TextOverlay(layers: text.toList(growable: false)),
-            _InputOverlay(
-              input: state.input,
-              validation: state.validation,
-              inputEpoch: _session.attempts,
-              onAction: _apply,
-              onDirectManipulationChanged:
-                  widget.onDirectManipulationChanged,
-            ),
-          ],
-        ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          for (final layer in media) _buildMedia(context, layer),
+          SafeArea(
+            child: _TextOverlay(layers: text.toList(growable: false)),
+          ),
+          if (state.input.type == PlayInputType.drag)
+            input
+          else
+            SafeArea(child: input),
+        ],
       ),
     );
   }
@@ -152,12 +155,14 @@ final class _InputOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (input.type == PlayInputType.tap) {
-      return Positioned(
-        right: 20,
-        bottom: 24,
-        child: _ControlButton(
-          label: input.label ?? 'Done',
-          onPressed: () => onAction(const TapAction()),
+      return Align(
+        alignment: Alignment.bottomRight,
+        child: Padding(
+          padding: const EdgeInsets.only(right: 20, bottom: 24),
+          child: _ControlButton(
+            label: input.label ?? 'Done',
+            onPressed: () => onAction(const TapAction()),
+          ),
         ),
       );
     }
