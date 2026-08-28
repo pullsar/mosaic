@@ -96,13 +96,14 @@ Formats:
 - [`docs/operability-and-slo-spec.md`](docs/operability-and-slo-spec.md) — observability, SLOs, flags, rollback, incidents, and launch operations.
 - [`docs/platform-runtime-and-release-gotchas.md`](docs/platform-runtime-and-release-gotchas.md) — Flutter/web/media lifecycle, permissions, store compliance, offline recovery, and release-device gates.
 - [`docs/dependency-and-platform-decisions.md`](docs/dependency-and-platform-decisions.md) — Flutter stack, approved dependencies, abstraction boundaries, and dependency policy.
+- [`docs/play-performance-profiling.md`](docs/play-performance-profiling.md) — physical 60/120 Hz Play profiling protocol, frame budgets, first-frame and audio-readiness evidence.
 - [`docs/implementation-plan.md`](docs/implementation-plan.md) — staged implementation and validation gates.
 
 ## Current status
 
-**Milestone 0 is merged. Milestone 0.5 compatibility/platform foundations are in progress.**
+**Foundation and the core M1 declarative Play renderer are merged.**
 
-The active sequence is schema/capability negotiation, API/data foundation, lifecycle/permissions, and bounded local recovery before widening the Play renderer and consumer feed.
+The repository now includes the Flutter workspace/schema-engine foundation, capability negotiation, API/data foundation, lifecycle/permissions/privacy baseline, bounded process-death recovery, and production image/video/audio/canvas Play rendering. Issue #3 remains open only for the focused visual-regression/profiling acceptance tranche before the roadmap widens further into the consumer loop.
 
 ## Controlled-beta test
 
