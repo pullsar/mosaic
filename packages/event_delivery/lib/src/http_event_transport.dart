@@ -12,7 +12,7 @@ final class HttpEventTransport implements EventTransport {
     http.Client? client,
     this.requestTimeout = const Duration(seconds: 10),
     bool allowInsecureLocalhost = false,
-  }) : _endpoint = _eventEndpoint(
+  }) : _baseUri = _validatedBaseUri(
          baseUri,
          allowInsecureLocalhost: allowInsecureLocalhost,
        ),
@@ -27,13 +27,15 @@ final class HttpEventTransport implements EventTransport {
     }
   }
 
-  final Uri _endpoint;
+  final Uri _baseUri;
   final http.Client _client;
   final bool _ownsClient;
   final Duration requestTimeout;
+  final Set<String> _registeredActors = <String>{};
   var _closed = false;
 
-  Uri get endpoint => _endpoint;
+  Uri get endpoint => _baseUri.resolve('v1/events');
+  Uri get actorEndpoint => _baseUri.resolve('v1/actors');
 
   @override
   Future<EventDeliveryResult> deliver(MosaicEventEnvelope event) async {
@@ -43,25 +45,55 @@ final class HttpEventTransport implements EventTransport {
       );
     }
 
+    final actorResult = await _ensureActor(event.actorId);
+    if (actorResult.disposition != EventDeliveryDisposition.accepted) {
+      return actorResult;
+    }
+
+    return _postJson(
+      endpoint,
+      event.toJson(),
+      acceptedStatusCodes: const {200, 202},
+    );
+  }
+
+  Future<EventDeliveryResult> _ensureActor(String actorId) async {
+    if (_registeredActors.contains(actorId)) {
+      return const EventDeliveryResult(EventDeliveryDisposition.accepted);
+    }
+
+    final result = await _postJson(
+      actorEndpoint,
+      <String, Object?>{'actorId': actorId},
+      acceptedStatusCodes: const {200, 201, 204},
+    );
+    if (result.disposition == EventDeliveryDisposition.accepted) {
+      _registeredActors.add(actorId);
+    }
+    return result;
+  }
+
+  Future<EventDeliveryResult> _postJson(
+    Uri uri,
+    Map<String, Object?> body, {
+    required Set<int> acceptedStatusCodes,
+  }) async {
     try {
       final response = await _client
           .post(
-            _endpoint,
+            uri,
             headers: const {'content-type': 'application/json'},
-            body: jsonEncode(event.toJson()),
+            body: jsonEncode(body),
           )
           .timeout(requestTimeout);
       final statusCode = response.statusCode;
-      if (statusCode == 200 || statusCode == 202) {
+      if (acceptedStatusCodes.contains(statusCode)) {
         return EventDeliveryResult(
           EventDeliveryDisposition.accepted,
           statusCode: statusCode,
         );
       }
-      if (statusCode == 408 ||
-          statusCode == 425 ||
-          statusCode == 429 ||
-          statusCode >= 500) {
+      if (_isRetryableStatus(statusCode)) {
         return EventDeliveryResult(
           EventDeliveryDisposition.retryableFailure,
           statusCode: statusCode,
@@ -82,11 +114,18 @@ final class HttpEventTransport implements EventTransport {
   Future<void> close() async {
     if (_closed) return;
     _closed = true;
+    _registeredActors.clear();
     if (_ownsClient) _client.close();
   }
 }
 
-Uri _eventEndpoint(Uri baseUri, {required bool allowInsecureLocalhost}) {
+bool _isRetryableStatus(int statusCode) =>
+    statusCode == 408 ||
+    statusCode == 425 ||
+    statusCode == 429 ||
+    statusCode >= 500;
+
+Uri _validatedBaseUri(Uri baseUri, {required bool allowInsecureLocalhost}) {
   if (!baseUri.isAbsolute || baseUri.host.isEmpty) {
     throw ArgumentError.value(baseUri, 'baseUri', 'must be an absolute URI');
   }
@@ -116,5 +155,5 @@ Uri _eventEndpoint(Uri baseUri, {required bool allowInsecureLocalhost}) {
   final normalizedPath = baseUri.path.endsWith('/')
       ? baseUri.path
       : '${baseUri.path}/';
-  return baseUri.replace(path: normalizedPath).resolve('v1/events');
+  return baseUri.replace(path: normalizedPath);
 }
