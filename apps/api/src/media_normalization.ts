@@ -216,7 +216,20 @@ function captionsPlan(source: CaptionSource): MediaDerivativePlan {
 
 function normalizedPlan(plan: MediaDerivativePlan): MediaDerivativePlan {
   const normalized = normalizeMediaDerivativePlan(plan);
+  freezeCanonical(normalized.parameters);
   return Object.freeze(normalized);
+}
+
+function freezeCanonical(value: CanonicalJsonValue): void {
+  if (Array.isArray(value)) {
+    for (const item of value) freezeCanonical(item);
+    Object.freeze(value);
+    return;
+  }
+  if (value !== null && typeof value === 'object') {
+    for (const item of Object.values(value)) freezeCanonical(item);
+    Object.freeze(value);
+  }
 }
 
 interface NormalizedVideoSource {
@@ -252,7 +265,7 @@ function normalizeVideoSource(source: VerifiedVideoSourceMetadata): NormalizedVi
   positiveInteger(source.height, 'height');
   positiveInteger(source.durationMs, 'durationMs');
   const videoCodec = normalizedToken(source.videoCodec, 'videoCodec');
-  const videoProfile = optionalToken(source.videoProfile, 'videoProfile');
+  const videoProfile = optionalMediaLabel(source.videoProfile, 'videoProfile');
   if (source.dynamicRange !== 'sdr' && source.dynamicRange !== 'hdr') {
     throw new TypeError(`Unsupported dynamicRange: ${String(source.dynamicRange)}`);
   }
@@ -337,6 +350,11 @@ function normalizedToken(value: string, name: string): string {
 
 function optionalToken(value: string | undefined, name: string): string | null {
   return value === undefined ? null : normalizedToken(value, name);
+}
+
+function optionalMediaLabel(value: string | undefined, name: string): string | null {
+  if (value === undefined) return null;
+  return normalizedToken(value.trim().replace(/\s+/g, '-'), name);
 }
 
 function optionalLanguageTag(value: string | undefined): string | null {
