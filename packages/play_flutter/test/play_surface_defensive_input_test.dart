@@ -49,7 +49,9 @@ void main() {
     );
 
     await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: PlaySurface(play: play))),
+      MaterialApp(
+        home: Scaffold(body: PlaySurface(play: play)),
+      ),
     );
 
     expect(find.byType(PlayInputUnavailable), findsOneWidget);
@@ -73,7 +75,9 @@ void main() {
     );
 
     await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: PlaySurface(play: play))),
+      MaterialApp(
+        home: Scaffold(body: PlaySurface(play: play)),
+      ),
     );
 
     expect(find.byType(PlayInputUnavailable), findsOneWidget);
@@ -96,7 +100,9 @@ void main() {
     );
 
     await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: PlaySurface(play: play))),
+      MaterialApp(
+        home: Scaffold(body: PlaySurface(play: play)),
+      ),
     );
 
     expect(find.byType(PlayInputUnavailable), findsOneWidget);
@@ -134,7 +140,9 @@ void main() {
     });
 
     await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: PlaySurface(play: play))),
+      MaterialApp(
+        home: Scaffold(body: PlaySurface(play: play)),
+      ),
     );
 
     expect(find.byType(PlayMediaUnavailable), findsOneWidget);

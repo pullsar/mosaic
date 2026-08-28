@@ -208,7 +208,8 @@ final class PlaySchemaValidator {
 
     if (validation.type == PlayValidatorType.orderedSequence) {
       final value = validation.value;
-      final valid = value is List &&
+      final valid =
+          value is List &&
           value.isNotEmpty &&
           value.length <= 16 &&
           value.every((item) => item is String && item.trim().isNotEmpty);
@@ -217,8 +218,7 @@ final class PlaySchemaValidator {
           PlayValidationIssue(
             code: 'validator_value',
             path: path,
-            message:
-                'ordered_sequence requires 1–16 non-empty string values.',
+            message: 'ordered_sequence requires 1–16 non-empty string values.',
           ),
         );
       }
@@ -273,9 +273,7 @@ final class PlaySchemaValidator {
     if (expectedRaw is! List ||
         expectedRaw.isEmpty ||
         expectedRaw.length > 16 ||
-        expectedRaw.any(
-          (item) => item is! String || item.trim().isEmpty,
-        )) {
+        expectedRaw.any((item) => item is! String || item.trim().isEmpty)) {
       return;
     }
     final expected = expectedRaw.cast<String>();
@@ -312,8 +310,7 @@ final class PlaySchemaValidator {
         PlayValidationIssue(
           code: 'piano_sequence_length',
           path: '$path.sequenceLength',
-          message:
-              'piano_key sequenceLength must match the ordered sequence.',
+          message: 'piano_key sequenceLength must match the ordered sequence.',
         ),
       );
     }

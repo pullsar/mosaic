@@ -83,17 +83,16 @@ final class _ReplacementHandle implements ManagedMediaHandle {
   Future<void> release() async => releaseCount += 1;
 }
 
-PlayVideoAsset _asset(
-  String id, {
-  bool autoplay = true,
-  bool muted = true,
-}) => PlayVideoAsset(
-  id: id,
-  semanticLabel: 'Video $id',
-  source: NetworkPlayVideoSource(Uri.parse('https://cdn.example.com/$id.mp4')),
-  autoplay: autoplay,
-  muted: muted,
-);
+PlayVideoAsset _asset(String id, {bool autoplay = true, bool muted = true}) =>
+    PlayVideoAsset(
+      id: id,
+      semanticLabel: 'Video $id',
+      source: NetworkPlayVideoSource(
+        Uri.parse('https://cdn.example.com/$id.mp4'),
+      ),
+      autoplay: autoplay,
+      muted: muted,
+    );
 
 Future<void> _settleOwnership(WidgetTester tester) async {
   await tester.pump();
@@ -124,40 +123,38 @@ void main() {
     },
   );
 
-  testWidgets('initializes, mutes, acquires ownership, autoplays, and renders', (
-    tester,
-  ) async {
-    final coordinator = ActiveMediaCoordinator();
-    final controller = _FakeVideoController('first');
+  testWidgets(
+    'initializes, mutes, acquires ownership, autoplays, and renders',
+    (tester) async {
+      final coordinator = ActiveMediaCoordinator();
+      final controller = _FakeVideoController('first');
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: OwnedPlayVideo(
-          ownerId: 'play_a',
-          asset: _asset('video_a'),
-          coordinator: coordinator,
-          controllerFactory: (_) => controller,
+      await tester.pumpWidget(
+        MaterialApp(
+          home: OwnedPlayVideo(
+            ownerId: 'play_a',
+            asset: _asset('video_a'),
+            coordinator: coordinator,
+            controllerFactory: (_) => controller,
+          ),
         ),
-      ),
-    );
-    await _settleOwnership(tester);
+      );
+      await _settleOwnership(tester);
 
-    expect(controller.initializeCount, 1);
-    expect(controller.muteValues, [true]);
-    expect(controller.playCount, 1);
-    expect(
-      controller.events.take(4),
-      [
+      expect(controller.initializeCount, 1);
+      expect(controller.muteValues, [true]);
+      expect(controller.playCount, 1);
+      expect(controller.events.take(4), [
         'first.initialize:start',
         'first.initialize:end',
         'first.muted:true',
         'first.play',
-      ],
-    );
-    expect(coordinator.owns('play_a', controller), isTrue);
-    expect(find.text('view:first'), findsOneWidget);
-    expect(find.bySemanticsLabel('Video video_a'), findsOneWidget);
-  });
+      ]);
+      expect(coordinator.owns('play_a', controller), isTrue);
+      expect(find.text('view:first'), findsOneWidget);
+      expect(find.bySemanticsLabel('Video video_a'), findsOneWidget);
+    },
+  );
 
   testWidgets('audible autoplay is rejected before play', (tester) async {
     final coordinator = ActiveMediaCoordinator();
@@ -251,44 +248,45 @@ void main() {
     },
   );
 
-  testWidgets('semantic resume restarts a previously playing exact controller', (
-    tester,
-  ) async {
-    final coordinator = ActiveMediaCoordinator();
-    final controller = _FakeVideoController('active');
-    final asset = _asset('video_a');
+  testWidgets(
+    'semantic resume restarts a previously playing exact controller',
+    (tester) async {
+      final coordinator = ActiveMediaCoordinator();
+      final controller = _FakeVideoController('active');
+      final asset = _asset('video_a');
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: OwnedPlayVideo(
-          ownerId: 'play_a',
-          asset: asset,
-          coordinator: coordinator,
-          controllerFactory: (_) => controller,
+      await tester.pumpWidget(
+        MaterialApp(
+          home: OwnedPlayVideo(
+            ownerId: 'play_a',
+            asset: asset,
+            coordinator: coordinator,
+            controllerFactory: (_) => controller,
+          ),
         ),
-      ),
-    );
-    await _settleOwnership(tester);
-    expect(controller.playCount, 1);
+      );
+      await _settleOwnership(tester);
+      expect(controller.playCount, 1);
 
-    await coordinator.suspend();
-    await tester.pumpWidget(
-      MaterialApp(
-        home: OwnedPlayVideo(
-          ownerId: 'play_a',
-          asset: asset,
-          coordinator: coordinator,
-          controllerFactory: (_) => controller,
-          semanticResumeEpoch: 1,
+      await coordinator.suspend();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: OwnedPlayVideo(
+            ownerId: 'play_a',
+            asset: asset,
+            coordinator: coordinator,
+            controllerFactory: (_) => controller,
+            semanticResumeEpoch: 1,
+          ),
         ),
-      ),
-    );
-    await _settleOwnership(tester);
+      );
+      await _settleOwnership(tester);
 
-    expect(controller.pauseCount, 1);
-    expect(controller.playCount, 2);
-    expect(coordinator.owns('play_a', controller), isTrue);
-  });
+      expect(controller.pauseCount, 1);
+      expect(controller.playCount, 2);
+      expect(coordinator.owns('play_a', controller), isTrue);
+    },
+  );
 
   testWidgets('becoming inactive releases the exact controller', (
     tester,
@@ -427,7 +425,10 @@ void main() {
   ) async {
     final coordinator = ActiveMediaCoordinator();
     final muteFailure = StateError('mute failed');
-    final controller = _FakeVideoController('broken-mute', muteError: muteFailure);
+    final controller = _FakeVideoController(
+      'broken-mute',
+      muteError: muteFailure,
+    );
     final observed = <Object>[];
 
     await tester.pumpWidget(
@@ -488,10 +489,7 @@ void main() {
     (tester) async {
       final coordinator = ActiveMediaCoordinator();
       final releaseFailure = StateError('release failed');
-      final first = _FakeVideoController(
-        'first',
-        releaseError: releaseFailure,
-      );
+      final first = _FakeVideoController('first', releaseError: releaseFailure);
       final second = _FakeVideoController('second');
       final observed = <Object>[];
 

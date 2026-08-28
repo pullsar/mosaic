@@ -51,10 +51,7 @@ void main() {
       throwsArgumentError,
     );
     expect(
-      () => PlayCanvasCircle(
-        center: const Offset(0.05, 0.05),
-        radius: 0.1,
-      ),
+      () => PlayCanvasCircle(center: const Offset(0.05, 0.05), radius: 0.1),
       throwsArgumentError,
     );
   });

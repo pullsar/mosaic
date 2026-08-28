@@ -69,16 +69,19 @@ PlayMediaLayerBuilder _mediaBuilder(
 );
 
 void main() {
-  test('managed audio asset fixtures decode without answer-leaking semantics', () {
-    final note = _audioFixture('audio_csharp4.json');
-    final pattern = _audioFixture('audio_ceg.json');
+  test(
+    'managed audio asset fixtures decode without answer-leaking semantics',
+    () {
+      final note = _audioFixture('audio_csharp4.json');
+      final pattern = _audioFixture('audio_ceg.json');
 
-    expect(note.id, 'audio_csharp4');
-    expect(note.semanticLabel, 'Hear piano note');
-    expect(note.semanticLabel, isNot(contains('sharp')));
-    expect(pattern.id, 'audio_ceg');
-    expect(pattern.semanticLabel, 'Hear piano pattern');
-  });
+      expect(note.id, 'audio_csharp4');
+      expect(note.semanticLabel, 'Hear piano note');
+      expect(note.semanticLabel, isNot(contains('sharp')));
+      expect(pattern.id, 'audio_ceg');
+      expect(pattern.semanticLabel, 'Hear piano pattern');
+    },
+  );
 
   testWidgets('Which piano key uses managed audio only after Hear', (
     tester,

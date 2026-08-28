@@ -12,15 +12,12 @@ String _requireAudioText(String value, String name) {
 }
 
 final class PlayAudioAsset {
-  PlayAudioAsset({
-    required String id,
-    required Uri uri,
-    String? semanticLabel,
-  }) : id = _requireAudioText(id, 'id'),
-       uri = _validateAudioUri(uri),
-       semanticLabel = semanticLabel == null
-           ? null
-           : _requireAudioText(semanticLabel, 'semanticLabel');
+  PlayAudioAsset({required String id, required Uri uri, String? semanticLabel})
+    : id = _requireAudioText(id, 'id'),
+      uri = _validateAudioUri(uri),
+      semanticLabel = semanticLabel == null
+          ? null
+          : _requireAudioText(semanticLabel, 'semanticLabel');
 
   final String id;
   final Uri uri;
@@ -403,11 +400,7 @@ final class _OwnedPlayAudioState extends State<OwnedPlayAudio> {
     });
   }
 
-  void _reportError(
-    PlayAudioAsset asset,
-    Object error,
-    StackTrace stackTrace,
-  ) {
+  void _reportError(PlayAudioAsset asset, Object error, StackTrace stackTrace) {
     final callback = widget.onError;
     if (callback == null) return;
     try {

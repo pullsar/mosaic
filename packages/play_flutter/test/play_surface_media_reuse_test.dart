@@ -112,9 +112,8 @@ void main() {
           visualResolver: MapPlayVisualAssetResolver(const {}),
           videoResolver: MapPlayVideoAssetResolver(assets),
           mediaCoordinator: coordinator,
-          videoControllerFactory: (asset) => asset.id == 'video_a'
-              ? firstController
-              : secondController,
+          videoControllerFactory: (asset) =>
+              asset.id == 'video_a' ? firstController : secondController,
         );
         return MaterialApp(
           home: PlaySurface(
@@ -129,7 +128,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(firstController.playCount, 1);
-      expect(coordinator.owns(playMediaOwnerId(first), firstController), isTrue);
+      expect(
+        coordinator.owns(playMediaOwnerId(first), firstController),
+        isTrue,
+      );
       expect(find.text('video:first'), findsOneWidget);
 
       await tester.pumpWidget(surface(second));
@@ -138,10 +140,16 @@ void main() {
       expect(firstController.pauseCount, 1);
       expect(firstController.releaseCount, 1);
       expect(secondController.playCount, 1);
-      expect(coordinator.owns(playMediaOwnerId(second), secondController), isTrue);
+      expect(
+        coordinator.owns(playMediaOwnerId(second), secondController),
+        isTrue,
+      );
       expect(find.text('video:first'), findsNothing);
       expect(find.text('video:second'), findsOneWidget);
-      expect(events.indexOf('first.release'), lessThan(events.indexOf('second.initialize')));
+      expect(
+        events.indexOf('first.release'),
+        lessThan(events.indexOf('second.initialize')),
+      );
     },
   );
 }

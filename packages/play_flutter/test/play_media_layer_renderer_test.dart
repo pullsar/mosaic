@@ -48,11 +48,8 @@ PlayMediaLayerBuilder _builder({
   unsupportedBuilder: unsupportedBuilder,
 );
 
-PresentationLayer _layer(String type, {String? assetId}) => PresentationLayer(
-  type: type,
-  role: 'media',
-  assetId: assetId,
-);
+PresentationLayer _layer(String type, {String? assetId}) =>
+    PresentationLayer(type: type, role: 'media', assetId: assetId);
 
 void main() {
   testWidgets('routes image video and configured canvas adapters', (
@@ -78,10 +75,7 @@ void main() {
       context,
       _layer('video_clip', assetId: 'video_1'),
     );
-    final canvas = builder.call(
-      context,
-      _layer('canvas', assetId: 'canvas_1'),
-    );
+    final canvas = builder.call(context, _layer('canvas', assetId: 'canvas_1'));
 
     expect(image, isA<ResolvedPlayVisual>());
     expect((image as ResolvedPlayVisual).assetId, 'image_1');
@@ -115,7 +109,9 @@ void main() {
     }
   });
 
-  testWidgets('missing asset identity never invokes a renderer', (tester) async {
+  testWidgets('missing asset identity never invokes a renderer', (
+    tester,
+  ) async {
     var videoLookups = 0;
     late BuildContext context;
     await tester.pumpWidget(
@@ -185,10 +181,8 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Builder(
-          builder: (context) => builder.call(
-            context,
-            _layer('video_clip', assetId: 'video_1'),
-          ),
+          builder: (context) =>
+              builder.call(context, _layer('video_clip', assetId: 'video_1')),
         ),
       ),
     );
@@ -203,7 +197,9 @@ void main() {
     expect(find.text('video-view'), findsOneWidget);
   });
 
-  testWidgets('mismatched resolved video identity fails closed', (tester) async {
+  testWidgets('mismatched resolved video identity fails closed', (
+    tester,
+  ) async {
     final requested = PlayVideoAsset(
       id: 'different_video',
       source: NetworkPlayVideoSource(

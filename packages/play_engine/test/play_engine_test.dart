@@ -152,26 +152,26 @@ void main() {
     );
   });
 
-  test('malformed ordered-sequence payload fails with a stable engine error', () {
-    final session = engine.start(
-      playWithValidation(
-        inputType: 'piano_key',
-        validation: {'type': 'ordered_sequence', 'value': 'C4,E4,G4'},
-      ),
-    );
-
-    expect(
-      () => engine.apply(
-        session,
-        const SequenceAction(['C4', 'E4', 'G4']),
-      ),
-      throwsA(
-        stateErrorMessage(
-          'ordered_sequence validation payload is malformed.',
+  test(
+    'malformed ordered-sequence payload fails with a stable engine error',
+    () {
+      final session = engine.start(
+        playWithValidation(
+          inputType: 'piano_key',
+          validation: {'type': 'ordered_sequence', 'value': 'C4,E4,G4'},
         ),
-      ),
-    );
-  });
+      );
+
+      expect(
+        () => engine.apply(session, const SequenceAction(['C4', 'E4', 'G4'])),
+        throwsA(
+          stateErrorMessage(
+            'ordered_sequence validation payload is malformed.',
+          ),
+        ),
+      );
+    },
+  );
 
   test('malformed target-region payload fails with a stable engine error', () {
     final session = engine.start(

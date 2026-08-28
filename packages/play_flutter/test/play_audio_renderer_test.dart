@@ -118,7 +118,9 @@ void main() {
     expect(find.text('Hear'), findsOneWidget);
   });
 
-  testWidgets('Hear lazily loads, acquires ownership, and plays', (tester) async {
+  testWidgets('Hear lazily loads, acquires ownership, and plays', (
+    tester,
+  ) async {
     final engine = _FakeAudioEngine();
     final coordinator = ActiveMediaCoordinator();
 
@@ -156,15 +158,19 @@ void main() {
     await tester.tap(find.text('Replay'));
     await tester.pumpAndSettle();
 
-    expect(
-      engine.events,
-      ['load:audio_a', 'play:audio_a', 'stop:audio_a', 'play:audio_a'],
-    );
+    expect(engine.events, [
+      'load:audio_a',
+      'play:audio_a',
+      'stop:audio_a',
+      'play:audio_a',
+    ]);
     expect(coordinator.ownerId, 'play_a');
     expect(coordinator.hasActiveMedia, isTrue);
   });
 
-  testWidgets('play failure releases ownership and fails closed', (tester) async {
+  testWidgets('play failure releases ownership and fails closed', (
+    tester,
+  ) async {
     final engine = _FakeAudioEngine()..playError = StateError('play failed');
     final coordinator = ActiveMediaCoordinator();
     final observed = <Object>[];
@@ -180,10 +186,12 @@ void main() {
     await tester.tap(find.text('Hear'));
     await tester.pumpAndSettle();
 
-    expect(
-      engine.events,
-      ['load:audio_a', 'play:audio_a', 'stop:audio_a', 'release:audio_a'],
-    );
+    expect(engine.events, [
+      'load:audio_a',
+      'play:audio_a',
+      'stop:audio_a',
+      'release:audio_a',
+    ]);
     expect(coordinator.hasActiveMedia, isFalse);
     expect(find.byType(PlayAudioUnavailable), findsOneWidget);
     expect(observed.whereType<StateError>(), isNotEmpty);
@@ -259,7 +267,10 @@ void main() {
     await tester.tap(find.text('Hear'));
     await tester.pumpAndSettle();
 
-    expect(engine.events.where((event) => event == 'release:audio_a').length, 2);
+    expect(
+      engine.events.where((event) => event == 'release:audio_a').length,
+      2,
+    );
     expect(find.byType(PlayAudioUnavailable), findsOneWidget);
 
     engine.releaseError = null;
@@ -273,7 +284,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(engine.events.where((event) => event == 'release:audio_a').length, 3);
+    expect(
+      engine.events.where((event) => event == 'release:audio_a').length,
+      3,
+    );
     expect(engine.events.last, 'release:audio_a');
     expect(coordinator.hasActiveMedia, isFalse);
   });
@@ -308,10 +322,12 @@ void main() {
 
     expect(firstCoordinator.hasActiveMedia, isFalse);
     expect(secondCoordinator.hasActiveMedia, isFalse);
-    expect(
-      engine.events,
-      ['load:audio_a', 'play:audio_a', 'stop:audio_a', 'release:audio_a'],
-    );
+    expect(engine.events, [
+      'load:audio_a',
+      'play:audio_a',
+      'stop:audio_a',
+      'release:audio_a',
+    ]);
     expect(find.text('Hear'), findsOneWidget);
   });
 
@@ -339,30 +355,31 @@ void main() {
     expect(find.text('Replay'), findsOneWidget);
   });
 
-  testWidgets('stale external replacement is never released by audio teardown', (
-    tester,
-  ) async {
-    final engine = _FakeAudioEngine();
-    final coordinator = ActiveMediaCoordinator();
+  testWidgets(
+    'stale external replacement is never released by audio teardown',
+    (tester) async {
+      final engine = _FakeAudioEngine();
+      final coordinator = ActiveMediaCoordinator();
 
-    await _pumpAudio(
-      tester,
-      ownerId: 'play_a',
-      asset: _asset('audio_a'),
-      engine: engine,
-      coordinator: coordinator,
-    );
-    await tester.tap(find.text('Hear'));
-    await tester.pumpAndSettle();
+      await _pumpAudio(
+        tester,
+        ownerId: 'play_a',
+        asset: _asset('audio_a'),
+        engine: engine,
+        coordinator: coordinator,
+      );
+      await tester.tap(find.text('Hear'));
+      await tester.pumpAndSettle();
 
-    final replacement = _ReplacementHandle();
-    await coordinator.activate('play_a', replacement);
-    await tester.pumpWidget(const MaterialApp(home: SizedBox.shrink()));
-    await tester.pump();
-    await tester.pump();
+      final replacement = _ReplacementHandle();
+      await coordinator.activate('play_a', replacement);
+      await tester.pumpWidget(const MaterialApp(home: SizedBox.shrink()));
+      await tester.pump();
+      await tester.pump();
 
-    expect(coordinator.owns('play_a', replacement), isTrue);
-    expect(replacement.pauseCount, 0);
-    expect(replacement.releaseCount, 0);
-  });
+      expect(coordinator.owns('play_a', replacement), isTrue);
+      expect(replacement.pauseCount, 0);
+      expect(replacement.releaseCount, 0);
+    },
+  );
 }

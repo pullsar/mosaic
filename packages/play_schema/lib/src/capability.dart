@@ -47,12 +47,7 @@ final class PlayCapabilityEnvelope {
     schemaVersions: {1},
     presentationTypes: {'text', 'image', 'video_clip', 'audio', 'canvas'},
     inputTypes: {'tap', 'single_choice', 'piano_key', 'drag'},
-    validatorTypes: {
-      'none',
-      'equals',
-      'ordered_sequence',
-      'target_region',
-    },
+    validatorTypes: {'none', 'equals', 'ordered_sequence', 'target_region'},
   );
 
   factory PlayCapabilityEnvelope.fromJson(Map<String, Object?> json) {

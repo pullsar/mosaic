@@ -35,10 +35,7 @@ final class PlayCanvasLine extends PlayCanvasElement {
     double width = 0.012,
     this.cap = StrokeCap.round,
     this.tone = PlayCanvasTone.foreground,
-  }) : start = Offset(
-         _unit(start.dx, 'start.dx'),
-         _unit(start.dy, 'start.dy'),
-       ),
+  }) : start = Offset(_unit(start.dx, 'start.dx'), _unit(start.dy, 'start.dy')),
        end = Offset(_unit(end.dx, 'end.dx'), _unit(end.dy, 'end.dy')),
        width = _positiveUnit(width, 'width');
 
@@ -369,7 +366,8 @@ final class _PlayCanvasPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _PlayCanvasPainter oldDelegate) =>
-      !identical(asset, oldDelegate.asset) || colorScheme != oldDelegate.colorScheme;
+      !identical(asset, oldDelegate.asset) ||
+      colorScheme != oldDelegate.colorScheme;
 }
 
 final class PlayCanvasUnavailable extends StatelessWidget {
@@ -457,11 +455,7 @@ Map<String, Object?> _jsonMap(Object? raw, String field) {
   return raw.map((key, value) => MapEntry(key.toString(), value));
 }
 
-double _number(
-  Map<String, Object?> json,
-  String key, {
-  double? fallback,
-}) {
+double _number(Map<String, Object?> json, String key, {double? fallback}) {
   final raw = json[key];
   if (raw == null && fallback != null) return fallback;
   if (raw is! num) throw FormatException('$key must be a number.');
@@ -476,11 +470,7 @@ String _string(Map<String, Object?> json, String key) {
   return raw.trim();
 }
 
-bool _bool(
-  Map<String, Object?> json,
-  String key, {
-  required bool fallback,
-}) {
+bool _bool(Map<String, Object?> json, String key, {required bool fallback}) {
   final raw = json[key];
   if (raw == null) return fallback;
   if (raw is! bool) throw FormatException('$key must be a boolean.');

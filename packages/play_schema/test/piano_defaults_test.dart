@@ -39,7 +39,10 @@ PlayDocument _pianoPlay(List<String> expected) => PlayDocument.fromJson({
 
 void main() {
   test('canonical default piano surface is stable and publication-visible', () {
-    expect(MosaicPianoInputDefaults.keys, containsAll(<String>['C4', 'C#4', 'B4']));
+    expect(
+      MosaicPianoInputDefaults.keys,
+      containsAll(<String>['C4', 'C#4', 'B4']),
+    );
     expect(MosaicPianoInputDefaults.keys, hasLength(12));
   });
 

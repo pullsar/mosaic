@@ -93,9 +93,7 @@ Map<String, Object?> _freezeJsonMap(Map<String, Object?> value) =>
 Map<String, Map<String, Object?>> _freezeResponseMap(
   Map<String, Map<String, Object?>> value,
 ) => Map<String, Map<String, Object?>>.unmodifiable(
-  value.map(
-    (key, response) => MapEntry(key, _freezeJsonMap(response)),
-  ),
+  value.map((key, response) => MapEntry(key, _freezeJsonMap(response))),
 );
 
 final class PlayOption {
@@ -362,9 +360,7 @@ final class PlayDocument {
       sources: rawSources == null
           ? const []
           : (rawSources as List)
-                .map(
-                  (source) => PlaySource.fromJson(_map(source, 'sources[]')),
-                )
+                .map((source) => PlaySource.fromJson(_map(source, 'sources[]')))
                 .toList(growable: false),
       entryState: json['entryState'] as String,
       states: rawStates.map(

@@ -55,14 +55,18 @@ void main() {
     final second = _play(id: 'second', prompt: 'Second prompt');
 
     await tester.pumpWidget(
-      MaterialApp(home: PlaySurface(key: surfaceKey, play: first)),
+      MaterialApp(
+        home: PlaySurface(key: surfaceKey, play: first),
+      ),
     );
     await tester.tap(find.text('A'));
     await tester.pump();
     expect(find.text('Reveal first'), findsOneWidget);
 
     await tester.pumpWidget(
-      MaterialApp(home: PlaySurface(key: surfaceKey, play: second)),
+      MaterialApp(
+        home: PlaySurface(key: surfaceKey, play: second),
+      ),
     );
     await tester.pump();
 
@@ -78,14 +82,18 @@ void main() {
     final equivalentRevision = _play(id: 'stable', prompt: 'Ignored rewrite');
 
     await tester.pumpWidget(
-      MaterialApp(home: PlaySurface(key: surfaceKey, play: firstInstance)),
+      MaterialApp(
+        home: PlaySurface(key: surfaceKey, play: firstInstance),
+      ),
     );
     await tester.tap(find.text('A'));
     await tester.pump();
     expect(find.text('Reveal stable'), findsOneWidget);
 
     await tester.pumpWidget(
-      MaterialApp(home: PlaySurface(key: surfaceKey, play: equivalentRevision)),
+      MaterialApp(
+        home: PlaySurface(key: surfaceKey, play: equivalentRevision),
+      ),
     );
     await tester.pump();
 

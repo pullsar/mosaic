@@ -77,9 +77,7 @@ final class _PlaySurfaceState extends State<PlaySurface> {
         fit: StackFit.expand,
         children: [
           for (final layer in media) _buildMedia(context, layer),
-          SafeArea(
-            child: _TextOverlay(layers: text.toList(growable: false)),
-          ),
+          SafeArea(child: _TextOverlay(layers: text.toList(growable: false))),
           if (state.input.type == PlayInputType.drag)
             input
           else
@@ -148,9 +146,7 @@ PlayPianoInputSpec? _safePianoSpec(
   if (expectedRaw is! List ||
       expectedRaw.isEmpty ||
       expectedRaw.length > 16 ||
-      expectedRaw.any(
-        (value) => value is! String || value.trim().isEmpty,
-      )) {
+      expectedRaw.any((value) => value is! String || value.trim().isEmpty)) {
     return null;
   }
 

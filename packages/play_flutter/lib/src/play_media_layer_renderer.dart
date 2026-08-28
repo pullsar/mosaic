@@ -177,11 +177,7 @@ final class PlayMediaLayerBuilder {
     };
   }
 
-  Widget _audio(
-    BuildContext context,
-    PresentationLayer layer,
-    String assetId,
-  ) {
+  Widget _audio(BuildContext context, PresentationLayer layer, String assetId) {
     final resolver = audioResolver;
     final engine = audioEngine;
     return resolver == null || engine == null
@@ -226,9 +222,7 @@ final class PlayMediaUnavailable extends StatelessWidget {
         image: true,
         label: 'Unsupported media: $normalizedType',
         child: const Center(
-          child: ExcludeSemantics(
-            child: Icon(Icons.hide_image_outlined),
-          ),
+          child: ExcludeSemantics(child: Icon(Icons.hide_image_outlined)),
         ),
       ),
     );

@@ -14,7 +14,9 @@ const _spec = PlayDragInputSpec(
 );
 
 void main() {
-  testWidgets('drag handle locks feed paging on raw pointer down', (tester) async {
+  testWidgets('drag handle locks feed paging on raw pointer down', (
+    tester,
+  ) async {
     final locks = <bool>[];
 
     await tester.pumpWidget(

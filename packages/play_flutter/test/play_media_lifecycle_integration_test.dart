@@ -160,39 +160,40 @@ final class _AudioLifecycleHarnessState extends State<_AudioLifecycleHarness> {
 }
 
 void main() {
-  testWidgets('Flutter lifecycle resumes only previously playing managed video', (
-    tester,
-  ) async {
-    final coordinator = ActiveMediaCoordinator();
-    final controller = _VideoController();
-    final asset = PlayVideoAsset(
-      id: 'video_a',
-      source: NetworkPlayVideoSource(
-        Uri.parse('https://cdn.example.com/video_a.mp4'),
-      ),
-    );
-    final key = GlobalKey<_VideoLifecycleHarnessState>();
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: _VideoLifecycleHarness(
-          key: key,
-          coordinator: coordinator,
-          controller: controller,
-          asset: asset,
+  testWidgets(
+    'Flutter lifecycle resumes only previously playing managed video',
+    (tester) async {
+      final coordinator = ActiveMediaCoordinator();
+      final controller = _VideoController();
+      final asset = PlayVideoAsset(
+        id: 'video_a',
+        source: NetworkPlayVideoSource(
+          Uri.parse('https://cdn.example.com/video_a.mp4'),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(controller.playCount, 1);
+      );
+      final key = GlobalKey<_VideoLifecycleHarnessState>();
 
-    await key.currentState!.pauseAndResume();
-    await tester.pumpAndSettle();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: _VideoLifecycleHarness(
+            key: key,
+            coordinator: coordinator,
+            controller: controller,
+            asset: asset,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(controller.playCount, 1);
 
-    expect(controller.pauseCount, 1);
-    expect(controller.playCount, 2);
-    expect(coordinator.owns('video-owner', controller), isTrue);
-  });
+      await key.currentState!.pauseAndResume();
+      await tester.pumpAndSettle();
+
+      expect(controller.pauseCount, 1);
+      expect(controller.playCount, 2);
+      expect(coordinator.owns('video-owner', controller), isTrue);
+    },
+  );
 
   testWidgets('Flutter lifecycle never auto-replays user-initiated audio', (
     tester,

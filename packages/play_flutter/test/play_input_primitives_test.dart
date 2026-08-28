@@ -75,13 +75,7 @@ void main() {
         'dragOrigin': {'x': 0.1, 'y': 0.1},
         'dragSize': {'width': 0.2, 'height': 0.1},
         'targets': [
-          {
-            'id': 'bad',
-            'x': 0.9,
-            'y': 0.2,
-            'width': 0.2,
-            'height': 0.2,
-          },
+          {'id': 'bad', 'x': 0.9, 'y': 0.2, 'width': 0.2, 'height': 0.2},
         ],
       },
     );
@@ -99,12 +93,7 @@ void main() {
       targets: [
         PlayDragTarget(
           id: 'solution_a',
-          rect: PlayNormalizedRect(
-            x: 0.6,
-            y: 0.2,
-            width: 0.2,
-            height: 0.2,
-          ),
+          rect: PlayNormalizedRect(x: 0.6, y: 0.2, width: 0.2, height: 0.2),
         ),
       ],
     );
@@ -142,15 +131,10 @@ void main() {
     tester,
   ) async {
     final first = _runtimeDragSpec(const Offset(0.1, 0.5), 'solution_a');
-    final replacement = _runtimeDragSpec(
-      const Offset(0.2, 0.5),
-      'solution_b',
-    );
+    final replacement = _runtimeDragSpec(const Offset(0.2, 0.5), 'solution_b');
     final manipulation = <bool>[];
 
-    await tester.pumpWidget(
-      _dragTestSurface(first, manipulation),
-    );
+    await tester.pumpWidget(_dragTestSurface(first, manipulation));
     final gesture = await tester.startGesture(
       tester.getCenter(find.bySemanticsLabel('Move match')),
     );
@@ -158,9 +142,7 @@ void main() {
     await tester.pump();
     expect(manipulation, [true]);
 
-    await tester.pumpWidget(
-      _dragTestSurface(replacement, manipulation),
-    );
+    await tester.pumpWidget(_dragTestSurface(replacement, manipulation));
     await tester.pump();
 
     expect(manipulation, [true, false]);
@@ -207,18 +189,16 @@ PlayDragInputSpec _runtimeDragSpec(Offset origin, String targetId) =>
       ],
     );
 
-Widget _dragTestSurface(
-  PlayDragInputSpec spec,
-  List<bool> manipulation,
-) => MaterialApp(
-  home: Scaffold(
-    body: SizedBox.square(
-      dimension: 400,
-      child: PlayDragInput(
-        spec: spec,
-        onTarget: (_) {},
-        onManipulationChanged: manipulation.add,
+Widget _dragTestSurface(PlayDragInputSpec spec, List<bool> manipulation) =>
+    MaterialApp(
+      home: Scaffold(
+        body: SizedBox.square(
+          dimension: 400,
+          child: PlayDragInput(
+            spec: spec,
+            onTarget: (_) {},
+            onManipulationChanged: manipulation.add,
+          ),
+        ),
       ),
-    ),
-  ),
-);
+    );

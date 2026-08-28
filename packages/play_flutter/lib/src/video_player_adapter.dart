@@ -108,10 +108,7 @@ final class _CoverVideoPlayer extends StatelessWidget {
       child: ClipRect(
         child: FittedBox(
           fit: BoxFit.cover,
-          child: SizedBox.fromSize(
-            size: size,
-            child: VideoPlayer(controller),
-          ),
+          child: SizedBox.fromSize(size: size, child: VideoPlayer(controller)),
         ),
       ),
     );

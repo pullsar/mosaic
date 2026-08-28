@@ -21,11 +21,8 @@ PlayDocument _fixture(String name) {
   return PlayDocument.fromJson(raw);
 }
 
-int _wordCount(String value) => value
-    .trim()
-    .split(RegExp(r'\s+'))
-    .where((word) => word.isNotEmpty)
-    .length;
+int _wordCount(String value) =>
+    value.trim().split(RegExp(r'\s+')).where((word) => word.isNotEmpty).length;
 
 void main() {
   for (final fixtureName in _referenceFixtures) {

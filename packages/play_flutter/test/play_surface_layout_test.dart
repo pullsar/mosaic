@@ -31,47 +31,45 @@ PlayDocument _visualTapPlay() => PlayDocument.fromJson({
 });
 
 void main() {
-  testWidgets('media stays edge-to-edge while copy and controls respect insets', (
-    tester,
-  ) async {
-    Size? mediaSize;
-    const surfaceSize = Size(320, 640);
-    const insets = EdgeInsets.only(top: 40, bottom: 30);
+  testWidgets(
+    'media stays edge-to-edge while copy and controls respect insets',
+    (tester) async {
+      Size? mediaSize;
+      const surfaceSize = Size(320, 640);
+      const insets = EdgeInsets.only(top: 40, bottom: 30);
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Center(
-            child: MediaQuery(
-              data: const MediaQueryData(
-                size: surfaceSize,
-                padding: insets,
-              ),
-              child: SizedBox.fromSize(
-                size: surfaceSize,
-                child: PlaySurface(
-                  play: _visualTapPlay(),
-                  mediaBuilder: (context, layer) => LayoutBuilder(
-                    builder: (context, constraints) {
-                      mediaSize = constraints.biggest;
-                      return const ColoredBox(color: Colors.black);
-                    },
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: MediaQuery(
+                data: const MediaQueryData(size: surfaceSize, padding: insets),
+                child: SizedBox.fromSize(
+                  size: surfaceSize,
+                  child: PlaySurface(
+                    play: _visualTapPlay(),
+                    mediaBuilder: (context, layer) => LayoutBuilder(
+                      builder: (context, constraints) {
+                        mediaSize = constraints.biggest;
+                        return const ColoredBox(color: Colors.black);
+                      },
+                    ),
                   ),
                 ),
               ),
             ),
           ),
         ),
-      ),
-    );
+      );
 
-    expect(mediaSize, surfaceSize);
+      expect(mediaSize, surfaceSize);
 
-    final surface = tester.getRect(find.byType(PlaySurface));
-    final prompt = tester.getRect(find.text('Look closely.'));
-    final done = tester.getRect(find.widgetWithText(FilledButton, 'Done'));
+      final surface = tester.getRect(find.byType(PlaySurface));
+      final prompt = tester.getRect(find.text('Look closely.'));
+      final done = tester.getRect(find.widgetWithText(FilledButton, 'Done'));
 
-    expect(prompt.top, greaterThanOrEqualTo(surface.top + insets.top));
-    expect(done.bottom, lessThanOrEqualTo(surface.bottom - insets.bottom));
-  });
+      expect(prompt.top, greaterThanOrEqualTo(surface.top + insets.top));
+      expect(done.bottom, lessThanOrEqualTo(surface.bottom - insets.bottom));
+    },
+  );
 }

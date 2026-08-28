@@ -37,7 +37,10 @@ void main() {
     final expected = state.validation.value! as List<Object?>;
 
     expect(() => expected.add('A4'), throwsUnsupportedError);
-    expect(() => state.transitions['correct'] = 'playback', throwsUnsupportedError);
+    expect(
+      () => state.transitions['correct'] = 'playback',
+      throwsUnsupportedError,
+    );
   });
 
   test('state presentation and document collections reject replacement', () {
@@ -61,9 +64,7 @@ void main() {
       properties: layerProperties,
     );
 
-    final options = <PlayOption>[
-      const PlayOption(id: 'a', label: 'A'),
-    ];
+    final options = <PlayOption>[const PlayOption(id: 'a', label: 'A')];
     final authoredKeys = <Object?>['C4', 'E4'];
     final inputProperties = <String, Object?>{'keys': authoredKeys};
     final input = PlayInputDefinition(
@@ -83,9 +84,7 @@ void main() {
     final responseDetail = <String, Object?>{
       'meta': <String, Object?>{'score': 1},
     };
-    final responses = <String, Map<String, Object?>>{
-      'correct': responseDetail,
-    };
+    final responses = <String, Map<String, Object?>>{'correct': responseDetail};
     final state = PlayStateDefinition(
       presentation: presentation,
       input: input,

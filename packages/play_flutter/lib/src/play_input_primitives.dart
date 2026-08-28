@@ -6,10 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:play_schema/play_schema.dart';
 
 final class PlayPianoInputSpec {
-  const PlayPianoInputSpec({
-    required this.keys,
-    required this.sequenceLength,
-  });
+  const PlayPianoInputSpec({required this.keys, required this.sequenceLength});
 
   final List<String> keys;
   final int sequenceLength;
@@ -161,15 +158,9 @@ final class _PianoKey extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final sharp = note.contains('#') || note.contains('♯');
-    final baseBackground = sharp
-        ? colorScheme.onSurface
-        : colorScheme.surface;
-    final baseForeground = sharp
-        ? colorScheme.surface
-        : colorScheme.onSurface;
-    final background = selected
-        ? colorScheme.primaryContainer
-        : baseBackground;
+    final baseBackground = sharp ? colorScheme.onSurface : colorScheme.surface;
+    final baseForeground = sharp ? colorScheme.surface : colorScheme.onSurface;
+    final background = selected ? colorScheme.primaryContainer : baseBackground;
     final foreground = selected
         ? colorScheme.onPrimaryContainer
         : baseForeground;
@@ -529,12 +520,7 @@ List<PlayDragTarget>? _readTargets(Object? raw) {
     targets.add(
       PlayDragTarget(
         id: id,
-        rect: PlayNormalizedRect(
-          x: x,
-          y: y,
-          width: width,
-          height: height,
-        ),
+        rect: PlayNormalizedRect(x: x, y: y, width: width, height: height),
       ),
     );
   }

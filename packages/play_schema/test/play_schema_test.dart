@@ -147,18 +147,21 @@ void main() {
     expect(encodedInput['keys'], input.properties['keys']);
   });
 
-  test('reserved input fields cannot be overridden by extension properties', () {
-    final input = PlayInputDefinition(
-      type: PlayInputType.pianoKey,
-      label: 'Play',
-      properties: {'type': 'drag', 'label': 'Wrong', 'sequenceLength': 3},
-    );
+  test(
+    'reserved input fields cannot be overridden by extension properties',
+    () {
+      final input = PlayInputDefinition(
+        type: PlayInputType.pianoKey,
+        label: 'Play',
+        properties: {'type': 'drag', 'label': 'Wrong', 'sequenceLength': 3},
+      );
 
-    final encoded = input.toJson();
-    expect(encoded['type'], 'piano_key');
-    expect(encoded['label'], 'Play');
-    expect(encoded['sequenceLength'], 3);
-  });
+      final encoded = input.toJson();
+      expect(encoded['type'], 'piano_key');
+      expect(encoded['label'], 'Play');
+      expect(encoded['sequenceLength'], 3);
+    },
+  );
 
   test('piano publication validation rejects impossible authored sequence', () {
     final raw = _fixture('play_it_back.json');
@@ -192,13 +195,7 @@ void main() {
       'input': {
         ...input,
         'targets': [
-          {
-            'id': 'elsewhere',
-            'x': 0.9,
-            'y': 0.2,
-            'width': 0.2,
-            'height': 0.2,
-          },
+          {'id': 'elsewhere', 'x': 0.9, 'y': 0.2, 'width': 0.2, 'height': 0.2},
         ],
       },
     };
@@ -241,22 +238,25 @@ void main() {
     expect(issues.any((issue) => issue.code == 'drag_target_overlap'), isTrue);
   });
 
-  test('drag publication validation requires validator target to be authored', () {
-    final raw = _fixture('move_one_match.json');
-    final states = Map<String, Object?>.from(raw['states']! as Map);
-    final solve = Map<String, Object?>.from(states['solve']! as Map);
-    states['solve'] = {
-      ...solve,
-      'validation': {'type': 'target_region', 'value': 'missing_target'},
-    };
+  test(
+    'drag publication validation requires validator target to be authored',
+    () {
+      final raw = _fixture('move_one_match.json');
+      final states = Map<String, Object?>.from(raw['states']! as Map);
+      final solve = Map<String, Object?>.from(states['solve']! as Map);
+      states['solve'] = {
+        ...solve,
+        'validation': {'type': 'target_region', 'value': 'missing_target'},
+      };
 
-    final play = PlayDocument.fromJson({...raw, 'states': states});
-    final issues = const PlaySchemaValidator().validate(play);
-    expect(
-      issues.any((issue) => issue.code == 'drag_expected_target_missing'),
-      isTrue,
-    );
-  });
+      final play = PlayDocument.fromJson({...raw, 'states': states});
+      final issues = const PlaySchemaValidator().validate(play);
+      expect(
+        issues.any((issue) => issue.code == 'drag_expected_target_missing'),
+        isTrue,
+      );
+    },
+  );
 
   test('malformed raw capability shape returns MalformedPlay', () {
     final raw = {..._fixture('where_is_this.json'), 'states': 'broken'};

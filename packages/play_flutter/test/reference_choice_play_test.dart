@@ -32,10 +32,7 @@ void main() {
     expect(entry.presentation.first.type, 'canvas');
     expect(entry.presentation.first.role, 'media');
     expect(entry.presentation.first.assetId, 'getaway_mood_01');
-    expect(
-      entry.presentation.where((layer) => layer.type == 'text').length,
-      1,
-    );
+    expect(entry.presentation.where((layer) => layer.type == 'text').length, 1);
   });
 
   testWidgets('Four-day getaway renders and transitions entirely from data', (
