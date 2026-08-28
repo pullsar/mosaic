@@ -1,0 +1,188 @@
+name: ${COMPOSE_PROJECT_NAME:-mixli}
+
+x-api: &api
+  env_file:
+    - path: ${MIXLI_API_ENV_FILE:-/etc/mixli/secrets/api.env}
+      required: false
+  environment:
+    HOST: 0.0.0.0
+    PORT: "8080"
+    LOG_LEVEL: ${MIXLI_LOG_LEVEL:-info}
+  expose:
+    - "8080"
+  read_only: true
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,nodev,size=64m
+  security_opt:
+    - no-new-privileges:true
+  init: true
+  restart: unless-stopped
+  stop_grace_period: 90s
+  healthcheck:
+    test:
+      - CMD
+      - node
+      - -e
+      - fetch('http://127.0.0.1:8080/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+    interval: 5s
+    timeout: 3s
+    retries: 6
+    start_period: 15s
+  deploy:
+    resources:
+      limits:
+        memory: 1G
+        cpus: "2.0"
+      reservations:
+        cpus: "0.75"
+        memory: 256M
+  depends_on:
+    postgres:
+      condition: service_healthy
+  networks:
+    - backend
+    - egress
+
+services:
+  postgres:
+    image: ${MIXLI_POSTGRES_IMAGE:-mixli-postgres:18.3}
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-mixli}
+      POSTGRES_USER: ${POSTGRES_USER:-mixli}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres-password
+    volumes:
+      - type: bind
+        source: ${MIXLI_RELEASE_ROOT:-/srv/mixli}/data/postgres
+        target: /var/lib/postgresql
+      - type: bind
+        source: ${MIXLI_RELEASE_ROOT:-/srv/mixli}/backups/pgbackrest
+        target: /var/lib/pgbackrest
+      - type: bind
+        source: ${MIXLI_POSTGRES_CONFIG:-/etc/mixli/postgres/postgresql.conf}
+        target: /etc/postgresql/postgresql.conf
+        read_only: true
+      - type: bind
+        source: ${MIXLI_PGBACKREST_CONFIG:-/etc/mixli/postgres/pgbackrest.conf}
+        target: /etc/pgbackrest/pgbackrest.conf
+        read_only: true
+      - type: bind
+        source: ${MIXLI_POSTGRES_PASSWORD_FILE:-/etc/mixli/secrets/postgres-password}
+        target: /run/secrets/postgres-password
+        read_only: true
+    shm_size: 2G
+    restart: unless-stopped
+    stop_grace_period: 120s
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 16G
+          cpus: "6.0"
+        reservations:
+          memory: 8G
+          cpus: "2.0"
+    networks:
+      - backend
+      - egress
+
+  api-blue-1:
+    <<: *api
+    image: ${MIXLI_API_BLUE_IMAGE:-mixli-api:bootstrap}
+    hostname: api-blue-1
+
+  api-blue-2:
+    <<: *api
+    image: ${MIXLI_API_BLUE_IMAGE:-mixli-api:bootstrap}
+    hostname: api-blue-2
+
+  api-green-1:
+    <<: *api
+    image: ${MIXLI_API_GREEN_IMAGE:-mixli-api:bootstrap}
+    hostname: api-green-1
+
+  api-green-2:
+    <<: *api
+    image: ${MIXLI_API_GREEN_IMAGE:-mixli-api:bootstrap}
+    hostname: api-green-2
+
+  nginx:
+    image: ${MIXLI_NGINX_IMAGE:-nginx:1.28.0-alpine}
+    ports:
+      - target: 80
+        published: "80"
+        protocol: tcp
+        mode: host
+      - target: 443
+        published: "443"
+        protocol: tcp
+        mode: host
+    volumes:
+      - type: bind
+        source: ${MIXLI_RELEASE_ROOT:-/srv/mixli}
+        target: /srv/mixli
+        read_only: true
+      - type: bind
+        source: ${MIXLI_NGINX_CONFIG:-/etc/mixli/nginx/nginx.conf}
+        target: /etc/nginx/nginx.conf
+        read_only: true
+      - type: bind
+        source: ${MIXLI_NGINX_SITE_CONFIG:-/etc/mixli/nginx/conf.d/mixli.conf}
+        target: /etc/nginx/conf.d/mixli.conf
+        read_only: true
+      - type: bind
+        source: ${MIXLI_CLOUDFLARE_REAL_IP_CONFIG:-/etc/mixli/nginx/cloudflare-real-ip.conf}
+        target: /etc/nginx/cloudflare-real-ip.conf
+        read_only: true
+      - type: bind
+        source: ${MIXLI_RELEASE_ROOT:-/srv/mixli}/runtime/api-upstream.conf
+        target: /etc/nginx/runtime/api-upstream.conf
+        read_only: true
+      - type: bind
+        source: ${MIXLI_ORIGIN_CERT:-/etc/mixli/cloudflare/origin.pem}
+        target: /etc/nginx/tls/origin.pem
+        read_only: true
+      - type: bind
+        source: ${MIXLI_ORIGIN_KEY:-/etc/mixli/cloudflare/origin.key}
+        target: /etc/nginx/tls/origin.key
+        read_only: true
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx:rw,noexec,nosuid,nodev,size=128m
+      - /var/run:rw,noexec,nosuid,nodev,size=8m
+      - /tmp:rw,noexec,nosuid,nodev,size=32m
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/nginx-health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "2.0"
+        reservations:
+          memory: 128M
+          cpus: "0.25"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - backend
+      - monitoring
+
+networks:
+  backend:
+    internal: true
+  monitoring:
+    internal: true
+  egress:
+    driver: bridge

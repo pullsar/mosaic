@@ -17,5 +17,6 @@ coverage/
 **/macos/Flutter/ephemeral/
 ops/production/env/production.env
 ops/production/secrets/
-ops/production/runtime/
+ops/production/runtime/*
+!ops/production/runtime/*.example.conf
 ops/production/images.lock.env
