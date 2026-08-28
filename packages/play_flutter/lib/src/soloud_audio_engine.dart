@@ -127,6 +127,15 @@ final class SoLoudAudioEngine implements AudioEngine {
   /// The singleton may be initialized again later if a new app lifecycle owns
   /// it; `deinitAsync` avoids blocking the UI isolate during device teardown.
   Future<void> dispose() async {
+    final initializing = _initialization;
+    if (initializing != null) {
+      try {
+        await initializing;
+      } catch (_) {
+        // Failed initialization owns no running audio device.
+      }
+    }
+
     final pending = _pendingLoads.values.toList(growable: false);
     for (final load in pending) {
       try {
