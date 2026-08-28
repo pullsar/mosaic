@@ -242,12 +242,7 @@ export function mediaAttemptStorageKey(
   claimToken: string,
   purpose: MediaDerivativePurpose,
 ): string {
-  const extension = switch (purpose) {
-    case 'playback': '.mp4',
-    case 'poster': '.jpg',
-    case 'audio': '.m4a',
-    case 'captions': '.vtt',
-  };
+  const extension = mediaPurposeExtension(purpose);
   return [
     'media',
     storageSegment(assetId, 'assetId'),
@@ -256,6 +251,19 @@ export function mediaAttemptStorageKey(
     'attempts',
     `${storageSegment(claimToken, 'claimToken')}${extension}`,
   ].join('/');
+}
+
+function mediaPurposeExtension(purpose: MediaDerivativePurpose): string {
+  switch (purpose) {
+    case 'playback':
+      return '.mp4';
+    case 'poster':
+      return '.jpg';
+    case 'audio':
+      return '.m4a';
+    case 'captions':
+      return '.vtt';
+  }
 }
 
 export function mediaWorkerErrorCode(error: unknown): string {
