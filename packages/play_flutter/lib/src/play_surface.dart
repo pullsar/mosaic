@@ -41,6 +41,15 @@ final class _PlaySurfaceState extends State<PlaySurface> {
     _session = _engine.start(widget.play);
   }
 
+  @override
+  void didUpdateWidget(covariant PlaySurface oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.play.id != widget.play.id ||
+        oldWidget.play.revisionId != widget.play.revisionId) {
+      _session = _engine.start(widget.play);
+    }
+  }
+
   void _apply(PlayAction action) {
     if (_session.ended) return;
     final result = _engine.apply(_session, action);

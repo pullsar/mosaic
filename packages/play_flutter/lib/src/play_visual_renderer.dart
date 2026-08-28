@@ -187,7 +187,7 @@ final class CachingPlayVisualAssetResolver implements PlayVisualAssetResolver {
         })
         .whenComplete(() {
           if (identical(_inFlight[id], request)) {
-            unawaited(_inFlight.remove(id));
+            _detachInFlight(id);
           }
         });
     _inFlight[id] = request;
@@ -197,7 +197,7 @@ final class CachingPlayVisualAssetResolver implements PlayVisualAssetResolver {
   void invalidate(String assetId) {
     final id = _requireNonEmpty(assetId, 'assetId');
     _cache.remove(id);
-    unawaited(_inFlight.remove(id));
+    _detachInFlight(id);
     _versions.update(id, (value) => value + 1, ifAbsent: () => 1);
   }
 
@@ -206,6 +206,11 @@ final class CachingPlayVisualAssetResolver implements PlayVisualAssetResolver {
     _inFlight.clear();
     _versions.clear();
     _epoch += 1;
+  }
+
+  void _detachInFlight(String id) {
+    final detached = _inFlight.remove(id);
+    if (detached == null) return;
   }
 
   void _remember(String id, PlayVisualAsset? asset) {

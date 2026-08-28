@@ -142,6 +142,11 @@ final class _ResolvedPlayAudioState extends State<ResolvedPlayAudio> {
   );
 }
 
+/// User-initiated audio surface backed by the shared single-media coordinator.
+///
+/// Audio is deliberately loaded lazily on the first user gesture. Mounting a
+/// feed item never allocates an audio resource or starts audible playback.
+/// Foreground resume also never autoplays; the user must tap Hear/Replay again.
 final class OwnedPlayAudio extends StatefulWidget {
   const OwnedPlayAudio({
     required this.ownerId,
@@ -168,8 +173,10 @@ final class _OwnedPlayAudioState extends State<OwnedPlayAudio> {
   Future<void> _tail = Future<void>.value();
   int _generation = 0;
   _AudioMediaHandle? _handle;
-  bool _ready = false;
-  bool _playing = false;
+  ActiveMediaCoordinator? _handleCoordinator;
+  String? _handleOwnerId;
+  bool _loading = false;
+  bool _played = false;
   Object? _error;
 
   @override
@@ -233,60 +240,122 @@ final class _OwnedPlayAudioState extends State<OwnedPlayAudio> {
       _publishIdle(generation);
       return;
     }
-    _publishLoading(generation);
-    await _loadHandle(generation);
+    _publishIdle(generation);
   }
 
   Future<_AudioMediaHandle?> _loadHandle(int generation) async {
-    await widget.engine.load(widget.asset.id, widget.asset.uri);
-    final handle = _AudioMediaHandle(widget.engine, widget.asset.id);
+    final asset = widget.asset;
+    final engine = widget.engine;
+    final coordinator = widget.coordinator;
+    final ownerId = _requireAudioText(widget.ownerId, 'ownerId');
+
+    try {
+      await engine.load(asset.id, asset.uri);
+    } on Object catch (error, stackTrace) {
+      try {
+        await engine.release(asset.id);
+      } on Object catch (cleanupError, cleanupStackTrace) {
+        _reportError(asset, cleanupError, cleanupStackTrace);
+      }
+      Error.throwWithStackTrace(error, stackTrace);
+    }
+
+    final handle = _AudioMediaHandle(engine, asset.id);
     if (!_isCurrent(generation) || !widget.active) {
       await handle.release();
       return null;
     }
+
     _handle = handle;
-    _publishReady(generation);
+    _handleCoordinator = coordinator;
+    _handleOwnerId = ownerId;
     return handle;
   }
 
   Future<void> _play(int generation) async {
     if (!_isCurrent(generation) || !widget.active) return;
-    var handle = _handle;
-    if (handle == null || handle.released) {
-      _publishLoading(generation);
-      handle = await _loadHandle(generation);
-      if (handle == null) return;
-    }
+    _publishLoading(generation);
 
-    await widget.coordinator.activate(widget.ownerId, handle);
-    if (!_isCurrent(generation) || !widget.active) {
-      await _releaseCurrent();
-      return;
-    }
+    try {
+      var handle = _handle;
+      if (handle == null || handle.released) {
+        handle = await _loadHandle(generation);
+        if (handle == null) return;
+      }
 
-    await widget.engine.play(widget.asset.id);
-    _publishPlaying(generation);
+      final coordinator = _handleCoordinator;
+      final ownerId = _handleOwnerId;
+      if (coordinator == null || ownerId == null) {
+        throw StateError('Audio handle lost its media ownership context.');
+      }
+
+      await coordinator.activate(ownerId, handle);
+      if (!_isCurrent(generation) || !widget.active) {
+        await _releaseCurrent();
+        return;
+      }
+
+      await handle.engine.play(handle.assetId);
+      if (!_isCurrent(generation) || !widget.active) {
+        await _releaseCurrent();
+        return;
+      }
+
+      _publishPlayed(generation);
+    } on Object catch (error, stackTrace) {
+      try {
+        await _releaseCurrent();
+      } on Object catch (cleanupError, cleanupStackTrace) {
+        _reportError(widget.asset, cleanupError, cleanupStackTrace);
+      }
+      Error.throwWithStackTrace(error, stackTrace);
+    }
   }
 
   Future<void> _releaseCurrent() async {
     final handle = _handle;
     if (handle == null) return;
+    final coordinator = _handleCoordinator;
+    final ownerId = _handleOwnerId;
 
-    if (widget.coordinator.owns(widget.ownerId, handle)) {
-      await widget.coordinator.release(
-        widget.ownerId,
-        expectedHandle: handle,
-      );
-    } else if (!handle.released) {
+    if (coordinator != null &&
+        ownerId != null &&
+        coordinator.owns(ownerId, handle)) {
+      await coordinator.release(ownerId, expectedHandle: handle);
+      _clearHandle(handle);
+      return;
+    }
+
+    Object? firstError;
+    StackTrace? firstStackTrace;
+    try {
       await handle.pause();
+    } on Object catch (error, stackTrace) {
+      firstError = error;
+      firstStackTrace = stackTrace;
+    }
+    try {
       await handle.release();
+    } on Object catch (error, stackTrace) {
+      firstError ??= error;
+      firstStackTrace ??= stackTrace;
     }
 
-    if (identical(_handle, handle)) {
-      _handle = null;
-      _ready = false;
-      _playing = false;
+    if (handle.released) {
+      _clearHandle(handle);
     }
+    final error = firstError;
+    if (error != null) {
+      Error.throwWithStackTrace(error, firstStackTrace ?? StackTrace.current);
+    }
+  }
+
+  void _clearHandle(_AudioMediaHandle handle) {
+    if (!identical(_handle, handle)) return;
+    _handle = null;
+    _handleCoordinator = null;
+    _handleOwnerId = null;
+    _loading = false;
   }
 
   bool _isCurrent(int generation) => mounted && generation == _generation;
@@ -294,26 +363,16 @@ final class _OwnedPlayAudioState extends State<OwnedPlayAudio> {
   void _publishLoading(int generation) {
     if (!_isCurrent(generation)) return;
     setState(() {
-      _ready = false;
-      _playing = false;
+      _loading = true;
       _error = null;
     });
   }
 
-  void _publishReady(int generation) {
+  void _publishPlayed(int generation) {
     if (!_isCurrent(generation)) return;
     setState(() {
-      _ready = true;
-      _playing = false;
-      _error = null;
-    });
-  }
-
-  void _publishPlaying(int generation) {
-    if (!_isCurrent(generation)) return;
-    setState(() {
-      _ready = true;
-      _playing = true;
+      _loading = false;
+      _played = true;
       _error = null;
     });
   }
@@ -321,8 +380,8 @@ final class _OwnedPlayAudioState extends State<OwnedPlayAudio> {
   void _publishIdle(int generation) {
     if (!_isCurrent(generation)) return;
     setState(() {
-      _ready = false;
-      _playing = false;
+      _loading = false;
+      _played = false;
       _error = null;
     });
   }
@@ -330,8 +389,7 @@ final class _OwnedPlayAudioState extends State<OwnedPlayAudio> {
   void _publishFailure(int generation, Object error) {
     if (!_isCurrent(generation)) return;
     setState(() {
-      _ready = false;
-      _playing = false;
+      _loading = false;
       _error = error;
     });
   }
@@ -354,7 +412,7 @@ final class _OwnedPlayAudioState extends State<OwnedPlayAudio> {
   Widget build(BuildContext context) {
     if (!widget.active) return const SizedBox.shrink();
     if (_error != null) return const PlayAudioUnavailable();
-    if (!_ready) return const _AudioState(label: 'Loading audio');
+    if (_loading) return const _AudioState(label: 'Loading audio');
 
     final semanticLabel = widget.asset.semanticLabel ?? 'Hear audio';
     return Center(
@@ -363,8 +421,8 @@ final class _OwnedPlayAudioState extends State<OwnedPlayAudio> {
         label: semanticLabel,
         child: FilledButton.tonalIcon(
           onPressed: _schedulePlay,
-          icon: Icon(_playing ? Icons.replay_rounded : Icons.volume_up_rounded),
-          label: Text(_playing ? 'Replay' : 'Hear'),
+          icon: Icon(_played ? Icons.replay_rounded : Icons.volume_up_rounded),
+          label: Text(_played ? 'Replay' : 'Hear'),
         ),
       ),
     );
