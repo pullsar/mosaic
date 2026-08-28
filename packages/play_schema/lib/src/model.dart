@@ -149,11 +149,11 @@ final class PresentationLayer {
   }
 
   Map<String, Object?> toJson() => {
+    ...properties,
     'type': type,
     if (role != null) 'role': role,
     if (value != null) 'value': value,
     if (assetId != null) 'assetId': assetId,
-    ...properties,
   };
 }
 
