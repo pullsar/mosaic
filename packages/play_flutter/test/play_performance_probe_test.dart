@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:play_flutter/src/play_performance_probe.dart';
+import 'package:play_flutter/play_flutter.dart';
 
 PlayFrameSample _sample({
   required int totalMs,
