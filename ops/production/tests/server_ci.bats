@@ -49,6 +49,7 @@ production-builds" ]
     'git diff --check' \
     'docker compose' \
     'bats ops/production/tests' \
+    'MIXLI_HOST_REPO="$CHECKOUT"' \
     'shellcheck' \
     'systemd-analyze verify' \
     'DATABASE_URL=' \

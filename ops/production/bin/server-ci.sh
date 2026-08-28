@@ -70,6 +70,7 @@ infrastructure_contracts() {
     MIXLI_API_IMAGE="$API_IMAGE" \
       MIXLI_FLUTTER_IMAGE="$FLUTTER_IMAGE" \
       MIXLI_POSTGRES_IMAGE="$POSTGRES_IMAGE" \
+      MIXLI_HOST_REPO="$CHECKOUT" \
       bats ops/production/tests
   )
 
