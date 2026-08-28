@@ -59,6 +59,12 @@ export interface MediaPublicationDerivative {
   dynamicRange: 'sdr' | 'hdr' | null;
 }
 
+type PublishedMediaDerivative = MediaPublicationDerivative & {
+  storageKey: string;
+  mimeType: string;
+  sizeBytes: number;
+};
+
 export interface MediaDeliveryObject {
   derivativeKey: string;
   purpose: MediaDerivativePurpose;
@@ -184,10 +190,7 @@ export function selectMediaDelivery(
 export class PostgresMediaPublicationGate {
   constructor(private readonly pool: Pool) {}
 
-  /**
-   * Atomically promotes an asset to READY only after its current-source
-   * derivatives satisfy the launch delivery profile.
-   */
+  /** Atomically promotes an asset only after its current-source derivatives pass policy. */
   async promoteReady(assetId: string): Promise<MediaDeliverySelection> {
     const id = requiredText(assetId, 'assetId');
     const client = await this.pool.connect();
@@ -215,11 +218,7 @@ export class PostgresMediaPublicationGate {
     }
   }
 
-  /**
-   * Revalidates a READY asset before a delivery URL is resolved. A revoked or
-   * tampered derivative therefore cannot remain deliverable merely because the
-   * asset was READY at an earlier point in time.
-   */
+  /** Revalidates READY media before downstream code resolves managed delivery URLs. */
   async resolveReady(assetId: string): Promise<MediaDeliverySelection> {
     const id = requiredText(assetId, 'assetId');
     const client = await this.pool.connect();
@@ -227,7 +226,9 @@ export class PostgresMediaPublicationGate {
       await client.query('begin transaction isolation level repeatable read read only');
       const asset = await loadAsset(client, id, false);
       if (asset === null) block(id, 'asset_not_found');
-      if (asset.state !== 'ready') block(id, asset.state === 'revoked' ? 'asset_revoked' : 'asset_not_ready');
+      if (asset.state !== 'ready') {
+        block(id, asset.state === 'revoked' ? 'asset_revoked' : 'asset_not_ready');
+      }
       const derivatives = await loadDerivatives(client, id, asset.sourceSha256);
       const selection = selectMediaDelivery(asset, derivatives);
       await client.query('commit');
@@ -247,7 +248,7 @@ function requireCompatible(
   purpose: MediaDerivativePurpose,
   missingReason: MediaPublicationBlockReason,
   incompatibleReason: MediaPublicationBlockReason,
-  compatible: (derivative: MediaPublicationDerivative) => boolean,
+  compatible: (derivative: MediaPublicationDerivative) => derivative is PublishedMediaDerivative,
 ): MediaDeliveryObject {
   const candidates = derivatives.filter((derivative) => derivative.purpose === purpose);
   const ready = candidates.filter((derivative) => derivative.state === 'ready');
@@ -274,12 +275,11 @@ function ordered(
   derivatives: readonly MediaPublicationDerivative[],
 ): readonly MediaPublicationDerivative[] {
   return [...derivatives].sort((left, right) =>
-    right.planVersion - left.planVersion ||
-    left.derivativeKey.localeCompare(right.derivativeKey),
+    right.planVersion - left.planVersion || left.derivativeKey.localeCompare(right.derivativeKey),
   );
 }
 
-function isCompatiblePlayback(value: MediaPublicationDerivative): boolean {
+function isCompatiblePlayback(value: MediaPublicationDerivative): value is PublishedMediaDerivative {
   return hasPublishedObject(value) &&
     value.processor === PLAYBACK_PROCESSOR &&
     value.mimeType === 'video/mp4' &&
@@ -293,7 +293,7 @@ function isCompatiblePlayback(value: MediaPublicationDerivative): boolean {
     positiveDimension(value.height);
 }
 
-function isCompatiblePoster(value: MediaPublicationDerivative): boolean {
+function isCompatiblePoster(value: MediaPublicationDerivative): value is PublishedMediaDerivative {
   return hasPublishedObject(value) &&
     value.processor === POSTER_PROCESSOR &&
     value.mimeType === 'image/jpeg' &&
@@ -302,7 +302,7 @@ function isCompatiblePoster(value: MediaPublicationDerivative): boolean {
     positiveDimension(value.height);
 }
 
-function isCompatibleAudio(value: MediaPublicationDerivative): boolean {
+function isCompatibleAudio(value: MediaPublicationDerivative): value is PublishedMediaDerivative {
   return hasPublishedObject(value) &&
     value.processor === AUDIO_PROCESSOR &&
     value.mimeType === 'audio/mp4' &&
@@ -311,19 +311,13 @@ function isCompatibleAudio(value: MediaPublicationDerivative): boolean {
     nonNegativeDuration(value.durationMs);
 }
 
-function isCompatibleCaptions(value: MediaPublicationDerivative): boolean {
+function isCompatibleCaptions(value: MediaPublicationDerivative): value is PublishedMediaDerivative {
   return hasPublishedObject(value) &&
     value.processor === CAPTIONS_PROCESSOR &&
     value.mimeType === 'text/vtt';
 }
 
-function hasPublishedObject(
-  value: MediaPublicationDerivative,
-): value is MediaPublicationDerivative & {
-  storageKey: string;
-  mimeType: string;
-  sizeBytes: number;
-} {
+function hasPublishedObject(value: MediaPublicationDerivative): value is PublishedMediaDerivative {
   return value.state === 'ready' &&
     value.storageKey !== null &&
     value.storageKey.length > 0 &&
@@ -334,13 +328,7 @@ function hasPublishedObject(
     value.sizeBytes > 0;
 }
 
-function deliveryObject(
-  value: MediaPublicationDerivative & {
-    storageKey: string;
-    mimeType: string;
-    sizeBytes: number;
-  },
-): MediaDeliveryObject {
+function deliveryObject(value: PublishedMediaDerivative): MediaDeliveryObject {
   return Object.freeze({
     derivativeKey: value.derivativeKey,
     purpose: value.purpose,
@@ -381,12 +369,7 @@ async function loadAsset(
   const row = result.rows[0];
   return row === undefined
     ? null
-    : {
-        id: row.id,
-        kind: row.kind,
-        state: row.state,
-        sourceSha256: row.source_sha256,
-      };
+    : {id: row.id, kind: row.kind, state: row.state, sourceSha256: row.source_sha256};
 }
 
 async function loadDerivatives(
