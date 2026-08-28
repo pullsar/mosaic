@@ -35,7 +35,14 @@ final class VideoPlayerPlayController implements PlayVideoController {
   @override
   Future<void> play() async {
     _assertReady();
-    await _controller.play();
+    try {
+      await _controller.play();
+    } on Object catch (error) {
+      if (kIsWeb) {
+        throw PlayVideoPlaybackRejected(error);
+      }
+      rethrow;
+    }
   }
 
   @override
