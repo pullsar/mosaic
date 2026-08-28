@@ -10,6 +10,7 @@ readonly LOCK_FILE="${MIXLI_LOCK_FILE:-/run/lock/mixli-deploy.lock}"
 readonly BACKUP_LOCK_FILE="${MIXLI_BACKUP_LOCK_FILE:-/run/lock/mixli-backup.lock}"
 readonly COMPOSE_FILE="${MIXLI_COMPOSE_FILE:-/opt/mixli/repo/ops/production/compose.yaml}"
 readonly ENV_FILE="${MIXLI_ENV_FILE:-/etc/mixli/production.env}"
+readonly CI_RUNNER="${MIXLI_CI_RUNNER:-/opt/mixli/bin/server-ci.sh}"
 readonly RELEASES="$ROOT/releases"
 readonly BUILDS="$ROOT/builds"
 readonly RUNTIME="$ROOT/runtime"
@@ -125,6 +126,29 @@ verify_ancestry() {
   git -C "$REPO" merge-base --is-ancestor "$SHA" origin/main || exit 65
 }
 
+run_repository_ci() {
+  fail_if_requested ci
+  if [[ "$TEST_MODE" == '1' ]]; then
+    log_event "ci-verified:$SHA"
+    return 0
+  fi
+  "$CI_RUNNER" "$BUILDS/$SHA" "$SHA"
+  log_event "ci-verified:$SHA"
+}
+
+prepare_checkout() {
+  local build_dir="$BUILDS/$SHA"
+  [[ "$TEST_MODE" == '1' ]] && return 0
+  if [[ -d "$build_dir/.git" || -f "$build_dir/.git" ]]; then
+    git -C "$REPO" worktree remove --force "$build_dir"
+  fi
+  if [[ -e "$build_dir" ]]; then
+    [[ "$build_dir" == "$BUILDS/$SHA" ]]
+    rm -rf -- "$build_dir"
+  fi
+  runuser -u mixli-build -- git -C "$REPO" worktree add --detach "$build_dir" "$SHA"
+}
+
 build_release() {
   local build_dir="$BUILDS/$SHA" release_dir="$RELEASES/$SHA" built_at
   fail_if_requested build
@@ -134,20 +158,6 @@ build_release() {
   if [[ "$TEST_MODE" == '1' ]]; then
     printf 'web:%s\n' "$SHA" >"$release_dir/web/index.html"
   else
-    if [[ -d "$build_dir/.git" || -f "$build_dir/.git" ]]; then
-      git -C "$REPO" worktree remove --force "$build_dir"
-    fi
-    if [[ -e "$build_dir" ]]; then
-      [[ "$build_dir" == "$BUILDS/$SHA" ]]
-      rm -rf -- "$build_dir"
-    fi
-    runuser -u mixli-build -- git -C "$REPO" worktree add --detach "$build_dir" "$SHA"
-
-    docker build -f "$build_dir/apps/api/Dockerfile" -t "mixli-api:$SHA" "$build_dir"
-    docker build -f "$build_dir/ops/production/flutter/Dockerfile" \
-      -t mixli-flutter-builder:3.44.7 "$build_dir/ops/production/flutter"
-    docker run --rm -v "$build_dir:/workspace" -w /workspace mixli-flutter-builder:3.44.7 bash -c \
-      'set -Eeuo pipefail; flutter pub get --enforce-lockfile; dart format --output=none --set-exit-if-changed .; flutter analyze; (cd packages/play_schema && dart test); (cd packages/play_engine && dart test); (cd packages/analytics_contract && dart test); (cd packages/play_flutter && flutter test); (cd packages/platform_contracts && dart test); (cd packages/platform_flutter && flutter test); (cd apps/mosaic_app && flutter test && flutter build web --release --pwa-strategy=none)'
     cp -a "$build_dir/apps/mosaic_app/build/web/." "$release_dir/web/"
     compose config --quiet
   fi
@@ -171,9 +181,11 @@ backup_and_migrate() {
   compose exec -T --user postgres postgres pgbackrest --stanza=mixli --type=incr backup
 
   if [[ "$target_pool" == 'blue' ]]; then
-    MIXLI_API_BLUE_IMAGE="mixli-api:$SHA" compose run --rm --no-deps api-blue-1 node dist/db/migrate.js up
+    MIXLI_API_BLUE_IMAGE="mixli-api:$SHA" MIXLI_RELEASE_SHA="$SHA" \
+      compose run --rm --no-deps api-blue-1 node dist/db/migrate.js up
   else
-    MIXLI_API_GREEN_IMAGE="mixli-api:$SHA" compose run --rm --no-deps api-green-1 node dist/db/migrate.js up
+    MIXLI_API_GREEN_IMAGE="mixli-api:$SHA" MIXLI_RELEASE_SHA="$SHA" \
+      compose run --rm --no-deps api-green-1 node dist/db/migrate.js up
   fi
   flock -u 7
   exec 7>&-
@@ -184,9 +196,11 @@ start_candidate() {
   local service_one="api-${target_pool}-1" service_two="api-${target_pool}-2"
   [[ "$TEST_MODE" == '1' ]] && return 0
   if [[ "$target_pool" == 'blue' ]]; then
-    MIXLI_API_BLUE_IMAGE="mixli-api:$SHA" compose up -d --no-deps "$service_one" "$service_two"
+    MIXLI_API_BLUE_IMAGE="mixli-api:$SHA" MIXLI_RELEASE_SHA="$SHA" \
+      compose up -d --no-deps "$service_one" "$service_two"
   else
-    MIXLI_API_GREEN_IMAGE="mixli-api:$SHA" compose up -d --no-deps "$service_one" "$service_two"
+    MIXLI_API_GREEN_IMAGE="mixli-api:$SHA" MIXLI_RELEASE_SHA="$SHA" \
+      compose up -d --no-deps "$service_one" "$service_two"
   fi
 }
 
@@ -287,6 +301,8 @@ main() {
   trap 'on_error $? $LINENO' ERR
 
   verify_ancestry
+  prepare_checkout
+  run_repository_ci
   current_sha="$(json_field "$STATE/current.json" sha)"
   current_pool="$(json_field "$STATE/current.json" pool)"
   if [[ "$current_pool" == 'blue' ]]; then

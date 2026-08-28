@@ -8,6 +8,7 @@ x-api: &api
     HOST: 0.0.0.0
     PORT: "8080"
     LOG_LEVEL: ${MIXLI_LOG_LEVEL:-info}
+    MIXLI_RELEASE_SHA: ${MIXLI_RELEASE_SHA:-unknown}
   expose:
     - "8080"
   read_only: true
@@ -121,6 +122,8 @@ services:
         published: "443"
         protocol: tcp
         mode: host
+    expose:
+      - "8081"
     volumes:
       - type: bind
         source: ${MIXLI_RELEASE_ROOT:-/srv/mixli}
@@ -175,6 +178,205 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    networks:
+      - backend
+      - monitoring
+
+  prometheus:
+    image: ${MIXLI_PROMETHEUS_IMAGE:-prom/prometheus:v3.5.5}
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+      - --storage.tsdb.retention.size=20GB
+      - --web.enable-lifecycle
+    volumes:
+      - type: bind
+        source: ${MIXLI_PROMETHEUS_CONFIG_DIR:-/etc/mixli/prometheus}
+        target: /etc/prometheus
+        read_only: true
+      - type: bind
+        source: ${MIXLI_RELEASE_ROOT:-/srv/mixli}/data/monitoring/prometheus
+        target: /prometheus
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "2.0"
+    networks:
+      - backend
+      - monitoring
+
+  alertmanager:
+    image: ${MIXLI_ALERTMANAGER_IMAGE:-prom/alertmanager:v0.32.1}
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    volumes:
+      - type: bind
+        source: ${MIXLI_ALERTMANAGER_CONFIG:-/etc/mixli/alertmanager/alertmanager.yml}
+        target: /etc/alertmanager/alertmanager.yml
+        read_only: true
+      - type: bind
+        source: ${MIXLI_ALERTMANAGER_WEBHOOK_FILE:-/etc/mixli/secrets/alertmanager-webhook-url}
+        target: /etc/alertmanager/secrets/webhook-url
+        read_only: true
+      - type: bind
+        source: ${MIXLI_RELEASE_ROOT:-/srv/mixli}/data/monitoring/alertmanager
+        target: /alertmanager
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+    networks:
+      - monitoring
+
+  grafana:
+    image: ${MIXLI_GRAFANA_IMAGE:-grafana/grafana:13.1.0}
+    environment:
+      GF_SERVER_DOMAIN: ${MIXLI_OPS_DOMAIN:-ops.mixli.app}
+      GF_SERVER_ROOT_URL: https://${MIXLI_OPS_DOMAIN:-ops.mixli.app}/
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana-admin-password
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - type: bind
+        source: ${MIXLI_RELEASE_ROOT:-/srv/mixli}/data/monitoring/grafana
+        target: /var/lib/grafana
+      - type: bind
+        source: ${MIXLI_GRAFANA_PROVISIONING_DIR:-/etc/mixli/grafana/provisioning}
+        target: /etc/grafana/provisioning
+        read_only: true
+      - type: bind
+        source: ${MIXLI_GRAFANA_DASHBOARD_DIR:-/etc/mixli/grafana/dashboards}
+        target: /var/lib/grafana-dashboards
+        read_only: true
+      - type: bind
+        source: ${MIXLI_GRAFANA_ADMIN_PASSWORD_FILE:-/etc/mixli/secrets/grafana-admin-password}
+        target: /run/secrets/grafana-admin-password
+        read_only: true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "1.0"
+    networks:
+      - monitoring
+
+  node-exporter:
+    image: ${MIXLI_NODE_EXPORTER_IMAGE:-quay.io/prometheus/node-exporter:v1.12.1}
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/host/root
+      - --collector.textfile.directory=/var/lib/node_exporter/textfile
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+    volumes:
+      - type: bind
+        source: /proc
+        target: /host/proc
+        read_only: true
+      - type: bind
+        source: /sys
+        target: /host/sys
+        read_only: true
+      - type: bind
+        source: /
+        target: /host/root
+        read_only: true
+      - type: bind
+        source: ${MIXLI_RELEASE_ROOT:-/srv/mixli}/metrics
+        target: /var/lib/node_exporter/textfile
+        read_only: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.25"
+    networks:
+      - monitoring
+
+  cadvisor:
+    image: ${MIXLI_CADVISOR_IMAGE:-ghcr.io/google/cadvisor:v0.57.0}
+    privileged: true
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    read_only: true
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"
+    networks:
+      - monitoring
+
+  nginx-exporter:
+    image: ${MIXLI_NGINX_EXPORTER_IMAGE:-nginx/nginx-prometheus-exporter:1.5.3}
+    command:
+      - --nginx.scrape-uri=http://nginx:8081/stub_status
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    depends_on:
+      - nginx
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.25"
+    networks:
+      - monitoring
+
+  postgres-exporter:
+    image: ${MIXLI_POSTGRES_EXPORTER_IMAGE:-quay.io/prometheuscommunity/postgres-exporter:v0.20.1}
+    env_file:
+      - path: ${MIXLI_POSTGRES_EXPORTER_ENV_FILE:-/etc/mixli/secrets/postgres-exporter.env}
+        required: false
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
     networks:
       - backend
       - monitoring

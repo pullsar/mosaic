@@ -2,11 +2,13 @@ import Fastify, {type FastifyInstance} from 'fastify';
 import {randomUUID} from 'node:crypto';
 import type {ClientCapabilities} from './contracts/compatibility.js';
 import {checkPlayCompatibility} from './contracts/compatibility.js';
+import {createApiMetrics} from './metrics.js';
 import type {EventInput, MosaicRepository} from './repository.js';
 
 export interface BuildAppOptions {
   repository: MosaicRepository;
   logLevel?: string;
+  releaseSha?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -55,10 +57,30 @@ function parseEvent(value: unknown): EventInput | null {
 }
 
 export function buildApp(options: BuildAppOptions): FastifyInstance {
+  const metrics = createApiMetrics(options.releaseSha ?? 'unknown');
+  const requestStarts = new WeakMap<object, bigint>();
   const app = Fastify({
     logger: {level: options.logLevel ?? 'info'},
     genReqId: () => randomUUID(),
     disableRequestLogging: false,
+  });
+
+  app.addHook('onRequest', (request, _reply, done) => {
+    requestStarts.set(request, process.hrtime.bigint());
+    done();
+  });
+
+  app.addHook('onResponse', (request, reply, done) => {
+    const started = requestStarts.get(request);
+    const durationSeconds = started === undefined
+      ? 0
+      : Number(process.hrtime.bigint() - started) / 1_000_000_000;
+    metrics.observeRequest({
+      method: request.method,
+      route: request.routeOptions.url ?? 'unmatched',
+      status_class: `${Math.floor(reply.statusCode / 100)}xx`,
+    }, durationSeconds);
+    done();
   });
 
   app.get('/health', async () => ({status: 'ok'}));
@@ -69,6 +91,9 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     } catch {
       return reply.code(503).send({status: 'not_ready'});
     }
+  });
+  app.get('/metrics', async (_request, reply) => {
+    return reply.type(metrics.registry.contentType).send(await metrics.registry.metrics());
   });
 
   app.post('/v1/actors', async (request, reply) => {

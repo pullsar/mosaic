@@ -86,6 +86,13 @@ curl_origin() {
   [ "$output" = "ok" ]
 }
 
+@test "API metrics are not exposed through the public origin" {
+  [ "$(grep -c 'location = /metrics' ops/production/nginx/conf.d/mixli.conf)" -eq 2 ]
+  run curl_origin -o /dev/null -w '%{http_code}' -H 'Host: api.mixli.app' /metrics
+  [ "$status" -eq 0 ]
+  [ "$output" = "404" ]
+}
+
 @test "API proxies to the active pool" {
   run curl_origin -H 'Host: api.mixli.app' /
   [ "$status" -eq 0 ]

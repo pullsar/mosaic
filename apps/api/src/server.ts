@@ -6,7 +6,7 @@ import {PostgresRepository} from './repository.js';
 const config = loadConfig();
 const pool = new Pool({connectionString: config.databaseUrl});
 const repository = new PostgresRepository(pool);
-const app = buildApp({repository, logLevel: config.logLevel});
+const app = buildApp({repository, logLevel: config.logLevel, releaseSha: config.releaseSha});
 
 const shutdown = async (signal: string) => {
   app.log.info({signal}, 'shutting down');

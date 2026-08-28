@@ -1,0 +1,247 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 027
+
+readonly CHECKOUT="${1-}"
+readonly SHA="${2-}"
+readonly TEST_MODE="${MIXLI_CI_TEST_MODE:-0}"
+readonly SHORT_SHA="${SHA:0:12}"
+readonly FLUTTER_IMAGE="${MIXLI_FLUTTER_CI_IMAGE:-mixli-flutter-builder:3.44.7}"
+readonly POSTGRES_IMAGE="${MIXLI_POSTGRES_CI_IMAGE:-mixli-postgres:18.3}"
+readonly API_IMAGE="mixli-api:$SHA"
+readonly NODE_IMAGE="${MIXLI_NODE_CI_IMAGE:-node:24.7.0-bookworm-slim}"
+readonly PROMETHEUS_IMAGE="${MIXLI_PROMETHEUS_CI_IMAGE:-prom/prometheus:v3.5.0}"
+readonly ALERTMANAGER_IMAGE="${MIXLI_ALERTMANAGER_CI_IMAGE:-prom/alertmanager:v0.28.1}"
+
+network=''
+postgres_container=''
+node_modules_volume=''
+api_dist_volume=''
+
+die_usage() {
+  printf '%s\n' 'server-ci.sh requires an absolute checkout and exact lowercase commit SHA.' >&2
+  exit 64
+}
+
+cleanup() {
+  [[ -n "$postgres_container" ]] && docker rm -f "$postgres_container" >/dev/null 2>&1 || true
+  [[ -n "$network" ]] && docker network rm "$network" >/dev/null 2>&1 || true
+  [[ -n "$node_modules_volume" ]] && docker volume rm "$node_modules_volume" >/dev/null 2>&1 || true
+  [[ -n "$api_dist_volume" ]] && docker volume rm "$api_dist_volume" >/dev/null 2>&1 || true
+}
+
+validate_inputs() {
+  [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || die_usage
+  [[ "$CHECKOUT" == /* && "$CHECKOUT" != '/' && -d "$CHECKOUT" ]] || die_usage
+  [[ "$(readlink -f "$CHECKOUT")" == "$CHECKOUT" ]] || die_usage
+
+  if [[ "$TEST_MODE" != '1' ]]; then
+    [[ -e "$CHECKOUT/.git" ]] || die_usage
+    [[ "$(git -C "$CHECKOUT" rev-parse HEAD)" == "$SHA" ]] || die_usage
+  fi
+}
+
+run_stage() {
+  local name="$1" implementation="$2"
+  printf '%s\n' "$name"
+  [[ "$TEST_MODE" == '1' ]] || "$implementation"
+}
+
+source_integrity() {
+  (cd "$CHECKOUT" && git diff --check)
+  [[ -z "$(git -C "$CHECKOUT" status --porcelain --untracked-files=no)" ]]
+}
+
+infrastructure_contracts() {
+  docker build -f "$CHECKOUT/apps/api/Dockerfile" -t "$API_IMAGE" "$CHECKOUT"
+  docker build -f "$CHECKOUT/ops/production/flutter/Dockerfile" \
+    -t "$FLUTTER_IMAGE" "$CHECKOUT/ops/production/flutter"
+  docker build -f "$CHECKOUT/ops/production/postgres/Dockerfile" \
+    -t "$POSTGRES_IMAGE" "$CHECKOUT/ops/production/postgres"
+
+  (
+    cd "$CHECKOUT"
+    docker compose --env-file ops/production/env/production.env.example \
+      -f ops/production/compose.yaml config --quiet
+    MIXLI_API_IMAGE="$API_IMAGE" \
+      MIXLI_FLUTTER_IMAGE="$FLUTTER_IMAGE" \
+      MIXLI_POSTGRES_IMAGE="$POSTGRES_IMAGE" \
+      bats ops/production/tests
+  )
+
+  mapfile -d '' shell_files < <(
+    find "$CHECKOUT/ops/production/bin" -maxdepth 1 -type f \
+      \( -name '*.sh' -o -name 'deploy-dispatch' \) -print0
+  )
+  shellcheck "${shell_files[@]}"
+  systemd-analyze verify "$CHECKOUT"/ops/production/systemd/*
+
+  if [[ -f "$CHECKOUT/ops/production/prometheus/prometheus.yml" ]]; then
+    docker run --rm -v "$CHECKOUT/ops/production/prometheus:/etc/prometheus:ro" \
+      "$PROMETHEUS_IMAGE" promtool check config /etc/prometheus/prometheus.yml
+    docker run --rm -v "$CHECKOUT/ops/production/prometheus:/etc/prometheus:ro" \
+      "$PROMETHEUS_IMAGE" promtool check rules /etc/prometheus/rules.yml
+  fi
+  if [[ -f "$CHECKOUT/ops/production/alertmanager/alertmanager.yml" ]]; then
+    docker run --rm -v "$CHECKOUT/ops/production/alertmanager:/etc/alertmanager:ro" \
+      --entrypoint amtool "$ALERTMANAGER_IMAGE" \
+      check-config /etc/alertmanager/alertmanager.yml
+  fi
+}
+
+wait_for_postgres() {
+  local attempt status
+  for ((attempt = 1; attempt <= 60; attempt++)); do
+    status="$(docker inspect --format '{{.State.Health.Status}}' "$postgres_container")"
+    [[ "$status" == 'healthy' ]] && return 0
+    [[ "$status" == 'unhealthy' ]] && return 1
+    sleep 2
+  done
+  return 1
+}
+
+api_postgres_integration() {
+  network="mixli-ci-$SHORT_SHA"
+  postgres_container="mixli-ci-postgres-$SHORT_SHA"
+  node_modules_volume="mixli-ci-node-modules-$SHORT_SHA"
+  api_dist_volume="mixli-ci-api-dist-$SHORT_SHA"
+
+  docker network create "$network" >/dev/null
+  docker volume create "$node_modules_volume" >/dev/null
+  docker volume create "$api_dist_volume" >/dev/null
+  docker run -d --name "$postgres_container" --network "$network" --network-alias postgres \
+    --tmpfs /var/lib/postgresql:rw,nosuid,nodev,size=2g \
+    -e POSTGRES_DB=mosaic -e POSTGRES_USER=mosaic -e POSTGRES_PASSWORD=mosaic \
+    --health-cmd 'pg_isready -U mosaic -d mosaic' --health-interval 2s \
+    --health-timeout 3s --health-retries 30 postgres:18.3-alpine >/dev/null
+  wait_for_postgres
+
+  docker run --rm --network "$network" \
+    -e DATABASE_URL=postgres://mosaic:mosaic@postgres:5432/mosaic \
+    -v "$CHECKOUT:/workspace:ro" \
+    -v "$node_modules_volume:/workspace/apps/api/node_modules" \
+    -v "$api_dist_volume:/workspace/apps/api/dist" \
+    -w /workspace/apps/api "$NODE_IMAGE" bash -lc \
+    'set -Eeuo pipefail; npm ci --ignore-scripts; npm run typecheck; npm test; npm run build'
+
+  docker rm -f "$postgres_container" >/dev/null
+  postgres_container=''
+  docker network rm "$network" >/dev/null
+  network=''
+  docker volume rm "$node_modules_volume" "$api_dist_volume" >/dev/null
+  node_modules_volume=''
+  api_dist_volume=''
+}
+
+flutter_workspace() {
+  docker run --rm --user 0:0 -e HOME=/tmp/flutter-home \
+    -v "$CHECKOUT:/workspace" -w /workspace "$FLUTTER_IMAGE" bash -lc \
+    'set -Eeuo pipefail
+     flutter pub get --enforce-lockfile
+     dart format --output=none --set-exit-if-changed .
+     flutter analyze
+     (cd packages/play_schema && dart test)
+     (cd packages/play_engine && dart test)
+     (cd packages/analytics_contract && dart test)
+     (cd packages/local_state && dart test --reporter=expanded)
+     (cd packages/play_flutter && flutter test)
+     (cd packages/platform_contracts && dart test)
+     (cd packages/platform_flutter && flutter test)
+     (cd apps/mosaic_app && flutter test)
+     (cd apps/mosaic_app && flutter build web --release --pwa-strategy=none)'
+}
+
+platform_declarations() {
+  docker run --rm -i -v "$CHECKOUT:/repo:ro" -w /repo python:3.14.1-slim python3 - <<'PY'
+import plistlib
+import re
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+info_path = Path('apps/mosaic_app/ios/Runner/Info.plist')
+privacy_path = Path('apps/mosaic_app/ios/Runner/PrivacyInfo.xcprivacy')
+with info_path.open('rb') as handle:
+    info = plistlib.load(handle)
+with privacy_path.open('rb') as handle:
+    plistlib.load(handle)
+
+for forbidden in (
+    'NSLocationAlwaysAndWhenInUseUsageDescription',
+    'NSLocationAlwaysUsageDescription',
+    'NSLocationWhenInUseUsageDescription',
+):
+    if forbidden in info:
+        raise SystemExit(f'Unexpected v1 location purpose: {forbidden}')
+
+required_ios = {
+    'NSCameraUsageDescription',
+    'NSMicrophoneUsageDescription',
+    'NSPhotoLibraryUsageDescription',
+}
+
+def parse_strings(path: str) -> dict[str, str]:
+    text = Path(path).read_text(encoding='utf-8')
+    pairs = dict(re.findall(r'^\s*"([^"]+)"\s*=\s*"([^"]+)";\s*$', text, flags=re.MULTILINE))
+    missing = required_ios - pairs.keys()
+    if missing:
+        raise SystemExit(f'{path} missing {sorted(missing)}')
+    return pairs
+
+ios_en = parse_strings('apps/mosaic_app/ios/Runner/en.lproj/InfoPlist.strings')
+ios_es = parse_strings('apps/mosaic_app/ios/Runner/es.lproj/InfoPlist.strings')
+if any(ios_en[key] == ios_es[key] for key in required_ios):
+    raise SystemExit('iOS purpose copy was not localized')
+
+required_android = {
+    'app_name',
+    'permission_camera_purpose',
+    'permission_microphone_purpose',
+    'permission_notifications_purpose',
+}
+
+def parse_android(path: str) -> dict[str, str]:
+    root = ET.parse(path).getroot()
+    values = {node.attrib['name']: (node.text or '').strip() for node in root.findall('string')}
+    missing = required_android - values.keys()
+    if missing or any(not values[key] for key in required_android):
+        raise SystemExit(f'{path} has incomplete purpose copy')
+    return values
+
+android_en = parse_android('apps/mosaic_app/android/app/src/main/res/values/strings.xml')
+android_es = parse_android('apps/mosaic_app/android/app/src/main/res/values-es/strings.xml')
+purpose_keys = required_android - {'app_name'}
+if any(android_en[key] == android_es[key] for key in purpose_keys):
+    raise SystemExit('Android purpose copy was not localized')
+PY
+
+  local manifest="$CHECKOUT/apps/mosaic_app/android/app/src/main/AndroidManifest.xml"
+  grep -q 'android.permission.INTERNET' "$manifest"
+  grep -q 'android.permission.CAMERA' "$manifest"
+  grep -q 'android.permission.RECORD_AUDIO' "$manifest"
+  grep -q 'android.permission.POST_NOTIFICATIONS' "$manifest"
+  grep -q 'android:label="@string/app_name"' "$manifest"
+  ! grep -Eq 'READ_MEDIA_IMAGES|READ_MEDIA_VIDEO|READ_EXTERNAL_STORAGE|ACCESS_FINE_LOCATION|ACCESS_COARSE_LOCATION' "$manifest"
+  grep -q 'PrivacyInfo.xcprivacy in Resources' "$CHECKOUT/apps/mosaic_app/ios/Runner.xcodeproj/project.pbxproj"
+  grep -q 'InfoPlist.strings in Resources' "$CHECKOUT/apps/mosaic_app/ios/Runner.xcodeproj/project.pbxproj"
+  grep -q '^STRIP_STYLE = non-global$' "$CHECKOUT/apps/mosaic_app/ios/Flutter/Release.xcconfig"
+  grep -q 'assets/packages/flutter_soloud/web/libflutter_soloud_plugin.js' "$CHECKOUT/apps/mosaic_app/web/index.html"
+  grep -q 'assets/packages/flutter_soloud/web/init_module.dart.js' "$CHECKOUT/apps/mosaic_app/web/index.html"
+}
+
+production_builds() {
+  docker image inspect "$API_IMAGE" "$FLUTTER_IMAGE" "$POSTGRES_IMAGE" >/dev/null
+  [[ -f "$CHECKOUT/apps/mosaic_app/build/web/index.html" ]]
+}
+
+main() {
+  validate_inputs
+  trap cleanup EXIT
+  run_stage source-integrity source_integrity
+  run_stage infrastructure-contracts infrastructure_contracts
+  run_stage api-postgres-integration api_postgres_integration
+  run_stage flutter-workspace flutter_workspace
+  run_stage platform-declarations platform_declarations
+  run_stage production-builds production_builds
+}
+
+main

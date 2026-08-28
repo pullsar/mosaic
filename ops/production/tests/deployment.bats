@@ -54,6 +54,23 @@ deploy() {
   [ "$status" -eq 75 ]
 }
 
+@test "server CI completes before the release is marked built" {
+  run deploy "$SHA"
+  [ "$status" -eq 0 ]
+  ci_line="$(grep -n "^ci-verified:$SHA$" "$TEST_ROOT/log/deploy-events.log" | cut -d: -f1)"
+  built_line="$(grep -n "^built:$SHA$" "$TEST_ROOT/log/deploy-events.log" | cut -d: -f1)"
+  [ -n "$ci_line" ]
+  [ "$ci_line" -lt "$built_line" ]
+}
+
+@test "server CI failure prevents build migration and switching" {
+  MIXLI_TEST_FAIL_STAGE=ci run deploy "$SHA"
+  [ "$status" -ne 0 ]
+  ! grep -Eq '^(built|migrated|deployed):' "$TEST_ROOT/log/deploy-events.log"
+  [ "$(cat "$TEST_ROOT/runtime/api-upstream.conf")" = 'old-upstream' ]
+  [ "$(readlink "$TEST_ROOT/current")" = "$TEST_ROOT/releases/$OLD_SHA" ]
+}
+
 @test "selects the inactive pool and requires five consecutive readiness passes" {
   run deploy "$SHA"
   [ "$status" -eq 0 ]

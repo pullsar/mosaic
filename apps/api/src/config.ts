@@ -3,6 +3,7 @@ export interface ApiConfig {
   port: number;
   databaseUrl: string;
   logLevel: string;
+  releaseSha: string;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
@@ -19,5 +20,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     port,
     databaseUrl,
     logLevel: env.LOG_LEVEL ?? 'info',
+    releaseSha: env.MIXLI_RELEASE_SHA ?? 'unknown',
   };
 }
