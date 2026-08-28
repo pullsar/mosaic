@@ -47,6 +47,7 @@ final class ResolvedPlayVideo extends StatefulWidget {
     this.loadingBuilder,
     this.errorBuilder,
     this.onError,
+    this.onPlaybackEvent,
     super.key,
   });
 
@@ -60,6 +61,7 @@ final class ResolvedPlayVideo extends StatefulWidget {
   final PlayVideoStateBuilder? loadingBuilder;
   final PlayVideoStateBuilder? errorBuilder;
   final PlayVideoErrorCallback? onError;
+  final PlayVideoPlaybackObserver? onPlaybackEvent;
 
   @override
   State<ResolvedPlayVideo> createState() => _ResolvedPlayVideoState();
@@ -114,6 +116,7 @@ final class _ResolvedPlayVideoState extends State<ResolvedPlayVideo> {
         loadingBuilder: widget.loadingBuilder,
         errorBuilder: widget.errorBuilder,
         onError: widget.onError,
+        onPlaybackEvent: widget.onPlaybackEvent,
       );
     },
   );
@@ -139,6 +142,7 @@ final class PlayMediaLayerBuilder {
     this.canvasResolver,
     this.active = true,
     this.semanticResumeEpoch = 0,
+    this.onVideoPlaybackEvent,
     this.unsupportedBuilder,
   });
 
@@ -152,6 +156,7 @@ final class PlayMediaLayerBuilder {
   final PlayVideoControllerFactory videoControllerFactory;
   final bool active;
   final int semanticResumeEpoch;
+  final PlayVideoPlaybackObserver? onVideoPlaybackEvent;
   final UnsupportedPlayMediaBuilder? unsupportedBuilder;
 
   Widget call(BuildContext context, PresentationLayer layer) {
@@ -170,6 +175,7 @@ final class PlayMediaLayerBuilder {
         controllerFactory: videoControllerFactory,
         active: active,
         semanticResumeEpoch: semanticResumeEpoch,
+        onPlaybackEvent: onVideoPlaybackEvent,
       ),
       'audio' => _audio(context, layer, assetId),
       'canvas' => _canvas(context, layer, assetId),
