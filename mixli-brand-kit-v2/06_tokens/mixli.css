@@ -1,0 +1,6 @@
+:root {
+  --mixli-ink:#0F1B41; --mixli-play:#FF736D; --mixli-learn:#B76DF3; --mixli-transform:#7D82F4; --mixli-become:#25C5F4;
+  --mixli-canvas:#F8FAFF; --mixli-surface:#FFFFFF; --mixli-text:#0F1B41; --mixli-text-2:#596581; --mixli-border:#DEE5F2;
+  --mixli-journey:linear-gradient(135deg,#FF736D 0%,#F776A4 22%,#B76DF3 47%,#7D82F4 68%,#43BDF8 85%,#25C5F4 100%);
+}
+@media (prefers-color-scheme:dark) { :root { --mixli-canvas:#070D20; --mixli-surface:#0C1430; --mixli-text:#F7F9FF; --mixli-text-2:#AAB5CC; --mixli-border:#26304A; } }

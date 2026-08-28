@@ -1,0 +1,141 @@
+{
+  "$schema": "https://design-tokens.github.io/community-group/format/",
+  "color": {
+    "brand": {
+      "ink": {
+        "$value": "#0F1B41",
+        "$type": "color"
+      },
+      "play": {
+        "$value": "#FF736D",
+        "$type": "color"
+      },
+      "learn": {
+        "$value": "#B76DF3",
+        "$type": "color"
+      },
+      "transform": {
+        "$value": "#7D82F4",
+        "$type": "color"
+      },
+      "become": {
+        "$value": "#25C5F4",
+        "$type": "color"
+      }
+    },
+    "light": {
+      "canvas": {
+        "$value": "#F8FAFF",
+        "$type": "color"
+      },
+      "surface": {
+        "$value": "#FFFFFF",
+        "$type": "color"
+      },
+      "text": {
+        "$value": "#0F1B41",
+        "$type": "color"
+      },
+      "textSecondary": {
+        "$value": "#596581",
+        "$type": "color"
+      },
+      "border": {
+        "$value": "#DEE5F2",
+        "$type": "color"
+      }
+    },
+    "dark": {
+      "canvas": {
+        "$value": "#070D20",
+        "$type": "color"
+      },
+      "surface": {
+        "$value": "#0C1430",
+        "$type": "color"
+      },
+      "text": {
+        "$value": "#F7F9FF",
+        "$type": "color"
+      },
+      "textSecondary": {
+        "$value": "#AAB5CC",
+        "$type": "color"
+      },
+      "border": {
+        "$value": "#26304A",
+        "$type": "color"
+      }
+    }
+  },
+  "radius": {
+    "sm": {
+      "$value": "8px",
+      "$type": "dimension"
+    },
+    "md": {
+      "$value": "14px",
+      "$type": "dimension"
+    },
+    "lg": {
+      "$value": "22px",
+      "$type": "dimension"
+    },
+    "pill": {
+      "$value": "999px",
+      "$type": "dimension"
+    }
+  },
+  "space": {
+    "4": {
+      "$value": "4px",
+      "$type": "dimension"
+    },
+    "8": {
+      "$value": "8px",
+      "$type": "dimension"
+    },
+    "12": {
+      "$value": "12px",
+      "$type": "dimension"
+    },
+    "16": {
+      "$value": "16px",
+      "$type": "dimension"
+    },
+    "24": {
+      "$value": "24px",
+      "$type": "dimension"
+    },
+    "32": {
+      "$value": "32px",
+      "$type": "dimension"
+    },
+    "48": {
+      "$value": "48px",
+      "$type": "dimension"
+    },
+    "64": {
+      "$value": "64px",
+      "$type": "dimension"
+    }
+  },
+  "icon": {
+    "stroke": {
+      "$value": "1.8px",
+      "$type": "dimension"
+    },
+    "size": {
+      "$value": "24px",
+      "$type": "dimension"
+    },
+    "tapTargetIOS": {
+      "$value": "44px",
+      "$type": "dimension"
+    },
+    "tapTargetAndroid": {
+      "$value": "48px",
+      "$type": "dimension"
+    }
+  }
+}
