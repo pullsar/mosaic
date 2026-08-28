@@ -7,6 +7,7 @@ import {
 export type SpeechImportance = 'none' | 'incidental' | 'material';
 export type VerifiedDynamicRange = 'sdr' | 'hdr';
 export type VerifiedRotationDegrees = 0 | 90 | 180 | 270;
+export type VerifiedColorRange = 'limited' | 'full';
 
 export interface VerifiedVideoSourceMetadata {
   kind: 'video';
@@ -16,7 +17,10 @@ export interface VerifiedVideoSourceMetadata {
   videoCodec: string;
   videoProfile?: string;
   dynamicRange: VerifiedDynamicRange;
-  colorSpace?: string;
+  colorPrimaries?: string;
+  colorTransfer?: string;
+  colorMatrix?: string;
+  colorRange?: VerifiedColorRange;
   variableFrameRate: boolean;
   nominalFrameRate?: number;
   rotationDegrees: VerifiedRotationDegrees;
@@ -71,7 +75,10 @@ function planVideoNormalization(
     hasAudio: source.hasAudio,
   };
   if (source.videoProfile !== null) sourceTraits.videoProfile = source.videoProfile;
-  if (source.colorSpace !== null) sourceTraits.colorSpace = source.colorSpace;
+  if (source.colorPrimaries !== null) sourceTraits.colorPrimaries = source.colorPrimaries;
+  if (source.colorTransfer !== null) sourceTraits.colorTransfer = source.colorTransfer;
+  if (source.colorMatrix !== null) sourceTraits.colorMatrix = source.colorMatrix;
+  if (source.colorRange !== null) sourceTraits.colorRange = source.colorRange;
   if (source.nominalFrameRate !== null) sourceTraits.nominalFrameRate = source.nominalFrameRate;
   if (source.audioCodec !== null) sourceTraits.audioCodec = source.audioCodec;
   if (source.audioSampleRateHz !== null) sourceTraits.audioSampleRateHz = source.audioSampleRateHz;
@@ -89,7 +96,10 @@ function planVideoNormalization(
         videoProfile: 'main',
         pixelFormat: 'yuv420p',
         dynamicRange: 'sdr',
-        colorSpace: 'bt709',
+        colorPrimaries: 'bt709',
+        colorTransfer: 'bt709',
+        colorMatrix: 'bt709',
+        colorRange: 'limited',
         frameRateMode: 'cfr',
         maxFps: 30,
         maxLongEdge: 1920,
@@ -109,17 +119,22 @@ function planVideoNormalization(
     },
   });
 
+  const posterSource: Record<string, CanonicalJsonValue> = {
+    durationMs: source.durationMs,
+    rotationDegrees: source.rotationDegrees,
+    dynamicRange: source.dynamicRange,
+  };
+  if (source.colorPrimaries !== null) posterSource.colorPrimaries = source.colorPrimaries;
+  if (source.colorTransfer !== null) posterSource.colorTransfer = source.colorTransfer;
+  if (source.colorMatrix !== null) posterSource.colorMatrix = source.colorMatrix;
+  if (source.colorRange !== null) posterSource.colorRange = source.colorRange;
+
   const poster = normalizedPlan({
     version: MEDIA_NORMALIZATION_POLICY_VERSION,
     purpose: 'poster',
     processor: POSTER_PROCESSOR,
     parameters: {
-      source: {
-        durationMs: source.durationMs,
-        rotationDegrees: source.rotationDegrees,
-        dynamicRange: source.dynamicRange,
-        ...(source.colorSpace === null ? {} : {colorSpace: source.colorSpace}),
-      },
+      source: posterSource,
       output: {
         format: 'jpeg',
         quality: 82,
@@ -239,7 +254,10 @@ interface NormalizedVideoSource {
   videoCodec: string;
   videoProfile: string | null;
   dynamicRange: VerifiedDynamicRange;
-  colorSpace: string | null;
+  colorPrimaries: string | null;
+  colorTransfer: string | null;
+  colorMatrix: string | null;
+  colorRange: VerifiedColorRange | null;
   variableFrameRate: boolean;
   nominalFrameRate: number | null;
   rotationDegrees: VerifiedRotationDegrees;
@@ -269,7 +287,16 @@ function normalizeVideoSource(source: VerifiedVideoSourceMetadata): NormalizedVi
   if (source.dynamicRange !== 'sdr' && source.dynamicRange !== 'hdr') {
     throw new TypeError(`Unsupported dynamicRange: ${String(source.dynamicRange)}`);
   }
-  const colorSpace = optionalToken(source.colorSpace, 'colorSpace');
+  const colorPrimaries = optionalToken(source.colorPrimaries, 'colorPrimaries');
+  const colorTransfer = optionalToken(source.colorTransfer, 'colorTransfer');
+  const colorMatrix = optionalToken(source.colorMatrix, 'colorMatrix');
+  const colorRange = optionalColorRange(source.colorRange);
+  if (
+    source.dynamicRange === 'hdr' &&
+    (colorPrimaries === null || colorTransfer === null || colorMatrix === null)
+  ) {
+    throw new TypeError('Verified HDR video requires color primaries, transfer and matrix metadata');
+  }
   const nominalFrameRate = optionalPositiveFinite(source.nominalFrameRate, 'nominalFrameRate');
   if (![0, 90, 180, 270].includes(source.rotationDegrees)) {
     throw new TypeError(`Unsupported rotationDegrees: ${String(source.rotationDegrees)}`);
@@ -305,7 +332,10 @@ function normalizeVideoSource(source: VerifiedVideoSourceMetadata): NormalizedVi
     videoCodec,
     videoProfile,
     dynamicRange: source.dynamicRange,
-    colorSpace,
+    colorPrimaries,
+    colorTransfer,
+    colorMatrix,
+    colorRange,
     variableFrameRate: source.variableFrameRate,
     nominalFrameRate,
     rotationDegrees: source.rotationDegrees,
@@ -355,6 +385,14 @@ function optionalToken(value: string | undefined, name: string): string | null {
 function optionalMediaLabel(value: string | undefined, name: string): string | null {
   if (value === undefined) return null;
   return normalizedToken(value.trim().replace(/\s+/g, '-'), name);
+}
+
+function optionalColorRange(value: VerifiedColorRange | undefined): VerifiedColorRange | null {
+  if (value === undefined) return null;
+  if (value !== 'limited' && value !== 'full') {
+    throw new TypeError(`Unsupported colorRange: ${String(value)}`);
+  }
+  return value;
 }
 
 function optionalLanguageTag(value: string | undefined): string | null {
