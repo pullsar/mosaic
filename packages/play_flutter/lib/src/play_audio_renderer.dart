@@ -240,12 +240,13 @@ final class _OwnedPlayAudioState extends State<OwnedPlayAudio> {
     _publishIdle(generation);
   }
 
-  Future<_AudioMediaHandle?> _loadHandle(int generation) async {
+  Future<_AudioLoadResult?> _loadHandle(int generation) async {
     final asset = widget.asset;
     final engine = widget.engine;
     final coordinator = widget.coordinator;
     final ownerId = _requireAudioText(widget.ownerId, 'ownerId');
     final handle = _AudioMediaHandle(engine, asset.id);
+    final userPauseEpoch = handle.pauseEpoch;
 
     _handle = handle;
     _handleCoordinator = coordinator;
@@ -275,7 +276,7 @@ final class _OwnedPlayAudioState extends State<OwnedPlayAudio> {
       await _releaseCurrent();
       return null;
     }
-    return handle;
+    return _AudioLoadResult(handle, userPauseEpoch);
   }
 
   Future<void> _play(int generation) async {
@@ -284,9 +285,12 @@ final class _OwnedPlayAudioState extends State<OwnedPlayAudio> {
 
     try {
       var handle = _handle;
+      var userPauseEpoch = handle?.pauseEpoch;
       if (handle == null || handle.released) {
-        handle = await _loadHandle(generation);
-        if (handle == null) return;
+        final loaded = await _loadHandle(generation);
+        if (loaded == null) return;
+        handle = loaded.handle;
+        userPauseEpoch = loaded.userPauseEpoch;
       }
 
       final coordinator = _handleCoordinator;
@@ -301,15 +305,22 @@ final class _OwnedPlayAudioState extends State<OwnedPlayAudio> {
         return;
       }
 
-      if (_played) {
+      if (_played && !handle.paused) {
         await handle.pause();
+        userPauseEpoch = handle.pauseEpoch;
         if (!_isCurrent(generation) || !widget.active) {
           await _releaseCurrent();
           return;
         }
       }
 
-      await handle.engine.play(handle.assetId);
+      final played = await handle.playFromUserAction(
+        userPauseEpoch ?? handle.pauseEpoch,
+      );
+      if (!played) {
+        _publishIdle(generation);
+        return;
+      }
       if (!_isCurrent(generation) || !widget.active) {
         await _releaseCurrent();
         return;
@@ -439,24 +450,71 @@ final class _OwnedPlayAudioState extends State<OwnedPlayAudio> {
   }
 }
 
+final class _AudioLoadResult {
+  const _AudioLoadResult(this.handle, this.userPauseEpoch);
+
+  final _AudioMediaHandle handle;
+  final int userPauseEpoch;
+}
+
 final class _AudioMediaHandle implements ManagedMediaHandle {
   _AudioMediaHandle(this.engine, this.assetId);
 
   final AudioEngine engine;
   final String assetId;
+  Future<void> _tail = Future<void>.value();
+  int _pauseEpoch = 0;
+  bool paused = false;
   bool released = false;
 
+  int get pauseEpoch => _pauseEpoch;
+
+  Future<T> _serialize<T>(Future<T> Function() operation) {
+    final completer = Completer<T>();
+    _tail = _tail.then((_) async {
+      try {
+        completer.complete(await operation());
+      } on Object catch (error, stackTrace) {
+        completer.completeError(error, stackTrace);
+      }
+    });
+    return completer.future;
+  }
+
+  Future<bool> playFromUserAction(int expectedPauseEpoch) =>
+      _serialize(() async {
+        if (released) {
+          throw StateError('Audio handle has already been released.');
+        }
+        if (_pauseEpoch != expectedPauseEpoch) return false;
+
+        await engine.play(assetId);
+        if (released || _pauseEpoch != expectedPauseEpoch) return false;
+        paused = false;
+        return true;
+      });
+
   @override
-  Future<void> pause() async {
-    if (released) return;
-    await engine.stop(assetId);
+  Future<void> pause() {
+    if (released) return Future<void>.value();
+    _pauseEpoch += 1;
+    paused = true;
+    return _serialize(() async {
+      if (released) return;
+      await engine.stop(assetId);
+    });
   }
 
   @override
-  Future<void> release() async {
-    if (released) return;
-    await engine.release(assetId);
-    released = true;
+  Future<void> release() {
+    if (released) return Future<void>.value();
+    _pauseEpoch += 1;
+    paused = true;
+    return _serialize(() async {
+      if (released) return;
+      await engine.release(assetId);
+      released = true;
+    });
   }
 }
 

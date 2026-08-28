@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:platform_contracts/platform_contracts.dart';
@@ -9,6 +11,7 @@ final class _FakeAudioEngine implements AudioEngine {
   Object? playError;
   Object? stopError;
   Object? releaseError;
+  Completer<void>? loadGate;
 
   @override
   Map<String, num> get latencyMetrics => const <String, num>{};
@@ -16,6 +19,8 @@ final class _FakeAudioEngine implements AudioEngine {
   @override
   Future<void> load(String assetId, Uri uri) async {
     events.add('load:$assetId');
+    final gate = loadGate;
+    if (gate != null) await gate.future;
     final error = loadError;
     if (error != null) throw error;
   }
@@ -139,6 +144,44 @@ void main() {
     expect(coordinator.hasActiveMedia, isTrue);
     expect(find.text('Replay'), findsOneWidget);
   });
+
+  testWidgets(
+    'lifecycle suspension during load cancels that user playback intent',
+    (tester) async {
+      final gate = Completer<void>();
+      final engine = _FakeAudioEngine()..loadGate = gate;
+      final coordinator = ActiveMediaCoordinator();
+
+      await _pumpAudio(
+        tester,
+        ownerId: 'play_a',
+        asset: _asset('audio_a'),
+        engine: engine,
+        coordinator: coordinator,
+      );
+      await tester.tap(find.text('Hear'));
+      await tester.pump();
+
+      expect(engine.events, ['load:audio_a']);
+      expect(coordinator.ownerId, 'play_a');
+
+      await coordinator.suspend();
+      expect(engine.events, ['load:audio_a', 'stop:audio_a']);
+
+      gate.complete();
+      await tester.pumpAndSettle();
+
+      expect(engine.events, ['load:audio_a', 'stop:audio_a']);
+      expect(find.text('Hear'), findsOneWidget);
+      expect(coordinator.ownerId, 'play_a');
+
+      await tester.tap(find.text('Hear'));
+      await tester.pumpAndSettle();
+
+      expect(engine.events, ['load:audio_a', 'stop:audio_a', 'play:audio_a']);
+      expect(find.text('Replay'), findsOneWidget);
+    },
+  );
 
   testWidgets('Replay stops the prior voice and reuses the loaded handle', (
     tester,
