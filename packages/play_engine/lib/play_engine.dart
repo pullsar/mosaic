@@ -109,7 +109,7 @@ final class PlayEngine {
         outcome: action is ChoiceAction ? action.optionId : 'default',
       ),
       PlayValidatorType.equals =>
-        value == validation.value
+        value == _equalsPayload(validation.value)
             ? const _Evaluation(outcome: 'correct', wasCorrect: true)
             : const _Evaluation(outcome: 'incorrect', wasCorrect: false),
       PlayValidatorType.orderedSequence =>
@@ -157,6 +157,13 @@ final class _Evaluation {
   const _Evaluation({required this.outcome, this.wasCorrect});
   final String outcome;
   final bool? wasCorrect;
+}
+
+Object _equalsPayload(Object? raw) {
+  if (raw == null) {
+    throw StateError('equals validation payload is malformed.');
+  }
+  return raw;
 }
 
 List<String> _orderedSequencePayload(Object? raw) {
