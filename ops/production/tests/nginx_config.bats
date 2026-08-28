@@ -5,18 +5,19 @@ setup_file() {
   SUFFIX="$$"
   export NETWORK="mixli-nginx-test-${SUFFIX}"
   export NGINX_CONTAINER="mixli-nginx-${SUFFIX}"
-  export TLS_VOLUME="mixli-nginx-tls-${SUFFIX}"
+  export TLS_DIR
+  TLS_DIR="$(mktemp -d /tmp/mixli-nginx-tls.XXXXXX)"
   export WEB_VOLUME="mixli-nginx-web-${SUFFIX}"
   export BLUE1="mixli-blue1-${SUFFIX}"
   export BLUE2="mixli-blue2-${SUFFIX}"
   export GRAFANA="mixli-grafana-${SUFFIX}"
 
   docker network create "$NETWORK" >/dev/null
-  docker volume create "$TLS_VOLUME" >/dev/null
   docker volume create "$WEB_VOLUME" >/dev/null
 
-  docker run --rm -v "$TLS_VOLUME:/tls" alpine:3.22 sh -c \
-    "apk add --no-cache openssl >/dev/null && openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=mixli.app -keyout /tls/origin.key -out /tls/origin.pem >/dev/null 2>&1"
+  openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=mixli.app \
+    -keyout "$TLS_DIR/origin.key" -out "$TLS_DIR/origin.pem" >/dev/null 2>&1
+  chmod 0644 "$TLS_DIR/origin.key" "$TLS_DIR/origin.pem"
   docker run --rm -v "$WEB_VOLUME:/web" alpine:3.22 sh -c \
     "mkdir -p /web/assets && printf 'mixli-spa' >/web/index.html && printf 'asset' >/web/assets/main.abcdef12.js"
 
@@ -31,7 +32,7 @@ setup_file() {
     -v "$MIXLI_HOST_REPO/ops/production/nginx/conf.d/mixli.conf:/etc/nginx/conf.d/mixli.conf:ro" \
     -v "$MIXLI_HOST_REPO/ops/production/nginx/cloudflare-real-ip.conf.example:/etc/nginx/cloudflare-real-ip.conf:ro" \
     -v "$MIXLI_HOST_REPO/ops/production/runtime/api-upstream.example.conf:/etc/nginx/runtime/api-upstream.conf:ro" \
-    -v "$TLS_VOLUME:/etc/nginx/tls:ro" \
+    -v "$TLS_DIR:/etc/nginx/tls:ro" \
     -v "$WEB_VOLUME:/srv/mixli/current/web:ro" \
     nginx:1.28.0-alpine >/dev/null
 
@@ -46,7 +47,10 @@ setup_file() {
 teardown_file() {
   docker rm -f "$NGINX_CONTAINER" "$BLUE1" "$BLUE2" "$GRAFANA" >/dev/null 2>&1 || true
   docker network rm "$NETWORK" >/dev/null 2>&1 || true
-  docker volume rm -f "$TLS_VOLUME" "$WEB_VOLUME" >/dev/null 2>&1 || true
+  docker volume rm -f "$WEB_VOLUME" >/dev/null 2>&1 || true
+  if [[ "$TLS_DIR" == /tmp/mixli-nginx-tls.* && -d "$TLS_DIR" ]]; then
+    rm -rf -- "$TLS_DIR"
+  fi
 }
 
 curl_origin() {
