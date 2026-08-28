@@ -185,11 +185,19 @@ test('claimed transcript processing prepares mono PCM, invokes whisper, verifies
   const runProcess: MediaProcessRunner = async (invocation) => {
     invocations.push(invocation);
     if (invocation.executable === '/usr/bin/ffmpeg') {
-      assert.deepEqual(invocation.args.slice(-8), [
-        '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', '-f', 'wav',
-      ].slice(0, 8));
       const output = invocation.args.at(-1);
       assert.ok(output);
+      assert.deepEqual(invocation.args.slice(-9), [
+        '-ac',
+        '1',
+        '-ar',
+        '16000',
+        '-c:a',
+        'pcm_s16le',
+        '-f',
+        'wav',
+        output,
+      ]);
       await writeFile(output, Buffer.from('wav'));
     } else {
       assert.equal(invocation.executable, '/opt/whisper/whisper-cli');
