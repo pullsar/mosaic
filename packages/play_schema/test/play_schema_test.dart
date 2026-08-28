@@ -148,7 +148,7 @@ void main() {
   });
 
   test('reserved input fields cannot be overridden by extension properties', () {
-    const input = PlayInputDefinition(
+    final input = PlayInputDefinition(
       type: PlayInputType.pianoKey,
       label: 'Play',
       properties: {'type': 'drag', 'label': 'Wrong', 'sequenceLength': 3},
