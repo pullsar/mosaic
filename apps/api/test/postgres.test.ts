@@ -7,14 +7,14 @@ import {PostgresRepository} from '../src/repository.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 
-async function runMigration(): Promise<void> {
+async function runMigration(command: 'up' | 'down' = 'up'): Promise<void> {
   await new Promise<void>((resolve, reject) => {
-    const child = spawn(process.execPath, ['--import', 'tsx', 'src/db/migrate.ts', 'up'], {
+    const child = spawn(process.execPath, ['--import', 'tsx', 'src/db/migrate.ts', command], {
       cwd: new URL('../', import.meta.url),
       env: process.env,
       stdio: 'inherit',
     });
-    child.on('exit', (code) => code === 0 ? resolve() : reject(new Error(`migration exited ${code}`)));
+    child.on('exit', (code) => code === 0 ? resolve() : reject(new Error(`migration ${command} exited ${code}`)));
     child.on('error', reject);
   });
 }
@@ -240,5 +240,28 @@ test('PostgreSQL media lifecycle is immutable, leased and stale-worker safe', {s
     await assert.rejects(mediaRepo.registerDerivative(assetId, playbackPlan), MediaIdentityConflictError);
   } finally {
     await pool.end();
+  }
+});
+
+test('media foundation down migration removes only media schema and cleanly reapplies', {skip: !databaseUrl}, async () => {
+  await runMigration('up');
+  await runMigration('down');
+  const pool = new Pool({connectionString: databaseUrl});
+  try {
+    const result = await pool.query<{
+      media_assets: string | null;
+      media_derivatives: string | null;
+      actors: string | null;
+    }>(
+      `select to_regclass('public.media_assets')::text as media_assets,
+              to_regclass('public.media_derivatives')::text as media_derivatives,
+              to_regclass('public.actors')::text as actors`,
+    );
+    assert.equal(result.rows[0]?.media_assets, null);
+    assert.equal(result.rows[0]?.media_derivatives, null);
+    assert.equal(result.rows[0]?.actors, 'actors');
+  } finally {
+    await pool.end();
+    await runMigration('up');
   }
 });
