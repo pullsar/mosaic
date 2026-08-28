@@ -127,6 +127,30 @@ void main() {
   );
 
   test(
+    'release failure preserves retry ownership and blocks replacement',
+    () async {
+      final coordinator = ActiveMediaCoordinator();
+      final events = <String>[];
+      final releaseFailure = StateError('release failed');
+      final first = _Handle('first', events, releaseError: releaseFailure);
+      final second = _Handle('second', events);
+      await coordinator.activate('play_a', first);
+
+      await expectLater(
+        coordinator.activate('play_b', second),
+        throwsA(same(releaseFailure)),
+      );
+
+      expect(first.pauseCount, 1);
+      expect(first.releaseCount, 1);
+      expect(coordinator.ownerId, 'play_a');
+      expect(coordinator.hasActiveMedia, isTrue);
+      expect(second.pauseCount, 0);
+      expect(second.releaseCount, 0);
+    },
+  );
+
+  test(
     'stale release cannot discard a replacement with the same owner ID',
     () async {
       final coordinator = ActiveMediaCoordinator();
