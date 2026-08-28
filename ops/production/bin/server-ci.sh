@@ -28,10 +28,18 @@ checkout_git() {
 }
 
 cleanup() {
-  [[ -n "$postgres_container" ]] && docker rm -f "$postgres_container" >/dev/null 2>&1 || true
-  [[ -n "$network" ]] && docker network rm "$network" >/dev/null 2>&1 || true
-  [[ -n "$node_modules_volume" ]] && docker volume rm "$node_modules_volume" >/dev/null 2>&1 || true
-  [[ -n "$api_dist_volume" ]] && docker volume rm "$api_dist_volume" >/dev/null 2>&1 || true
+  if [[ -n "$postgres_container" ]]; then
+    docker rm -f "$postgres_container" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$network" ]]; then
+    docker network rm "$network" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$node_modules_volume" ]]; then
+    docker volume rm "$node_modules_volume" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$api_dist_volume" ]]; then
+    docker volume rm "$api_dist_volume" >/dev/null 2>&1 || true
+  fi
 }
 
 validate_inputs() {
@@ -225,7 +233,9 @@ PY
   grep -q 'android.permission.RECORD_AUDIO' "$manifest"
   grep -q 'android.permission.POST_NOTIFICATIONS' "$manifest"
   grep -q 'android:label="@string/app_name"' "$manifest"
-  ! grep -Eq 'READ_MEDIA_IMAGES|READ_MEDIA_VIDEO|READ_EXTERNAL_STORAGE|ACCESS_FINE_LOCATION|ACCESS_COARSE_LOCATION' "$manifest"
+  if grep -Eq 'READ_MEDIA_IMAGES|READ_MEDIA_VIDEO|READ_EXTERNAL_STORAGE|ACCESS_FINE_LOCATION|ACCESS_COARSE_LOCATION' "$manifest"; then
+    return 1
+  fi
   grep -q 'PrivacyInfo.xcprivacy in Resources' "$CHECKOUT/apps/mosaic_app/ios/Runner.xcodeproj/project.pbxproj"
   grep -q 'InfoPlist.strings in Resources' "$CHECKOUT/apps/mosaic_app/ios/Runner.xcodeproj/project.pbxproj"
   grep -q '^STRIP_STYLE = non-global$' "$CHECKOUT/apps/mosaic_app/ios/Flutter/Release.xcconfig"
