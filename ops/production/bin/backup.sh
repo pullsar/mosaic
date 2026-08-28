@@ -7,8 +7,8 @@ readonly ROOT="${MIXLI_ROOT:-/srv/mixli}"
 readonly LOCK_FILE="${MIXLI_BACKUP_LOCK_FILE:-/run/lock/mixli-backup.lock}"
 readonly METRICS_DIR="$ROOT/metrics"
 readonly METRICS_FILE="$METRICS_DIR/pgbackrest.prom"
-readonly COMPOSE_FILE="${MIXLI_COMPOSE_FILE:-/opt/mixli/repo/ops/production/compose.yaml}"
-readonly ENV_FILE="${MIXLI_ENV_FILE:-/etc/mixli/production.env}"
+readonly COMPOSE_FILE="${MIXLI_COMPOSE_FILE:-/srv/mixli/repository/ops/production/compose.yaml}"
+readonly ENV_FILE="${MIXLI_ENV_FILE:-/etc/mixli/env/production.env}"
 readonly TEST_MODE="${MIXLI_BACKUP_TEST_MODE:-0}"
 
 case "$OPERATION" in

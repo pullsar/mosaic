@@ -45,7 +45,7 @@ install_layout() {
     "$(target /etc/mixli/prometheus/)"
   install -m 0644 "$SOURCE_ROOT/ops/production/alertmanager/alertmanager.yml" \
     "$(target /etc/mixli/alertmanager/alertmanager.yml)"
-  cp -a "$SOURCE_ROOT/ops/production/grafana/provisioning/." \
+  cp -a --no-preserve=ownership "$SOURCE_ROOT/ops/production/grafana/provisioning/." \
     "$(target /etc/mixli/grafana/provisioning/)"
   install -m 0644 \
     "$SOURCE_ROOT/ops/production/grafana/provisioning/dashboards/mixli-overview.json" \

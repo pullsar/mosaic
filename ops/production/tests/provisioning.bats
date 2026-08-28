@@ -71,3 +71,12 @@ run_ip_refresh() {
   grep -Fq 'tcp dport 22 ct state new accept' "$script"
   grep -Fq 'https://download.docker.com/linux/debian' "$script"
 }
+
+@test "runtime helpers share the provisioned repository and environment paths" {
+  for script in deployment.sh backup.sh; do
+    grep -Fq '/srv/mixli/repository/ops/production/compose.yaml' \
+      "$REPO_ROOT/ops/production/bin/$script"
+    grep -Fq '/etc/mixli/env/production.env' \
+      "$REPO_ROOT/ops/production/bin/$script"
+  done
+}
