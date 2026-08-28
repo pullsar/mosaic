@@ -68,6 +68,6 @@ void main() {
     final outbox = SqliteEventOutbox(store, closeStoreOnClose: true);
     await outbox.close();
 
-    await expectLater(() => outbox.due(), throwsStateError);
+    await expectLater(outbox.due(), throwsStateError);
   });
 }
