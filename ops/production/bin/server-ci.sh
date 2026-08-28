@@ -168,7 +168,7 @@ api_postgres_integration() {
 
 flutter_workspace() {
   docker run --rm --user 0:0 -e HOME=/tmp/flutter-home \
-    -v "$CHECKOUT:/workspace" -w /workspace "$FLUTTER_IMAGE" bash -lc \
+    -v "$CHECKOUT:/workspace" -w /workspace "$FLUTTER_IMAGE" bash -c \
     'set -Eeuo pipefail
      flutter pub get --enforce-lockfile
      dart format --output=none --set-exit-if-changed .

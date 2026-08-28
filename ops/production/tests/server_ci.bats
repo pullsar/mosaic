@@ -65,6 +65,7 @@ production-builds" ]
     'npm test' \
     'npm run build' \
     'flutter pub get --enforce-lockfile' \
+    '"$FLUTTER_IMAGE" bash -c' \
     'dart format --output=none --set-exit-if-changed .' \
     'flutter analyze' \
     'packages/local_state' \
