@@ -52,6 +52,8 @@ production-builds" ]
     'MIXLI_HOST_REPO="$CHECKOUT"' \
     'shellcheck' \
     'systemd-analyze verify' \
+    '--recursive-errors=no' \
+    'mktemp -d /tmp/mixli-systemd-verify.XXXXXX' \
     'DATABASE_URL=' \
     'npm ci --ignore-scripts' \
     'npm run typecheck' \

@@ -17,6 +17,7 @@ network=''
 postgres_container=''
 node_modules_volume=''
 api_dist_volume=''
+systemd_verify_root=''
 
 die_usage() {
   printf '%s\n' 'server-ci.sh requires an absolute checkout and exact lowercase commit SHA.' >&2
@@ -39,6 +40,9 @@ cleanup() {
   fi
   if [[ -n "$api_dist_volume" ]]; then
     docker volume rm "$api_dist_volume" >/dev/null 2>&1 || true
+  fi
+  if [[ "$systemd_verify_root" == /tmp/mixli-systemd-verify.* && -d "$systemd_verify_root" ]]; then
+    rm -rf -- "$systemd_verify_root"
   fi
 }
 
@@ -87,7 +91,16 @@ infrastructure_contracts() {
       \( -name '*.sh' -o -name 'deploy-dispatch' \) -print0
   )
   shellcheck "${shell_files[@]}"
-  systemd-analyze verify "$CHECKOUT"/ops/production/systemd/*
+
+  systemd_verify_root="$(mktemp -d /tmp/mixli-systemd-verify.XXXXXX)"
+  install -d "$systemd_verify_root/opt/mixli/bin" "$systemd_verify_root/etc/systemd/system"
+  install -m 0755 "${shell_files[@]}" "$systemd_verify_root/opt/mixli/bin/"
+  install -m 0644 "$CHECKOUT"/ops/production/systemd/* \
+    "$systemd_verify_root/etc/systemd/system/"
+  systemd-analyze verify --recursive-errors=no --root="$systemd_verify_root" \
+    "$systemd_verify_root"/etc/systemd/system/*
+  rm -rf -- "$systemd_verify_root"
+  systemd_verify_root=''
 
   if [[ -f "$CHECKOUT/ops/production/prometheus/prometheus.yml" ]]; then
     docker run --rm -v "$CHECKOUT/ops/production/prometheus:/etc/prometheus:ro" \
