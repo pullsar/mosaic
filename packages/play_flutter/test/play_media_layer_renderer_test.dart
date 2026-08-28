@@ -28,6 +28,7 @@ final class _VideoController implements PlayVideoController {
 
 PlayMediaLayerBuilder _builder({
   PlayVideoAssetResolver? videoResolver,
+  PlayCanvasAssetResolver? canvasResolver,
   PlayVideoControllerFactory? controllerFactory,
   ActiveMediaCoordinator? coordinator,
   UnsupportedPlayMediaBuilder? unsupportedBuilder,
@@ -35,6 +36,7 @@ PlayMediaLayerBuilder _builder({
   ownerId: 'play_revision_1',
   visualResolver: MapPlayVisualAssetResolver(const {}),
   videoResolver: videoResolver ?? MapPlayVideoAssetResolver(const {}),
+  canvasResolver: canvasResolver,
   mediaCoordinator: coordinator ?? ActiveMediaCoordinator(),
   videoControllerFactory:
       controllerFactory ??
@@ -49,7 +51,7 @@ PresentationLayer _layer(String type, {String? assetId}) => PresentationLayer(
 );
 
 void main() {
-  testWidgets('routes only image and video_clip to production adapters', (
+  testWidgets('routes image video and configured canvas adapters', (
     tester,
   ) async {
     late BuildContext context;
@@ -64,11 +66,17 @@ void main() {
       ),
     );
 
-    final builder = _builder();
+    final builder = _builder(
+      canvasResolver: MapPlayCanvasAssetResolver(const {}),
+    );
     final image = builder.call(context, _layer('image', assetId: 'image_1'));
     final video = builder.call(
       context,
       _layer('video_clip', assetId: 'video_1'),
+    );
+    final canvas = builder.call(
+      context,
+      _layer('canvas', assetId: 'canvas_1'),
     );
 
     expect(image, isA<ResolvedPlayVisual>());
@@ -76,9 +84,13 @@ void main() {
     expect(video, isA<ResolvedPlayVideo>());
     expect((video as ResolvedPlayVideo).assetId, 'video_1');
     expect(video.ownerId, 'play_revision_1');
+    expect(canvas, isA<ResolvedPlayCanvas>());
+    expect((canvas as ResolvedPlayCanvas).assetId, 'canvas_1');
   });
 
-  testWidgets('audio canvas and unknown media fail closed', (tester) async {
+  testWidgets('audio unknown and unconfigured canvas fail closed', (
+    tester,
+  ) async {
     late BuildContext context;
     await tester.pumpWidget(
       MaterialApp(
