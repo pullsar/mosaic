@@ -58,7 +58,7 @@ PlayMediaLayerBuilder _mediaBuilder(
   PlayAudioAsset audio,
   _ReferenceAudioEngine engine,
 ) => PlayMediaLayerBuilder(
-  ownerId: play.revisionId,
+  ownerId: playMediaOwnerId(play),
   visualResolver: MapPlayVisualAssetResolver(const {}),
   videoResolver: MapPlayVideoAssetResolver(const {}),
   audioResolver: MapPlayAudioAssetResolver({audio.id: audio}),
