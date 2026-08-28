@@ -114,8 +114,8 @@ final class OwnedPlayVideo extends StatefulWidget {
   final bool active;
 
   /// Increment when semantic Play state is restored after foreground resume.
-  /// The controller is resumed only if it is still the coordinator's exact
-  /// active handle; stale controllers can never steal playback ownership.
+  /// A controller is resumed only when it still owns the exact native handle
+  /// and had already entered playback before suspension.
   final int semanticResumeEpoch;
   final PlayVideoStateBuilder? loadingBuilder;
   final PlayVideoStateBuilder? errorBuilder;
@@ -133,6 +133,7 @@ final class _OwnedPlayVideoState extends State<OwnedPlayVideo> {
   ActiveMediaCoordinator? _controllerCoordinator;
   String? _controllerOwnerId;
   bool _ready = false;
+  bool _resumeEligible = false;
   Object? _error;
 
   @override
@@ -218,6 +219,7 @@ final class _OwnedPlayVideoState extends State<OwnedPlayVideo> {
       _controller = controller;
       _controllerCoordinator = coordinator;
       _controllerOwnerId = ownerId;
+      _resumeEligible = false;
 
       await controller.initialize();
       await controller.setMuted(asset.muted);
@@ -237,6 +239,7 @@ final class _OwnedPlayVideoState extends State<OwnedPlayVideo> {
           throw StateError('Audible video autoplay is not permitted.');
         }
         await controller.play();
+        _resumeEligible = true;
       }
       if (!_isCurrent(generation) || !widget.active) {
         await _releaseCurrent();
@@ -256,7 +259,12 @@ final class _OwnedPlayVideoState extends State<OwnedPlayVideo> {
   }
 
   Future<void> _resume(int generation) async {
-    if (!_isCurrent(generation) || !widget.active || !_ready) return;
+    if (!_isCurrent(generation) ||
+        !widget.active ||
+        !_ready ||
+        !_resumeEligible) {
+      return;
+    }
     final controller = _controller;
     final coordinator = _controllerCoordinator;
     final ownerId = _controllerOwnerId;
@@ -284,6 +292,7 @@ final class _OwnedPlayVideoState extends State<OwnedPlayVideo> {
       _controllerCoordinator = null;
       _controllerOwnerId = null;
       _ready = false;
+      _resumeEligible = false;
     }
   }
 
