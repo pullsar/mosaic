@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {
   MediaOutputPublicationError,
+  mediaAttemptStorageKey,
   processFfmpegDerivative,
   type MediaFfmpegWorkerRepository,
   type MediaOutputPublisher,
@@ -195,14 +196,17 @@ const successfulRunner: MediaProcessRunner = async (invocation, options) => {
 };
 
 const successfulVerifier: MediaOutputVerifier = async (request) => {
-  assert.equal(request.storageKey, 'public/asset_worker/playback.mp4');
   assert.equal(request.expectedOutput.videoCodec, 'h264');
   return verifiedPlayback;
 };
 
 const successfulPublisher: MediaOutputPublisher = async (request) => {
   assert.equal(request.outputPath, '/tmp/mosaic/playback.mp4');
-  assert.equal(request.storageKey, 'public/asset_worker/playback.mp4');
+  assert.equal(
+    request.storageKey,
+    mediaAttemptStorageKey(assetId, derivativeKey, 'claim-token', 'playback'),
+  );
+  assert.equal(request.claimToken, 'claim-token');
   assert.equal(request.verifiedOutput.videoCodec, 'h264');
 };
 
@@ -215,7 +219,6 @@ test('worker claims, runs, verifies, publishes and completes with the exact leas
       derivativeKey,
       inputPath: '/tmp/mosaic/source.mov',
       outputPath: '/tmp/mosaic/playback.mp4',
-      outputStorageKey: 'public/asset_worker/playback.mp4',
     },
     successfulVerifier,
     successfulPublisher,
@@ -230,7 +233,10 @@ test('worker claims, runs, verifies, publishes and completes with the exact leas
   assert.equal(repository.claimCalls, 1);
   assert.equal(repository.readyCalls, 1);
   assert.equal(repository.failedCalls, 0);
-  assert.equal(repository.current?.storageKey, 'public/asset_worker/playback.mp4');
+  assert.equal(
+    repository.current?.storageKey,
+    mediaAttemptStorageKey(assetId, derivativeKey, 'claim-token', 'playback'),
+  );
   assert.equal(repository.current?.videoCodec, 'h264');
 });
 
@@ -244,7 +250,6 @@ test('caption jobs are left for the transcript worker without taking a lease', a
       derivativeKey,
       inputPath: '/tmp/mosaic/source.m4a',
       outputPath: '/tmp/mosaic/captions.vtt',
-      outputStorageKey: 'public/asset_worker/captions.vtt',
     },
     successfulVerifier,
     successfulPublisher,
@@ -273,7 +278,6 @@ test('output mismatch fails the active claim before publication', async () => {
       derivativeKey,
       inputPath: '/tmp/mosaic/source.mov',
       outputPath: '/tmp/mosaic/playback.mp4',
-      outputStorageKey: 'public/asset_worker/playback.mp4',
     },
     async () => ({...verifiedPlayback, videoCodec: 'hevc'}),
     async () => {
@@ -303,7 +307,6 @@ test('publication failure never marks a local-only artifact ready', async () => 
       derivativeKey,
       inputPath: '/tmp/mosaic/source.mov',
       outputPath: '/tmp/mosaic/playback.mp4',
-      outputStorageKey: 'public/asset_worker/playback.mp4',
     },
     successfulVerifier,
     async () => {
@@ -333,7 +336,6 @@ test('process timeout becomes a stable retryable derivative failure code', async
       derivativeKey,
       inputPath: '/tmp/mosaic/source.mov',
       outputPath: '/tmp/mosaic/playback.mp4',
-      outputStorageKey: 'public/asset_worker/playback.mp4',
     },
     async () => {
       verifierCalled = true;
@@ -365,7 +367,6 @@ test('stale completion cannot overwrite a replacement worker claim', async () =>
       derivativeKey,
       inputPath: '/tmp/mosaic/source.mov',
       outputPath: '/tmp/mosaic/playback.mp4',
-      outputStorageKey: 'public/asset_worker/playback.mp4',
     },
     successfulVerifier,
     successfulPublisher,
@@ -392,7 +393,6 @@ test('worker configuration requires process timeout to leave lease-completion ma
         derivativeKey,
         inputPath: '/tmp/mosaic/source.mov',
         outputPath: '/tmp/mosaic/playback.mp4',
-        outputStorageKey: 'public/asset_worker/playback.mp4',
       },
       successfulVerifier,
       successfulPublisher,
@@ -401,4 +401,19 @@ test('worker configuration requires process timeout to leave lease-completion ma
     /leave at least 30000 ms/,
   );
   assert.equal(repository.claimCalls, 0);
+});
+
+test('attempt storage keys are purpose-specific and encode user-controlled segments', () => {
+  assert.equal(
+    mediaAttemptStorageKey('asset/a', 'mdv1?x', 'claim #1', 'playback'),
+    'media/asset%2Fa/derivatives/mdv1%3Fx/attempts/claim%20%231.mp4',
+  );
+  assert.equal(
+    mediaAttemptStorageKey('asset', 'poster', 'claim', 'poster'),
+    'media/asset/derivatives/poster/attempts/claim.jpg',
+  );
+  assert.equal(
+    mediaAttemptStorageKey('asset', 'audio', 'claim', 'audio'),
+    'media/asset/derivatives/audio/attempts/claim.m4a',
+  );
 });
