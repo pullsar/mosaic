@@ -33,4 +33,12 @@ void main() {
       );
     },
   );
+
+  test('unused SoLoud disposal stays headless', () async {
+    final engine = SoLoudAudioEngine();
+
+    await engine.dispose();
+
+    expect(engine.latencyMetrics['sampleRateHz'], 44100);
+  });
 }
