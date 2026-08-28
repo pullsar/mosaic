@@ -237,6 +237,5 @@ Duration _percentile(List<Duration> sorted, double percentile) {
   return sorted[index];
 }
 
-Duration _elapsedSince(int startMicros, int endMicros) => Duration(
-  microseconds: math.max(0, endMicros - startMicros),
-);
+Duration _elapsedSince(int startMicros, int endMicros) =>
+    Duration(microseconds: math.max(0, endMicros - startMicros));
