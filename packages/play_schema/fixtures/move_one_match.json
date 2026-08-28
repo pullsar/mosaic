@@ -16,7 +16,15 @@
         {"type": "canvas", "role": "media", "assetId": "puzzle_match_01"},
         {"type": "text", "role": "prompt", "value": "Move one match."}
       ]},
-      "input": {"type": "drag"},
+      "input": {
+        "type": "drag",
+        "dragOrigin": {"x": 0.18, "y": 0.58},
+        "dragSize": {"width": 0.22, "height": 0.06},
+        "targets": [
+          {"id": "solution_a", "x": 0.64, "y": 0.28, "width": 0.18, "height": 0.18}
+        ],
+        "handleLabel": "Move match"
+      },
       "validation": {"type": "target_region", "value": "solution_a"},
       "transition": {"correct": "reveal", "incorrect": "solve"}
     },
