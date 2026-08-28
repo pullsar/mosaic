@@ -150,8 +150,7 @@ final class ActiveMediaCoordinator {
 
         final previous = _active;
         if (previous != null) {
-          await previous.pause();
-          await previous.release();
+          await _pauseAndRelease(previous);
         }
         _ownerId = ownerId;
         _active = handle;
@@ -161,12 +160,20 @@ final class ActiveMediaCoordinator {
     await _active?.pause();
   });
 
-  Future<void> release(String ownerId) => _operations.run(() async {
+  /// Releases [ownerId] only when it still owns the active handle.
+  ///
+  /// Supplying [expectedHandle] protects asynchronous widget disposal from
+  /// releasing a replacement controller that has already taken over the same
+  /// semantic owner ID.
+  Future<void> release(
+    String ownerId, {
+    ManagedMediaHandle? expectedHandle,
+  }) => _operations.run(() async {
     if (_ownerId != ownerId) return;
     final current = _active;
+    if (expectedHandle != null && !identical(current, expectedHandle)) return;
     if (current != null) {
-      await current.pause();
-      await current.release();
+      await _pauseAndRelease(current);
     }
     _ownerId = null;
     _active = null;
@@ -175,12 +182,38 @@ final class ActiveMediaCoordinator {
   Future<void> releaseAll() => _operations.run(() async {
     final current = _active;
     if (current != null) {
-      await current.pause();
-      await current.release();
+      await _pauseAndRelease(current);
     }
     _ownerId = null;
     _active = null;
   });
+
+  static Future<void> _pauseAndRelease(ManagedMediaHandle handle) async {
+    Object? firstError;
+    StackTrace? firstStackTrace;
+
+    try {
+      await handle.pause();
+    } catch (error, stackTrace) {
+      firstError = error;
+      firstStackTrace = stackTrace;
+    }
+
+    try {
+      await handle.release();
+    } catch (error, stackTrace) {
+      firstError ??= error;
+      firstStackTrace ??= stackTrace;
+    }
+
+    final error = firstError;
+    if (error != null) {
+      Error.throwWithStackTrace(
+        error,
+        firstStackTrace ?? StackTrace.current,
+      );
+    }
+  }
 }
 
 abstract final class MosaicSettingsRoute {
