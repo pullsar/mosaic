@@ -115,12 +115,12 @@ final class PlayEngine {
       PlayValidatorType.orderedSequence =>
         _listEquals(
               value is List<String> ? value : const <String>[],
-              (validation.value as List).cast<String>(),
+              _orderedSequencePayload(validation.value),
             )
             ? const _Evaluation(outcome: 'correct', wasCorrect: true)
             : const _Evaluation(outcome: 'incorrect', wasCorrect: false),
       PlayValidatorType.targetRegion =>
-        value == validation.value
+        value == _targetRegionPayload(validation.value)
             ? const _Evaluation(outcome: 'correct', wasCorrect: true)
             : const _Evaluation(outcome: 'incorrect', wasCorrect: false),
       _ => throw UnsupportedError(
@@ -157,6 +157,23 @@ final class _Evaluation {
   const _Evaluation({required this.outcome, this.wasCorrect});
   final String outcome;
   final bool? wasCorrect;
+}
+
+List<String> _orderedSequencePayload(Object? raw) {
+  if (raw is! List ||
+      raw.isEmpty ||
+      raw.length > 16 ||
+      raw.any((value) => value is! String || value.trim().isEmpty)) {
+    throw StateError('ordered_sequence validation payload is malformed.');
+  }
+  return raw.cast<String>();
+}
+
+String _targetRegionPayload(Object? raw) {
+  if (raw is! String || raw.trim().isEmpty) {
+    throw StateError('target_region validation payload is malformed.');
+  }
+  return raw;
 }
 
 bool _listEquals(List<String> a, List<String> b) {
