@@ -1,0 +1,70 @@
+name: fix-ffprobe-type-once
+
+on:
+  push:
+    branches: [agent/m07-ffmpeg-worker-20260828]
+    paths:
+      - '.github/workflows/fix-ffprobe-type-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: mosaic
+          POSTGRES_USER: mosaic
+          POSTGRES_PASSWORD: mosaic
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mosaic -d mosaic"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://mosaic:mosaic@localhost:5432/mosaic
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: agent/m07-ffmpeg-worker-20260828
+      - name: Apply strict record guard
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('apps/api/src/media_ffprobe.ts')
+          s = p.read_text()
+          old = """function canonicalRecord(\n  value: CanonicalJsonValue,\n  context: string,\n): Readonly<Record<string, CanonicalJsonValue>> {\n  if (value === null || typeof value !== 'object' || Array.isArray(value)) {\n    throw new MediaOutputVerificationError(`${context} must be an object`);\n  }\n  return value;\n}\n"""
+          new = """function canonicalRecord(\n  value: CanonicalJsonValue,\n  context: string,\n): Readonly<Record<string, CanonicalJsonValue>> {\n  if (!isCanonicalRecord(value)) {\n    throw new MediaOutputVerificationError(`${context} must be an object`);\n  }\n  return value;\n}\n\nfunction isCanonicalRecord(\n  value: CanonicalJsonValue,\n): value is Readonly<Record<string, CanonicalJsonValue>> {\n  return value !== null && typeof value === 'object' && !Array.isArray(value);\n}\n"""
+          if s.count(old) != 1:
+              raise SystemExit('expected canonicalRecord block exactly once')
+          p.write_text(s.replace(old, new))
+          PY
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: apps/api/package-lock.json
+      - name: Install locked dependencies
+        working-directory: apps/api
+        run: npm ci --ignore-scripts
+      - name: Validate API
+        working-directory: apps/api
+        run: |
+          npm run typecheck
+          npm test
+          npm run build
+      - name: Remove one-shot workflow
+        run: rm .github/workflows/fix-ffprobe-type-once.yml
+      - name: Commit validated fix
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps/api/src/media_ffprobe.ts .github/workflows/fix-ffprobe-type-once.yml
+          git commit -m 'fix(media): narrow canonical FFprobe records'
+          git push origin HEAD:agent/m07-ffmpeg-worker-20260828
