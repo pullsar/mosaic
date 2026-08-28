@@ -58,7 +58,7 @@ void main() {
     final video = _videoFixture('clip_dubrovnik.json');
     final controller = _ReferenceVideoController();
     final media = PlayMediaLayerBuilder(
-      ownerId: play.revisionId,
+      ownerId: playMediaOwnerId(play),
       visualResolver: MapPlayVisualAssetResolver(const {}),
       videoResolver: MapPlayVideoAssetResolver({video.id: video}),
       mediaCoordinator: ActiveMediaCoordinator(),
@@ -98,7 +98,7 @@ void main() {
       fit: BoxFit.contain,
     );
     final media = PlayMediaLayerBuilder(
-      ownerId: play.revisionId,
+      ownerId: playMediaOwnerId(play),
       visualResolver: MapPlayVisualAssetResolver({visual.id: visual}),
       videoResolver: MapPlayVideoAssetResolver(const {}),
       mediaCoordinator: ActiveMediaCoordinator(),
