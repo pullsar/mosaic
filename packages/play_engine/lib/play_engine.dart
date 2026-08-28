@@ -124,7 +124,7 @@ final class PlayEngine {
             ? const _Evaluation(outcome: 'correct', wasCorrect: true)
             : const _Evaluation(outcome: 'incorrect', wasCorrect: false),
       _ => throw UnsupportedError(
-        'Validator ${validation.type.name} is not executable in M0.',
+        'Validator ${validation.type.name} is not executable in M1.',
       ),
     };
   }
@@ -143,7 +143,7 @@ final class PlayEngine {
       PlayInputType.multipleChoice || PlayInputType.pianoKey =>
         action is SequenceAction || action is ChoiceAction,
       PlayInputType.drag => action is DragAction,
-      _ => true,
+      _ => false,
     };
     if (!compatible) {
       throw StateError(
