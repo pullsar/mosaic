@@ -60,9 +60,7 @@ production-builds" ]
     'mktemp -d /tmp/mixli-prometheus-verify.XXXXXX' \
     'https://example.invalid/hooks/ci' \
     'DATABASE_URL=' \
-    '$CHECKOUT:/source:ro' \
-    'cp -a /source/apps/api/. apps/api/' \
-    'npm ci --ignore-scripts' \
+    '$API_CI_IMAGE' \
     'npm run typecheck' \
     'npm test' \
     'npm run build' \
@@ -77,6 +75,14 @@ production-builds" ]
     'apps/api/Dockerfile'; do
     grep -Fq -- "$required" "$script"
   done
+}
+
+@test "database integration reuses the image dependency layer" {
+  script="$REPO_ROOT/ops/production/bin/server-ci.sh"
+  integration="$(sed -n '/^api_postgres_integration()/,/^}/p' "$script")"
+  [[ "$integration" == *'"$API_CI_IMAGE"'* ]]
+  [[ "$integration" != *'npm ci'* ]]
+  grep -Fq 'FROM build AS ci' "$REPO_ROOT/apps/api/Dockerfile"
 }
 
 @test "deployment invokes the root-owned server CI helper" {

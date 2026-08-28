@@ -57,7 +57,8 @@ function parseEvent(value: unknown): EventInput | null {
 }
 
 export function buildApp(options: BuildAppOptions): FastifyInstance {
-  const metrics = createApiMetrics(options.releaseSha ?? 'unknown');
+  const releaseSha = options.releaseSha ?? 'unknown';
+  const metrics = createApiMetrics(releaseSha);
   const requestStarts = new WeakMap<object, bigint>();
   const app = Fastify({
     logger: {level: options.logLevel ?? 'info'},
@@ -65,8 +66,9 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     disableRequestLogging: false,
   });
 
-  app.addHook('onRequest', (request, _reply, done) => {
+  app.addHook('onRequest', (request, reply, done) => {
     requestStarts.set(request, process.hrtime.bigint());
+    reply.header('x-mixli-release', releaseSha);
     done();
   });
 

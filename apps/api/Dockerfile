@@ -14,8 +14,13 @@ COPY packages/play_schema/fixtures /workspace/packages/play_schema/fixtures
 
 RUN npm run typecheck \
     && npm test \
-    && npm run build \
-    && npm prune --omit=dev --ignore-scripts
+    && npm run build
+
+FROM build AS ci
+
+FROM build AS production
+
+RUN npm prune --omit=dev --ignore-scripts
 
 FROM node:24.7.0-bookworm-slim AS runtime
 
@@ -25,10 +30,10 @@ ENV NODE_ENV=production \
 
 WORKDIR /app
 
-COPY --from=build --chown=node:node /workspace/apps/api/package.json ./package.json
-COPY --from=build --chown=node:node /workspace/apps/api/node_modules ./node_modules
-COPY --from=build --chown=node:node /workspace/apps/api/dist ./dist
-COPY --from=build --chown=node:node /workspace/apps/api/migrations ./migrations
+COPY --from=production --chown=node:node /workspace/apps/api/package.json ./package.json
+COPY --from=production --chown=node:node /workspace/apps/api/node_modules ./node_modules
+COPY --from=production --chown=node:node /workspace/apps/api/dist ./dist
+COPY --from=production --chown=node:node /workspace/apps/api/migrations ./migrations
 
 USER node
 EXPOSE 8080

@@ -9,7 +9,7 @@ readonly SHORT_SHA="${SHA:0:12}"
 readonly FLUTTER_IMAGE="${MIXLI_FLUTTER_CI_IMAGE:-mixli-flutter-builder:3.44.7}"
 readonly POSTGRES_IMAGE="${MIXLI_POSTGRES_CI_IMAGE:-mixli-postgres:18.3}"
 readonly API_IMAGE="mixli-api:$SHA"
-readonly NODE_IMAGE="${MIXLI_NODE_CI_IMAGE:-node:24.7.0-bookworm-slim}"
+readonly API_CI_IMAGE="mixli-api-ci:$SHA"
 readonly PROMETHEUS_IMAGE="${MIXLI_PROMETHEUS_CI_IMAGE:-prom/prometheus:v3.5.5}"
 readonly ALERTMANAGER_IMAGE="${MIXLI_ALERTMANAGER_CI_IMAGE:-prom/alertmanager:v0.32.1}"
 
@@ -29,6 +29,7 @@ checkout_git() {
 }
 
 cleanup() {
+  docker image rm "$API_CI_IMAGE" >/dev/null 2>&1 || true
   if [[ -n "$postgres_container" ]]; then
     docker rm -f "$postgres_container" >/dev/null 2>&1 || true
   fi
@@ -69,6 +70,8 @@ source_integrity() {
 }
 
 infrastructure_contracts() {
+  docker build --target ci -f "$CHECKOUT/apps/api/Dockerfile" \
+    -t "$API_CI_IMAGE" "$CHECKOUT"
   docker build -f "$CHECKOUT/apps/api/Dockerfile" -t "$API_IMAGE" "$CHECKOUT"
   docker build -f "$CHECKOUT/ops/production/flutter/Dockerfile" \
     -t "$FLUTTER_IMAGE" "$CHECKOUT/ops/production/flutter"
@@ -160,14 +163,8 @@ api_postgres_integration() {
 
   docker run --rm --network "$network" \
     -e DATABASE_URL=postgres://mosaic:mosaic@postgres:5432/mosaic \
-    -v "$CHECKOUT:/source:ro" -w /workspace "$NODE_IMAGE" bash -lc \
+    -w /workspace/apps/api "$API_CI_IMAGE" bash -lc \
     'set -Eeuo pipefail
-     install -d apps/api packages
-     cp -a /source/apps/api/. apps/api/
-     cp -a /source/contracts ./contracts
-     cp -a /source/packages/play_schema ./packages/play_schema
-     cd apps/api
-     npm ci --ignore-scripts
      npm run typecheck
      npm test
      npm run build'
