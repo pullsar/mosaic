@@ -62,35 +62,34 @@ Future<void> _settle(WidgetTester tester) async {
 }
 
 void main() {
-  testWidgets(
-    'managed poster is shown while video initialization is pending',
-    (tester) async {
-      final gate = Completer<void>();
-      final controller = _PosterVideoController(initializeGate: gate);
+  testWidgets('managed poster is shown while video initialization is pending', (
+    tester,
+  ) async {
+    final gate = Completer<void>();
+    final controller = _PosterVideoController(initializeGate: gate);
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: ResolvedPlayVideo(
-            ownerId: 'play',
-            assetId: 'clip',
-            resolver: MapPlayVideoAssetResolver({'clip': _video()}),
-            posterResolver: MapPlayVideoPosterResolver({'clip': _poster()}),
-            coordinator: ActiveMediaCoordinator(),
-            controllerFactory: (_) => controller,
-          ),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ResolvedPlayVideo(
+          ownerId: 'play',
+          assetId: 'clip',
+          resolver: MapPlayVideoAssetResolver({'clip': _video()}),
+          posterResolver: MapPlayVideoPosterResolver({'clip': _poster()}),
+          coordinator: ActiveMediaCoordinator(),
+          controllerFactory: (_) => controller,
         ),
-      );
-      await _settle(tester);
+      ),
+    );
+    await _settle(tester);
 
-      expect(find.bySemanticsLabel('Travel clip poster'), findsOneWidget);
-      expect(find.text('video-frame'), findsNothing);
+    expect(find.bySemanticsLabel('Travel clip poster'), findsOneWidget);
+    expect(find.text('video-frame'), findsNothing);
 
-      gate.complete();
-      await _settle(tester);
+    gate.complete();
+    await _settle(tester);
 
-      expect(find.text('video-frame'), findsOneWidget);
-    },
-  );
+    expect(find.text('video-frame'), findsOneWidget);
+  });
 
   testWidgets(
     'hard video initialization failure releases media and keeps poster visible',
@@ -119,30 +118,29 @@ void main() {
     },
   );
 
-  testWidgets(
-    'missing poster falls back to the existing unavailable state',
-    (tester) async {
-      final controller = _PosterVideoController(
-        initializeError: StateError('decoder failed'),
-      );
+  testWidgets('missing poster falls back to the existing unavailable state', (
+    tester,
+  ) async {
+    final controller = _PosterVideoController(
+      initializeError: StateError('decoder failed'),
+    );
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: ResolvedPlayVideo(
-            ownerId: 'play',
-            assetId: 'clip',
-            resolver: MapPlayVideoAssetResolver({'clip': _video()}),
-            posterResolver: MapPlayVideoPosterResolver(const {}),
-            coordinator: ActiveMediaCoordinator(),
-            controllerFactory: (_) => controller,
-          ),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ResolvedPlayVideo(
+          ownerId: 'play',
+          assetId: 'clip',
+          resolver: MapPlayVideoAssetResolver({'clip': _video()}),
+          posterResolver: MapPlayVideoPosterResolver(const {}),
+          coordinator: ActiveMediaCoordinator(),
+          controllerFactory: (_) => controller,
         ),
-      );
-      await _settle(tester);
+      ),
+    );
+    await _settle(tester);
 
-      expect(find.byType(PlayVideoUnavailable), findsOneWidget);
-    },
-  );
+    expect(find.byType(PlayVideoUnavailable), findsOneWidget);
+  });
 
   testWidgets('poster resolver failure never prevents video playback', (
     tester,
