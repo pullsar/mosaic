@@ -142,7 +142,7 @@ function dispatcher(
 ): TranscriptWorkerDispatcher {
   return {
     async claimNext(processors) {
-      onProcessors?.(processors);
+      onProcessors?.(processors ?? []);
       return claim;
     },
   };
