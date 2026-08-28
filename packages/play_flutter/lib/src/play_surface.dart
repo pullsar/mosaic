@@ -3,6 +3,7 @@ import 'package:play_engine/play_engine.dart';
 import 'package:play_schema/play_schema.dart';
 
 import 'play_input_primitives.dart';
+import 'play_media_layer_renderer.dart';
 import 'visual_tokens.dart';
 
 typedef PlayMediaBuilder =
@@ -89,7 +90,8 @@ final class _PlaySurfaceState extends State<PlaySurface> {
   }
 
   Widget _buildMedia(BuildContext context, PresentationLayer layer) =>
-      widget.mediaBuilder?.call(context, layer) ?? const SizedBox.expand();
+      widget.mediaBuilder?.call(context, layer) ??
+      PlayMediaUnavailable(type: layer.type);
 }
 
 final class _TextOverlay extends StatelessWidget {
