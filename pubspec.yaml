@@ -10,3 +10,4 @@ workspace:
   - packages/analytics_contract
   - packages/platform_contracts
   - packages/platform_flutter
+  - packages/local_state
