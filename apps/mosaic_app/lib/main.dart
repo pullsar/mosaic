@@ -18,6 +18,7 @@ final class MosaicApp extends StatefulWidget {
 
 final class _MosaicAppState extends State<MosaicApp> {
   final ActiveMediaCoordinator _mediaCoordinator = ActiveMediaCoordinator();
+  final SoLoudAudioEngine _audioEngine = SoLoudAudioEngine();
   late final FlutterLifecycleBridge _lifecycle;
   late final PlayCanvasAssetResolver _canvasResolver;
   var _semanticResumeEpoch = 0;
@@ -41,15 +42,22 @@ final class _MosaicAppState extends State<MosaicApp> {
   @override
   void dispose() {
     _lifecycle.dispose();
-    unawaited(
-      _mediaCoordinator.releaseAll().catchError((
-        Object error,
-        StackTrace stackTrace,
-      ) {
-        _reportPlatformError(error, stackTrace);
-      }),
-    );
+    unawaited(_disposeMedia());
     super.dispose();
+  }
+
+  Future<void> _disposeMedia() async {
+    try {
+      await _mediaCoordinator.releaseAll();
+    } catch (error, stackTrace) {
+      _reportPlatformError(error, stackTrace);
+    }
+
+    try {
+      await _audioEngine.dispose();
+    } catch (error, stackTrace) {
+      _reportPlatformError(error, stackTrace);
+    }
   }
 
   void _reportPlatformError(Object error, StackTrace stackTrace) {
@@ -69,10 +77,11 @@ final class _MosaicAppState extends State<MosaicApp> {
       ownerId: playMediaOwnerId(_demoPlay),
       visualResolver: MapPlayVisualAssetResolver(const {}),
       videoResolver: MapPlayVideoAssetResolver(const {}),
+      audioResolver: MapPlayAudioAssetResolver(const {}),
+      audioEngine: _audioEngine,
       canvasResolver: _canvasResolver,
       mediaCoordinator: _mediaCoordinator,
-      videoControllerFactory: (_) =>
-          throw StateError('No video adapter is installed in the bootstrap app.'),
+      videoControllerFactory: VideoPlayerPlayController.new,
       semanticResumeEpoch: _semanticResumeEpoch,
     );
 
