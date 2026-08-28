@@ -21,6 +21,6 @@ if [[ "${MIXLI_DEPLOY_TEST_MODE-0}" == '1' ]]; then
 fi
 
 if [[ "$action" == 'deploy' ]]; then
-  exec sudo -n /opt/mixli/bin/deployment.sh "$sha"
+  exec sudo -n /opt/mixli/bin/deployment-request.sh "$sha"
 fi
 exec sudo -n /opt/mixli/bin/ci-request.sh "$sha"

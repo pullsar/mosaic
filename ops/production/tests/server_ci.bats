@@ -56,6 +56,7 @@ production-builds" ]
     'mktemp -d /tmp/mixli-systemd-verify.XXXXXX' \
     '--entrypoint promtool' \
     'mktemp -d /tmp/mixli-alertmanager-verify.XXXXXX' \
+    'mktemp -d /tmp/mixli-prometheus-verify.XXXXXX' \
     'https://example.invalid/hooks/ci' \
     'DATABASE_URL=' \
     '$CHECKOUT:/source:ro' \

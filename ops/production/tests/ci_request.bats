@@ -29,5 +29,21 @@ setup() {
 
 @test "runs only the root-owned server CI helper against the exact checkout" {
   script="$REPO_ROOT/ops/production/bin/ci-request.sh"
-  grep -Fq 'exec "$CI_RUNNER" "$CHECKOUT" "$SHA"' "$script"
+  grep -Fq 'if "$CI_RUNNER" "$CHECKOUT" "$SHA"; then' "$script"
+}
+
+@test "hosted requests enqueue a transient worker and return immediately" {
+  script="$REPO_ROOT/ops/production/bin/ci-request.sh"
+  grep -Fq 'systemd-run --quiet --no-block --collect' "$script"
+  grep -Fq -- '--setenv=MIXLI_CI_REQUEST_WORKER=1' "$script"
+  grep -Fq 'ci-passed' "$script"
+  grep -Fq 'ci-failed' "$script"
+}
+
+@test "deployment requests enqueue the synchronous deployer" {
+  request="$REPO_ROOT/ops/production/bin/deployment-request.sh"
+  run env MIXLI_DEPLOY_REQUEST_TEST_MODE=1 "$request" "$SHA"
+  [ "$status" -eq 0 ]
+  [ "$output" = "queued:mixli-deploy-${SHA:0:12}" ]
+  grep -Fq '/opt/mixli/bin/deployment.sh "$SHA"' "$request"
 }

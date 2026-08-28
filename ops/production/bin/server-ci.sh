@@ -17,6 +17,7 @@ network=''
 postgres_container=''
 systemd_verify_root=''
 alertmanager_verify_root=''
+prometheus_verify_root=''
 
 die_usage() {
   printf '%s\n' 'server-ci.sh requires an absolute checkout and exact lowercase commit SHA.' >&2
@@ -39,6 +40,9 @@ cleanup() {
   fi
   if [[ "$alertmanager_verify_root" == /tmp/mixli-alertmanager-verify.* && -d "$alertmanager_verify_root" ]]; then
     rm -rf -- "$alertmanager_verify_root"
+  fi
+  if [[ "$prometheus_verify_root" == /tmp/mixli-prometheus-verify.* && -d "$prometheus_verify_root" ]]; then
+    rm -rf -- "$prometheus_verify_root"
   fi
 }
 
@@ -99,12 +103,18 @@ infrastructure_contracts() {
   systemd_verify_root=''
 
   if [[ -f "$CHECKOUT/ops/production/prometheus/prometheus.yml" ]]; then
-    docker run --rm -v "$CHECKOUT/ops/production/prometheus:/etc/prometheus:ro" \
+    prometheus_verify_root="$(mktemp -d /tmp/mixli-prometheus-verify.XXXXXX)"
+    chmod 0755 "$prometheus_verify_root"
+    install -m 0644 "$CHECKOUT/ops/production/prometheus/prometheus.yml" \
+      "$CHECKOUT/ops/production/prometheus/rules.yml" "$prometheus_verify_root/"
+    docker run --rm -v "$prometheus_verify_root:/etc/prometheus:ro" \
       --entrypoint promtool "$PROMETHEUS_IMAGE" \
       check config /etc/prometheus/prometheus.yml
-    docker run --rm -v "$CHECKOUT/ops/production/prometheus:/etc/prometheus:ro" \
+    docker run --rm -v "$prometheus_verify_root:/etc/prometheus:ro" \
       --entrypoint promtool "$PROMETHEUS_IMAGE" \
       check rules /etc/prometheus/rules.yml
+    rm -rf -- "$prometheus_verify_root"
+    prometheus_verify_root=''
   fi
   if [[ -f "$CHECKOUT/ops/production/alertmanager/alertmanager.yml" ]]; then
     alertmanager_verify_root="$(mktemp -d /tmp/mixli-alertmanager-verify.XXXXXX)"

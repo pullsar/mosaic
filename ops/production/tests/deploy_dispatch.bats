@@ -56,6 +56,6 @@ setup() {
 @test "production dispatch is limited to root-owned CI and deployment entrypoints" {
   grep -Fq '/opt/mixli/bin/ci-request.sh' \
     "$REPO_ROOT/ops/production/bin/deploy-dispatch"
-  grep -Fq '/opt/mixli/bin/deployment.sh' \
+  grep -Fq '/opt/mixli/bin/deployment-request.sh' \
     "$REPO_ROOT/ops/production/bin/deploy-dispatch"
 }
