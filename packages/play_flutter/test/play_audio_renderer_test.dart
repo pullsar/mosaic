@@ -240,6 +240,44 @@ void main() {
     expect(find.byType(PlayAudioUnavailable), findsOneWidget);
   });
 
+  testWidgets('failed load cleanup is retained for a later release retry', (
+    tester,
+  ) async {
+    final engine = _FakeAudioEngine()
+      ..loadError = StateError('load failed')
+      ..releaseError = StateError('release failed');
+    final coordinator = ActiveMediaCoordinator();
+    final asset = _asset('audio_a');
+
+    await _pumpAudio(
+      tester,
+      ownerId: 'play_a',
+      asset: asset,
+      engine: engine,
+      coordinator: coordinator,
+    );
+    await tester.tap(find.text('Hear'));
+    await tester.pumpAndSettle();
+
+    expect(engine.events.where((event) => event == 'release:audio_a').length, 2);
+    expect(find.byType(PlayAudioUnavailable), findsOneWidget);
+
+    engine.releaseError = null;
+    await _pumpAudio(
+      tester,
+      ownerId: 'play_a',
+      asset: asset,
+      engine: engine,
+      coordinator: coordinator,
+      active: false,
+    );
+    await tester.pumpAndSettle();
+
+    expect(engine.events.where((event) => event == 'release:audio_a').length, 3);
+    expect(engine.events.last, 'release:audio_a');
+    expect(coordinator.hasActiveMedia, isFalse);
+  });
+
   testWidgets('reconfiguration releases through the original coordinator', (
     tester,
   ) async {
