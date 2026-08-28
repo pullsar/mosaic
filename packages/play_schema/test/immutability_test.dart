@@ -135,11 +135,12 @@ void main() {
     expect(layer.properties, {
       'nested': {'weight': 1},
     });
-    expect(input.options.map((option) => option.id), ['a']);
+    expect(input.options.map((option) => option.id).toList(), ['a']);
     expect(input.properties['keys'], ['C4', 'E4']);
     expect(input.properties.containsKey('sequenceLength'), isFalse);
     expect(validation.value, ['C4', 'E4']);
-    expect(state.presentation, [same(layer)]);
+    expect(state.presentation, hasLength(1));
+    expect(state.presentation.single, same(layer));
     expect(state.transitions, {'correct': 'done'});
     expect(state.responses, {
       'correct': {
@@ -150,6 +151,7 @@ void main() {
     expect(play.learningTopics, ['ear-training']);
     expect(play.assets, ['audio_a']);
     expect(play.sources, hasLength(1));
-    expect(play.states, {'play': same(state)});
+    expect(play.states.keys, ['play']);
+    expect(play.states['play'], same(state));
   });
 }
