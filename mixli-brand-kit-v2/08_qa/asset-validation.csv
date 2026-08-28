@@ -1,0 +1,248 @@
+asset,status,detail
+01_logo/png/icon-color-1024.png,PASS,"PNG (1024, 934)"
+01_logo/png/icon-color-128.png,PASS,"PNG (128, 117)"
+01_logo/png/icon-color-256.png,PASS,"PNG (256, 234)"
+01_logo/png/icon-color-512.png,PASS,"PNG (512, 467)"
+01_logo/png/icon-navy-1024.png,PASS,"PNG (1024, 934)"
+01_logo/png/icon-navy-128.png,PASS,"PNG (128, 117)"
+01_logo/png/icon-navy-256.png,PASS,"PNG (256, 234)"
+01_logo/png/icon-navy-512.png,PASS,"PNG (512, 467)"
+01_logo/png/icon-white-1024.png,PASS,"PNG (1024, 934)"
+01_logo/png/icon-white-128.png,PASS,"PNG (128, 117)"
+01_logo/png/icon-white-256.png,PASS,"PNG (256, 234)"
+01_logo/png/icon-white-512.png,PASS,"PNG (512, 467)"
+01_logo/png/lockup-tagline-dark-1600.png,PASS,"PNG (1600, 571)"
+01_logo/png/lockup-tagline-dark-400.png,PASS,"PNG (400, 143)"
+01_logo/png/lockup-tagline-dark-800.png,PASS,"PNG (800, 286)"
+01_logo/png/lockup-tagline-light-1600.png,PASS,"PNG (1600, 571)"
+01_logo/png/lockup-tagline-light-400.png,PASS,"PNG (400, 143)"
+01_logo/png/lockup-tagline-light-800.png,PASS,"PNG (800, 286)"
+01_logo/png/wordmark-color-1600.png,PASS,"PNG (1600, 476)"
+01_logo/png/wordmark-color-400.png,PASS,"PNG (400, 119)"
+01_logo/png/wordmark-color-800.png,PASS,"PNG (800, 238)"
+01_logo/png/wordmark-color-dark-1600.png,PASS,"PNG (1600, 476)"
+01_logo/png/wordmark-color-dark-400.png,PASS,"PNG (400, 119)"
+01_logo/png/wordmark-color-dark-800.png,PASS,"PNG (800, 238)"
+01_logo/png/wordmark-navy-1600.png,PASS,"PNG (1600, 476)"
+01_logo/png/wordmark-navy-400.png,PASS,"PNG (400, 119)"
+01_logo/png/wordmark-navy-800.png,PASS,"PNG (800, 238)"
+01_logo/png/wordmark-white-1600.png,PASS,"PNG (1600, 476)"
+01_logo/png/wordmark-white-400.png,PASS,"PNG (400, 119)"
+01_logo/png/wordmark-white-800.png,PASS,"PNG (800, 238)"
+01_logo/svg/icon-color.svg,PASS,XML parse + CairoSVG render
+01_logo/svg/icon-navy.svg,PASS,XML parse + CairoSVG render
+01_logo/svg/icon-white.svg,PASS,XML parse + CairoSVG render
+01_logo/svg/lockup-tagline-dark.svg,PASS,XML parse + CairoSVG render
+01_logo/svg/lockup-tagline-light.svg,PASS,XML parse + CairoSVG render
+01_logo/svg/wordmark-color-dark.svg,PASS,XML parse + CairoSVG render
+01_logo/svg/wordmark-color.svg,PASS,XML parse + CairoSVG render
+01_logo/svg/wordmark-navy.svg,PASS,XML parse + CairoSVG render
+01_logo/svg/wordmark-white.svg,PASS,XML parse + CairoSVG render
+02_app_icons/png/adaptive-foreground-1024.png,PASS,"PNG (1024, 1024)"
+02_app_icons/png/app-icon-dark-1024.png,PASS,"PNG (1024, 1024)"
+02_app_icons/png/app-icon-dark-128.png,PASS,"PNG (128, 128)"
+02_app_icons/png/app-icon-dark-180.png,PASS,"PNG (180, 180)"
+02_app_icons/png/app-icon-dark-192.png,PASS,"PNG (192, 192)"
+02_app_icons/png/app-icon-dark-256.png,PASS,"PNG (256, 256)"
+02_app_icons/png/app-icon-dark-32.png,PASS,"PNG (32, 32)"
+02_app_icons/png/app-icon-dark-512.png,PASS,"PNG (512, 512)"
+02_app_icons/png/app-icon-dark-64.png,PASS,"PNG (64, 64)"
+02_app_icons/png/app-icon-light-1024.png,PASS,"PNG (1024, 1024)"
+02_app_icons/png/app-icon-light-128.png,PASS,"PNG (128, 128)"
+02_app_icons/png/app-icon-light-180.png,PASS,"PNG (180, 180)"
+02_app_icons/png/app-icon-light-192.png,PASS,"PNG (192, 192)"
+02_app_icons/png/app-icon-light-256.png,PASS,"PNG (256, 256)"
+02_app_icons/png/app-icon-light-32.png,PASS,"PNG (32, 32)"
+02_app_icons/png/app-icon-light-512.png,PASS,"PNG (512, 512)"
+02_app_icons/png/app-icon-light-64.png,PASS,"PNG (64, 64)"
+02_app_icons/png/favicon-16.png,PASS,"PNG (16, 16)"
+02_app_icons/png/favicon-32.png,PASS,"PNG (32, 32)"
+02_app_icons/png/favicon-48.png,PASS,"PNG (48, 48)"
+02_app_icons/png/favicon-64.png,PASS,"PNG (64, 64)"
+02_app_icons/svg/adaptive-foreground.svg,PASS,XML parse + CairoSVG render
+02_app_icons/svg/app-icon-dark.svg,PASS,XML parse + CairoSVG render
+02_app_icons/svg/app-icon-light.svg,PASS,XML parse + CairoSVG render
+02_app_icons/svg/favicon.svg,PASS,XML parse + CairoSVG render
+03_ui_icons/mixli-icons-sprite.svg,PASS,XML parse + CairoSVG render
+03_ui_icons/png/24/arrow-up-right.png,PASS,"PNG (24, 24)"
+03_ui_icons/png/24/back.png,PASS,"PNG (24, 24)"
+03_ui_icons/png/24/camera.png,PASS,"PNG (24, 24)"
+03_ui_icons/png/24/check.png,PASS,"PNG (24, 24)"
+03_ui_icons/png/24/close.png,PASS,"PNG (24, 24)"
+03_ui_icons/png/24/create-filled.png,PASS,"PNG (24, 24)"
+03_ui_icons/png/24/create.png,PASS,"PNG (24, 24)"
+03_ui_icons/png/24/download.png,PASS,"PNG (24, 24)"
+03_ui_icons/png/24/external-link.png,PASS,"PNG (24, 24)"
+03_ui_icons/png/24/filter.png,PASS,"PNG (24, 24)"
+03_ui_icons/png/24/heart.png,PASS,"PNG (24, 24)"
+03_ui_icons/png/24/image.png,PASS,"PNG (24, 24)"
+03_ui_icons/png/24/info.png,PASS,"PNG (24, 24)"
+03_ui_icons/png/24/me-filled.png,PASS,"PNG (24, 24)"
+03_ui_icons/png/24/me.png,PASS,"PNG (24, 24)"
+03_ui_icons/png/24/microphone.png,PASS,"PNG (24, 24)"
+03_ui_icons/png/24/more.png,PASS,"PNG (24, 24)"
+03_ui_icons/png/24/mute.png,PASS,"PNG (24, 24)"
+03_ui_icons/png/24/play-filled.png,PASS,"PNG (24, 24)"
+03_ui_icons/png/24/play.png,PASS,"PNG (24, 24)"
+03_ui_icons/png/24/remix.png,PASS,"PNG (24, 24)"
+03_ui_icons/png/24/replay.png,PASS,"PNG (24, 24)"
+03_ui_icons/png/24/saved-filled.png,PASS,"PNG (24, 24)"
+03_ui_icons/png/24/saved.png,PASS,"PNG (24, 24)"
+03_ui_icons/png/24/search.png,PASS,"PNG (24, 24)"
+03_ui_icons/png/24/share.png,PASS,"PNG (24, 24)"
+03_ui_icons/png/24/spark.png,PASS,"PNG (24, 24)"
+03_ui_icons/png/24/volume.png,PASS,"PNG (24, 24)"
+03_ui_icons/png/48/arrow-up-right.png,PASS,"PNG (48, 48)"
+03_ui_icons/png/48/back.png,PASS,"PNG (48, 48)"
+03_ui_icons/png/48/camera.png,PASS,"PNG (48, 48)"
+03_ui_icons/png/48/check.png,PASS,"PNG (48, 48)"
+03_ui_icons/png/48/close.png,PASS,"PNG (48, 48)"
+03_ui_icons/png/48/create-filled.png,PASS,"PNG (48, 48)"
+03_ui_icons/png/48/create.png,PASS,"PNG (48, 48)"
+03_ui_icons/png/48/download.png,PASS,"PNG (48, 48)"
+03_ui_icons/png/48/external-link.png,PASS,"PNG (48, 48)"
+03_ui_icons/png/48/filter.png,PASS,"PNG (48, 48)"
+03_ui_icons/png/48/heart.png,PASS,"PNG (48, 48)"
+03_ui_icons/png/48/image.png,PASS,"PNG (48, 48)"
+03_ui_icons/png/48/info.png,PASS,"PNG (48, 48)"
+03_ui_icons/png/48/me-filled.png,PASS,"PNG (48, 48)"
+03_ui_icons/png/48/me.png,PASS,"PNG (48, 48)"
+03_ui_icons/png/48/microphone.png,PASS,"PNG (48, 48)"
+03_ui_icons/png/48/more.png,PASS,"PNG (48, 48)"
+03_ui_icons/png/48/mute.png,PASS,"PNG (48, 48)"
+03_ui_icons/png/48/play-filled.png,PASS,"PNG (48, 48)"
+03_ui_icons/png/48/play.png,PASS,"PNG (48, 48)"
+03_ui_icons/png/48/remix.png,PASS,"PNG (48, 48)"
+03_ui_icons/png/48/replay.png,PASS,"PNG (48, 48)"
+03_ui_icons/png/48/saved-filled.png,PASS,"PNG (48, 48)"
+03_ui_icons/png/48/saved.png,PASS,"PNG (48, 48)"
+03_ui_icons/png/48/search.png,PASS,"PNG (48, 48)"
+03_ui_icons/png/48/share.png,PASS,"PNG (48, 48)"
+03_ui_icons/png/48/spark.png,PASS,"PNG (48, 48)"
+03_ui_icons/png/48/volume.png,PASS,"PNG (48, 48)"
+03_ui_icons/png/72/arrow-up-right.png,PASS,"PNG (72, 72)"
+03_ui_icons/png/72/back.png,PASS,"PNG (72, 72)"
+03_ui_icons/png/72/camera.png,PASS,"PNG (72, 72)"
+03_ui_icons/png/72/check.png,PASS,"PNG (72, 72)"
+03_ui_icons/png/72/close.png,PASS,"PNG (72, 72)"
+03_ui_icons/png/72/create-filled.png,PASS,"PNG (72, 72)"
+03_ui_icons/png/72/create.png,PASS,"PNG (72, 72)"
+03_ui_icons/png/72/download.png,PASS,"PNG (72, 72)"
+03_ui_icons/png/72/external-link.png,PASS,"PNG (72, 72)"
+03_ui_icons/png/72/filter.png,PASS,"PNG (72, 72)"
+03_ui_icons/png/72/heart.png,PASS,"PNG (72, 72)"
+03_ui_icons/png/72/image.png,PASS,"PNG (72, 72)"
+03_ui_icons/png/72/info.png,PASS,"PNG (72, 72)"
+03_ui_icons/png/72/me-filled.png,PASS,"PNG (72, 72)"
+03_ui_icons/png/72/me.png,PASS,"PNG (72, 72)"
+03_ui_icons/png/72/microphone.png,PASS,"PNG (72, 72)"
+03_ui_icons/png/72/more.png,PASS,"PNG (72, 72)"
+03_ui_icons/png/72/mute.png,PASS,"PNG (72, 72)"
+03_ui_icons/png/72/play-filled.png,PASS,"PNG (72, 72)"
+03_ui_icons/png/72/play.png,PASS,"PNG (72, 72)"
+03_ui_icons/png/72/remix.png,PASS,"PNG (72, 72)"
+03_ui_icons/png/72/replay.png,PASS,"PNG (72, 72)"
+03_ui_icons/png/72/saved-filled.png,PASS,"PNG (72, 72)"
+03_ui_icons/png/72/saved.png,PASS,"PNG (72, 72)"
+03_ui_icons/png/72/search.png,PASS,"PNG (72, 72)"
+03_ui_icons/png/72/share.png,PASS,"PNG (72, 72)"
+03_ui_icons/png/72/spark.png,PASS,"PNG (72, 72)"
+03_ui_icons/png/72/volume.png,PASS,"PNG (72, 72)"
+03_ui_icons/svg/arrow-up-right.svg,PASS,XML parse + CairoSVG render
+03_ui_icons/svg/back.svg,PASS,XML parse + CairoSVG render
+03_ui_icons/svg/camera.svg,PASS,XML parse + CairoSVG render
+03_ui_icons/svg/check.svg,PASS,XML parse + CairoSVG render
+03_ui_icons/svg/close.svg,PASS,XML parse + CairoSVG render
+03_ui_icons/svg/create-filled.svg,PASS,XML parse + CairoSVG render
+03_ui_icons/svg/create.svg,PASS,XML parse + CairoSVG render
+03_ui_icons/svg/download.svg,PASS,XML parse + CairoSVG render
+03_ui_icons/svg/external-link.svg,PASS,XML parse + CairoSVG render
+03_ui_icons/svg/filter.svg,PASS,XML parse + CairoSVG render
+03_ui_icons/svg/heart.svg,PASS,XML parse + CairoSVG render
+03_ui_icons/svg/image.svg,PASS,XML parse + CairoSVG render
+03_ui_icons/svg/info.svg,PASS,XML parse + CairoSVG render
+03_ui_icons/svg/me-filled.svg,PASS,XML parse + CairoSVG render
+03_ui_icons/svg/me.svg,PASS,XML parse + CairoSVG render
+03_ui_icons/svg/microphone.svg,PASS,XML parse + CairoSVG render
+03_ui_icons/svg/more.svg,PASS,XML parse + CairoSVG render
+03_ui_icons/svg/mute.svg,PASS,XML parse + CairoSVG render
+03_ui_icons/svg/play-filled.svg,PASS,XML parse + CairoSVG render
+03_ui_icons/svg/play.svg,PASS,XML parse + CairoSVG render
+03_ui_icons/svg/remix.svg,PASS,XML parse + CairoSVG render
+03_ui_icons/svg/replay.svg,PASS,XML parse + CairoSVG render
+03_ui_icons/svg/saved-filled.svg,PASS,XML parse + CairoSVG render
+03_ui_icons/svg/saved.svg,PASS,XML parse + CairoSVG render
+03_ui_icons/svg/search.svg,PASS,XML parse + CairoSVG render
+03_ui_icons/svg/share.svg,PASS,XML parse + CairoSVG render
+03_ui_icons/svg/spark.svg,PASS,XML parse + CairoSVG render
+03_ui_icons/svg/volume.svg,PASS,XML parse + CairoSVG render
+04_empty_states/png/create-dark-640.png,PASS,"PNG (640, 640)"
+04_empty_states/png/create-light-640.png,PASS,"PNG (640, 640)"
+04_empty_states/png/following-dark-640.png,PASS,"PNG (640, 640)"
+04_empty_states/png/following-light-640.png,PASS,"PNG (640, 640)"
+04_empty_states/png/notifications-dark-640.png,PASS,"PNG (640, 640)"
+04_empty_states/png/notifications-light-640.png,PASS,"PNG (640, 640)"
+04_empty_states/png/offline-dark-640.png,PASS,"PNG (640, 640)"
+04_empty_states/png/offline-light-640.png,PASS,"PNG (640, 640)"
+04_empty_states/png/saved-dark-640.png,PASS,"PNG (640, 640)"
+04_empty_states/png/saved-light-640.png,PASS,"PNG (640, 640)"
+04_empty_states/png/search-dark-640.png,PASS,"PNG (640, 640)"
+04_empty_states/png/search-light-640.png,PASS,"PNG (640, 640)"
+04_empty_states/svg/create-dark.svg,PASS,XML parse + CairoSVG render
+04_empty_states/svg/create-light.svg,PASS,XML parse + CairoSVG render
+04_empty_states/svg/following-dark.svg,PASS,XML parse + CairoSVG render
+04_empty_states/svg/following-light.svg,PASS,XML parse + CairoSVG render
+04_empty_states/svg/notifications-dark.svg,PASS,XML parse + CairoSVG render
+04_empty_states/svg/notifications-light.svg,PASS,XML parse + CairoSVG render
+04_empty_states/svg/offline-dark.svg,PASS,XML parse + CairoSVG render
+04_empty_states/svg/offline-light.svg,PASS,XML parse + CairoSVG render
+04_empty_states/svg/saved-dark.svg,PASS,XML parse + CairoSVG render
+04_empty_states/svg/saved-light.svg,PASS,XML parse + CairoSVG render
+04_empty_states/svg/search-dark.svg,PASS,XML parse + CairoSVG render
+04_empty_states/svg/search-light.svg,PASS,XML parse + CairoSVG render
+05_marketing/png/hero-dark.png,PASS,"PNG (1600, 900)"
+05_marketing/png/hero-light.png,PASS,"PNG (1600, 900)"
+05_marketing/png/journey-ribbon-dark-2000.png,PASS,"PNG (2000, 1120)"
+05_marketing/png/journey-ribbon-light-2000.png,PASS,"PNG (2000, 1120)"
+05_marketing/png/og-dark.png,PASS,"PNG (1200, 630)"
+05_marketing/png/og-light.png,PASS,"PNG (1200, 630)"
+05_marketing/png/square-dark.png,PASS,"PNG (1080, 1080)"
+05_marketing/png/square-light.png,PASS,"PNG (1080, 1080)"
+05_marketing/png/story-dark.png,PASS,"PNG (1080, 1920)"
+05_marketing/png/story-light.png,PASS,"PNG (1080, 1920)"
+05_marketing/svg/hero-dark.svg,PASS,XML parse + CairoSVG render
+05_marketing/svg/hero-light.svg,PASS,XML parse + CairoSVG render
+05_marketing/svg/journey-ribbon-dark.svg,PASS,XML parse + CairoSVG render
+05_marketing/svg/journey-ribbon-light.svg,PASS,XML parse + CairoSVG render
+05_marketing/svg/og-dark.svg,PASS,XML parse + CairoSVG render
+05_marketing/svg/og-light.svg,PASS,XML parse + CairoSVG render
+05_marketing/svg/square-dark.svg,PASS,XML parse + CairoSVG render
+05_marketing/svg/square-light.svg,PASS,XML parse + CairoSVG render
+05_marketing/svg/story-dark.svg,PASS,XML parse + CairoSVG render
+05_marketing/svg/story-light.svg,PASS,XML parse + CairoSVG render
+06_tokens/brand.tokens.json,PASS,file present
+06_tokens/mixli.css,PASS,file present
+06_tokens/mixli_brand_tokens.dart,PASS,file present
+07_docs/ASSET_USAGE.md,PASS,file present
+07_docs/BRAND_GUIDE.md,PASS,file present
+07_docs/ICONOGRAPHY.md,PASS,file present
+07_docs/TYPOGRAPHY.md,PASS,file present
+07_docs/brand-guide.html,PASS,file present
+08_qa/QA_SUMMARY.md,PASS,file present
+08_qa/app-icon-alpha-audit.csv,PASS,file present
+08_qa/contrast-audit.csv,PASS,file present
+08_qa/reconstructed-wordmark.png,PASS,"PNG (840, 250)"
+08_qa/reference-similarity.json,PASS,file present
+08_qa/reference-vs-vector.png,PASS,"PNG (1680, 250)"
+09_previews/app-icon-contact-sheet.jpg,PASS,file present
+09_previews/empty-state-contact-sheet.jpg,PASS,file present
+09_previews/empty-states-themed-qa.jpg,PASS,file present
+09_previews/icon-24px-qa.jpg,PASS,file present
+09_previews/icon-contact-sheet.jpg,PASS,file present
+09_previews/logo-contact-sheet.jpg,PASS,file present
+09_previews/logo-themed-qa.jpg,PASS,file present
+09_previews/marketing-contact-sheet.jpg,PASS,file present
+09_previews/micro-size-qa.jpg,PASS,file present
+ASSET_MANIFEST.csv,PASS,file present
+CHECKSUMS.sha256,PASS,file present
+README.md,PASS,file present

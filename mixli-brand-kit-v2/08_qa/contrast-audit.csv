@@ -1,0 +1,5 @@
+pair,foreground,background,ratio,WCAG_AA_normal
+light text,#0F1B41,#F8FAFF,16.04,PASS
+light secondary,#596581,#F8FAFF,5.58,PASS
+dark text,#F7F9FF,#070D20,18.34,PASS
+dark secondary,#AAB5CC,#070D20,9.37,PASS
