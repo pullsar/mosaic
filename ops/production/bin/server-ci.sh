@@ -18,6 +18,7 @@ postgres_container=''
 node_modules_volume=''
 api_dist_volume=''
 systemd_verify_root=''
+alertmanager_verify_root=''
 
 die_usage() {
   printf '%s\n' 'server-ci.sh requires an absolute checkout and exact lowercase commit SHA.' >&2
@@ -43,6 +44,9 @@ cleanup() {
   fi
   if [[ "$systemd_verify_root" == /tmp/mixli-systemd-verify.* && -d "$systemd_verify_root" ]]; then
     rm -rf -- "$systemd_verify_root"
+  fi
+  if [[ "$alertmanager_verify_root" == /tmp/mixli-alertmanager-verify.* && -d "$alertmanager_verify_root" ]]; then
+    rm -rf -- "$alertmanager_verify_root"
   fi
 }
 
@@ -111,9 +115,19 @@ infrastructure_contracts() {
       check rules /etc/prometheus/rules.yml
   fi
   if [[ -f "$CHECKOUT/ops/production/alertmanager/alertmanager.yml" ]]; then
-    docker run --rm -v "$CHECKOUT/ops/production/alertmanager:/etc/alertmanager:ro" \
+    alertmanager_verify_root="$(mktemp -d /tmp/mixli-alertmanager-verify.XXXXXX)"
+    chmod 0755 "$alertmanager_verify_root"
+    install -d -m 0755 "$alertmanager_verify_root/secrets"
+    install -m 0644 "$CHECKOUT/ops/production/alertmanager/alertmanager.yml" \
+      "$alertmanager_verify_root/alertmanager.yml"
+    printf '%s\n' 'https://example.invalid/hooks/ci' \
+      >"$alertmanager_verify_root/secrets/webhook-url"
+    chmod 0644 "$alertmanager_verify_root/secrets/webhook-url"
+    docker run --rm -v "$alertmanager_verify_root:/etc/alertmanager:ro" \
       --entrypoint amtool "$ALERTMANAGER_IMAGE" \
       check-config /etc/alertmanager/alertmanager.yml
+    rm -rf -- "$alertmanager_verify_root"
+    alertmanager_verify_root=''
   fi
 }
 

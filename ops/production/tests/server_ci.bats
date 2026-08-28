@@ -55,6 +55,8 @@ production-builds" ]
     '--recursive-errors=no' \
     'mktemp -d /tmp/mixli-systemd-verify.XXXXXX' \
     '--entrypoint promtool' \
+    'mktemp -d /tmp/mixli-alertmanager-verify.XXXXXX' \
+    'https://example.invalid/hooks/ci' \
     'DATABASE_URL=' \
     'npm ci --ignore-scripts' \
     'npm run typecheck' \
