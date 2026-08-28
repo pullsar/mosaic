@@ -1,6 +1,11 @@
 import {spawn} from 'node:child_process';
 
-export type MediaProcessFailureKind = 'spawn' | 'exit' | 'timeout' | 'aborted';
+export type MediaProcessFailureKind =
+  | 'spawn'
+  | 'exit'
+  | 'timeout'
+  | 'aborted'
+  | 'output_limit';
 
 export class MediaProcessError extends Error {
   constructor(
@@ -35,18 +40,23 @@ export interface MediaProcessRunOptions {
   signal?: AbortSignal;
   killGraceMs?: number;
   maxStderrChars?: number;
+  captureStdout?: boolean;
+  maxStdoutChars?: number;
 }
 
 export interface MediaProcessResult {
   durationMs: number;
   stderrTail: string;
+  stdoutText?: string;
 }
 
 const DEFAULT_KILL_GRACE_MS = 2_000;
 const DEFAULT_STDERR_CHARS = 32 * 1024;
+const DEFAULT_STDOUT_CHARS = 512 * 1024;
 const MAX_TIMEOUT_MS = 60 * 60 * 1000;
 const MAX_KILL_GRACE_MS = 30_000;
 const MAX_STDERR_CHARS = 1024 * 1024;
+const MAX_STDOUT_CHARS = 4 * 1024 * 1024;
 
 export async function runMediaProcess(
   invocation: MediaProcessInvocation,
@@ -67,6 +77,12 @@ export async function runMediaProcess(
     'maxStderrChars',
     MAX_STDERR_CHARS,
   );
+  const captureStdout = options.captureStdout ?? false;
+  const maxStdoutChars = boundedPositiveInteger(
+    options.maxStdoutChars ?? DEFAULT_STDOUT_CHARS,
+    'maxStdoutChars',
+    MAX_STDOUT_CHARS,
+  );
 
   if (options.signal?.aborted) {
     throw new MediaProcessError('aborted', 'Media process was aborted before spawn');
@@ -79,15 +95,16 @@ export async function runMediaProcess(
       child = spawn(executable, args, {
         shell: false,
         windowsHide: true,
-        stdio: ['ignore', 'ignore', 'pipe'],
+        stdio: ['ignore', captureStdout ? 'pipe' : 'ignore', 'pipe'],
       });
     } catch (error) {
       reject(new MediaProcessError('spawn', `Failed to spawn ${executable}`, {cause: error}));
       return;
     }
 
+    let stdoutText = '';
     let stderrTail = '';
-    let termination: 'timeout' | 'aborted' | null = null;
+    let termination: 'timeout' | 'aborted' | 'output_limit' | null = null;
     let forceKillTimer: NodeJS.Timeout | null = null;
     let timeoutTimer: NodeJS.Timeout | null = null;
     let settled = false;
@@ -99,16 +116,7 @@ export async function runMediaProcess(
       }
     };
 
-    child.stderr?.setEncoding('utf8');
-    child.stderr?.on('data', (chunk: string) => appendStderr(chunk));
-
-    const cleanup = (): void => {
-      if (timeoutTimer !== null) clearTimeout(timeoutTimer);
-      if (forceKillTimer !== null) clearTimeout(forceKillTimer);
-      options.signal?.removeEventListener('abort', abortListener);
-    };
-
-    const terminate = (reason: 'timeout' | 'aborted'): void => {
+    const terminate = (reason: 'timeout' | 'aborted' | 'output_limit'): void => {
       if (termination !== null || settled) return;
       termination = reason;
       if (child.exitCode !== null || child.signalCode !== null) return;
@@ -126,6 +134,25 @@ export async function runMediaProcess(
         }
       }, killGraceMs);
       forceKillTimer.unref();
+    };
+
+    child.stdout?.setEncoding('utf8');
+    child.stdout?.on('data', (chunk: string) => {
+      if (termination !== null) return;
+      if (stdoutText.length + chunk.length > maxStdoutChars) {
+        stdoutText = '';
+        terminate('output_limit');
+        return;
+      }
+      stdoutText += chunk;
+    });
+    child.stderr?.setEncoding('utf8');
+    child.stderr?.on('data', (chunk: string) => appendStderr(chunk));
+
+    const cleanup = (): void => {
+      if (timeoutTimer !== null) clearTimeout(timeoutTimer);
+      if (forceKillTimer !== null) clearTimeout(forceKillTimer);
+      options.signal?.removeEventListener('abort', abortListener);
     };
 
     const abortListener = (): void => terminate('aborted');
@@ -172,6 +199,16 @@ export async function runMediaProcess(
         );
         return;
       }
+      if (termination === 'output_limit') {
+        reject(
+          new MediaProcessError(
+            'output_limit',
+            `Media process stdout exceeded ${maxStdoutChars} characters`,
+            {exitCode: code, signal, stderrTail},
+          ),
+        );
+        return;
+      }
       if (code !== 0) {
         reject(
           new MediaProcessError('exit', `Media process exited with code ${String(code)}`, {
@@ -182,7 +219,11 @@ export async function runMediaProcess(
         );
         return;
       }
-      resolve({durationMs, stderrTail});
+      resolve({
+        durationMs,
+        stderrTail,
+        ...(captureStdout ? {stdoutText} : {}),
+      });
     });
   });
 }
