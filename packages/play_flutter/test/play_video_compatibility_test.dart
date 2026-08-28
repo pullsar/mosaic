@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:collection';
 
 import 'package:flutter/material.dart';
@@ -6,10 +7,13 @@ import 'package:platform_contracts/platform_contracts.dart';
 import 'package:play_flutter/play_flutter.dart';
 
 final class _CompatibilityVideoController implements PlayVideoController {
-  _CompatibilityVideoController({Iterable<Object?> playOutcomes = const []})
-    : _playOutcomes = Queue<Object?>.from(playOutcomes);
+  _CompatibilityVideoController({
+    Iterable<Object?> playOutcomes = const [],
+    this.playGate,
+  }) : _playOutcomes = Queue<Object?>.from(playOutcomes);
 
   final Queue<Object?> _playOutcomes;
+  final Completer<void>? playGate;
   var initializeCount = 0;
   var playCount = 0;
   var pauseCount = 0;
@@ -25,6 +29,7 @@ final class _CompatibilityVideoController implements PlayVideoController {
   @override
   Future<void> play() async {
     playCount += 1;
+    await playGate?.future;
     if (_playOutcomes.isEmpty) return;
     final outcome = _playOutcomes.removeFirst();
     if (outcome != null) throw outcome;
@@ -162,6 +167,40 @@ void main() {
       );
     },
   );
+
+  testWidgets('rapid user taps never enqueue overlapping playback attempts', (
+    tester,
+  ) async {
+    final coordinator = ActiveMediaCoordinator();
+    final playGate = Completer<void>();
+    final controller = _CompatibilityVideoController(playGate: playGate);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: OwnedPlayVideo(
+          ownerId: 'play',
+          asset: _asset(autoplay: false),
+          coordinator: coordinator,
+          controllerFactory: (_) => controller,
+        ),
+      ),
+    );
+    await _settle(tester);
+
+    final playAction = find.bySemanticsLabel('Play video');
+    await tester.tap(playAction);
+    await tester.tap(playAction);
+    await tester.pump();
+
+    expect(controller.playCount, 1);
+    expect(coordinator.owns('play', controller), isTrue);
+
+    playGate.complete();
+    await _settle(tester);
+
+    expect(controller.playCount, 1);
+    expect(find.bySemanticsLabel('Play video'), findsNothing);
+  });
 
   testWidgets('failed user playback remains owned and presents a retry path', (
     tester,
