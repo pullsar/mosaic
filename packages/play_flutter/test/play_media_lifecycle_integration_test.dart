@@ -153,17 +153,15 @@ final class _AudioLifecycleHarnessState extends State<_AudioLifecycleHarness> {
 
   @override
   Widget build(BuildContext context) {
-    // The epoch read makes semantic-resume rebuild intent explicit while the
-    // exact audio asset/engine/coordinator identities remain stable.
-    final semanticResumeObserved = _resumeEpoch >= 0;
-    return Semantics(
-      container: semanticResumeObserved,
-      child: OwnedPlayAudio(
-        ownerId: 'audio-owner',
-        asset: _asset,
-        engine: widget.engine,
-        coordinator: widget.coordinator,
-      ),
+    // setState on semantic resume rebuilds this subtree. The exact audio
+    // asset/engine/coordinator identities stay stable, so audio must remain
+    // stopped until the user explicitly requests Replay.
+    _resumeEpoch;
+    return OwnedPlayAudio(
+      ownerId: 'audio-owner',
+      asset: _asset,
+      engine: widget.engine,
+      coordinator: widget.coordinator,
     );
   }
 }
