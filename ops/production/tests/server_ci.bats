@@ -84,3 +84,9 @@ production-builds" ]
   grep -Fq 'MIXLI_REPO:-/srv/mixli/repository' "$script"
   grep -Fq 'MIXLI_COMPOSE_FILE:-/srv/mixli/repository/ops/production/compose.yaml' "$script"
 }
+
+@test "Git trusts only the exact build checkout owned by the locked builder" {
+  script="$REPO_ROOT/ops/production/bin/server-ci.sh"
+  grep -Fq 'git -c safe.directory="$CHECKOUT" -C "$CHECKOUT"' "$script"
+  ! grep -Fq 'safe.directory=*' "$script"
+}

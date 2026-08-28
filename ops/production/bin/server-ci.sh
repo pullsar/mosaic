@@ -23,6 +23,10 @@ die_usage() {
   exit 64
 }
 
+checkout_git() {
+  git -c safe.directory="$CHECKOUT" -C "$CHECKOUT" "$@"
+}
+
 cleanup() {
   [[ -n "$postgres_container" ]] && docker rm -f "$postgres_container" >/dev/null 2>&1 || true
   [[ -n "$network" ]] && docker network rm "$network" >/dev/null 2>&1 || true
@@ -37,7 +41,7 @@ validate_inputs() {
 
   if [[ "$TEST_MODE" != '1' ]]; then
     [[ -e "$CHECKOUT/.git" ]] || die_usage
-    [[ "$(git -C "$CHECKOUT" rev-parse HEAD)" == "$SHA" ]] || die_usage
+    [[ "$(checkout_git rev-parse HEAD)" == "$SHA" ]] || die_usage
   fi
 }
 
@@ -48,8 +52,8 @@ run_stage() {
 }
 
 source_integrity() {
-  (cd "$CHECKOUT" && git diff --check)
-  [[ -z "$(git -C "$CHECKOUT" status --porcelain --untracked-files=no)" ]]
+  checkout_git diff --check
+  [[ -z "$(checkout_git status --porcelain --untracked-files=no)" ]]
 }
 
 infrastructure_contracts() {
