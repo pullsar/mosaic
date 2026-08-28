@@ -30,9 +30,9 @@ sealed class PlayCanvasElement {
 
 final class PlayCanvasLine extends PlayCanvasElement {
   PlayCanvasLine({
-    required this.start,
-    required this.end,
-    this.width = 0.012,
+    required Offset start,
+    required Offset end,
+    double width = 0.012,
     this.cap = StrokeCap.round,
     this.tone = PlayCanvasTone.foreground,
   }) : start = Offset(
@@ -51,9 +51,9 @@ final class PlayCanvasLine extends PlayCanvasElement {
 
 final class PlayCanvasRect extends PlayCanvasElement {
   PlayCanvasRect({
-    required this.rect,
-    this.strokeWidth = 0.008,
-    this.radius = 0.02,
+    required Rect rect,
+    double strokeWidth = 0.008,
+    double radius = 0.02,
     this.fill = false,
     this.tone = PlayCanvasTone.foreground,
   }) : rect = Rect.fromLTWH(
@@ -78,9 +78,9 @@ final class PlayCanvasRect extends PlayCanvasElement {
 
 final class PlayCanvasCircle extends PlayCanvasElement {
   PlayCanvasCircle({
-    required this.center,
-    required this.radius,
-    this.strokeWidth = 0.008,
+    required Offset center,
+    required double radius,
+    double strokeWidth = 0.008,
     this.fill = false,
     this.tone = PlayCanvasTone.foreground,
   }) : center = Offset(
@@ -110,9 +110,9 @@ final class PlayCanvasCircle extends PlayCanvasElement {
 
 final class PlayCanvasLabel extends PlayCanvasElement {
   PlayCanvasLabel({
-    required this.position,
+    required Offset position,
     required String text,
-    this.scale = 0.08,
+    double scale = 0.08,
     this.tone = PlayCanvasTone.foreground,
     this.anchor = Alignment.center,
   }) : position = Offset(
@@ -144,6 +144,30 @@ final class PlayCanvasAsset {
     if (this.elements.isEmpty) {
       throw ArgumentError.value(elements, 'elements', 'must not be empty');
     }
+  }
+
+  factory PlayCanvasAsset.fromJson(Map<String, Object?> json) {
+    if (json['schemaVersion'] != 1) {
+      throw const FormatException('Unsupported canvas asset schemaVersion.');
+    }
+    final id = json['id'];
+    final rawElements = json['elements'];
+    if (id is! String || rawElements is! List || rawElements.isEmpty) {
+      throw const FormatException('Canvas asset requires id and elements.');
+    }
+
+    final semanticLabel = json['semanticLabel'];
+    if (semanticLabel != null && semanticLabel is! String) {
+      throw const FormatException('semanticLabel must be a string.');
+    }
+
+    return PlayCanvasAsset(
+      id: id,
+      semanticLabel: semanticLabel as String?,
+      elements: rawElements
+          .map((raw) => _canvasElementFromJson(_jsonMap(raw, 'elements[]')))
+          .toList(growable: false),
+    );
   }
 
   final String id;
@@ -243,11 +267,12 @@ final class PlayCanvas extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final content = CustomPaint(
-      painter: _PlayCanvasPainter(asset: asset, colorScheme: colorScheme),
-      size: Size.infinite,
-      isComplex: false,
-      willChange: false,
+    final content = SizedBox.expand(
+      child: CustomPaint(
+        painter: _PlayCanvasPainter(asset: asset, colorScheme: colorScheme),
+        isComplex: false,
+        willChange: false,
+      ),
     );
     final label = asset.semanticLabel;
     return RepaintBoundary(
@@ -382,3 +407,97 @@ final class _CanvasState extends StatelessWidget {
     ),
   );
 }
+
+PlayCanvasElement _canvasElementFromJson(Map<String, Object?> json) {
+  final type = json['type'];
+  if (type is! String) {
+    throw const FormatException('Canvas element type must be a string.');
+  }
+  final tone = _canvasTone(json['tone']);
+
+  return switch (type) {
+    'line' => PlayCanvasLine(
+      start: Offset(_number(json, 'x1'), _number(json, 'y1')),
+      end: Offset(_number(json, 'x2'), _number(json, 'y2')),
+      width: _number(json, 'width', fallback: 0.012),
+      cap: _strokeCap(json['cap']),
+      tone: tone,
+    ),
+    'rect' => PlayCanvasRect(
+      rect: Rect.fromLTWH(
+        _number(json, 'x'),
+        _number(json, 'y'),
+        _number(json, 'width'),
+        _number(json, 'height'),
+      ),
+      strokeWidth: _number(json, 'strokeWidth', fallback: 0.008),
+      radius: _number(json, 'radius', fallback: 0.02),
+      fill: _bool(json, 'fill', fallback: false),
+      tone: tone,
+    ),
+    'circle' => PlayCanvasCircle(
+      center: Offset(_number(json, 'x'), _number(json, 'y')),
+      radius: _number(json, 'radius'),
+      strokeWidth: _number(json, 'strokeWidth', fallback: 0.008),
+      fill: _bool(json, 'fill', fallback: false),
+      tone: tone,
+    ),
+    'label' => PlayCanvasLabel(
+      position: Offset(_number(json, 'x'), _number(json, 'y')),
+      text: _string(json, 'text'),
+      scale: _number(json, 'scale', fallback: 0.08),
+      tone: tone,
+    ),
+    _ => throw FormatException('Unsupported canvas element type: $type'),
+  };
+}
+
+Map<String, Object?> _jsonMap(Object? raw, String field) {
+  if (raw is! Map) throw FormatException('$field must be an object.');
+  return raw.map((key, value) => MapEntry(key.toString(), value));
+}
+
+double _number(
+  Map<String, Object?> json,
+  String key, {
+  double? fallback,
+}) {
+  final raw = json[key];
+  if (raw == null && fallback != null) return fallback;
+  if (raw is! num) throw FormatException('$key must be a number.');
+  return raw.toDouble();
+}
+
+String _string(Map<String, Object?> json, String key) {
+  final raw = json[key];
+  if (raw is! String || raw.trim().isEmpty) {
+    throw FormatException('$key must be a non-empty string.');
+  }
+  return raw.trim();
+}
+
+bool _bool(
+  Map<String, Object?> json,
+  String key, {
+  required bool fallback,
+}) {
+  final raw = json[key];
+  if (raw == null) return fallback;
+  if (raw is! bool) throw FormatException('$key must be a boolean.');
+  return raw;
+}
+
+PlayCanvasTone _canvasTone(Object? raw) => switch (raw) {
+  null || 'foreground' => PlayCanvasTone.foreground,
+  'muted' => PlayCanvasTone.muted,
+  'accent' => PlayCanvasTone.accent,
+  'surface' => PlayCanvasTone.surface,
+  _ => throw FormatException('Unsupported canvas tone: $raw'),
+};
+
+StrokeCap _strokeCap(Object? raw) => switch (raw) {
+  null || 'round' => StrokeCap.round,
+  'butt' => StrokeCap.butt,
+  'square' => StrokeCap.square,
+  _ => throw FormatException('Unsupported line cap: $raw'),
+};
