@@ -9,9 +9,11 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_soloud: ^4.1.7
   platform_contracts: ^0.1.0
   play_engine: ^0.1.0
   play_schema: ^0.1.0
+  video_player: ^2.14.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
