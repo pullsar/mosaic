@@ -100,10 +100,10 @@ class FakeTranscriptRepository {
   }
 }
 
-test('transcript plan contract preserves authored language while reducing whisper locale to primary subtag', () => {
+test('transcript plan contract preserves canonical planner language while reducing whisper locale to primary subtag', () => {
   assert.deepEqual(transcriptPlanContract(captionPlan('en-US')), {
     durationMs: 4_000,
-    language: 'en-US',
+    language: 'en-us',
     whisperLanguage: 'en',
   });
   assert.deepEqual(transcriptPlanContract(captionPlan('auto')), {
@@ -225,7 +225,7 @@ test('claimed transcript processing prepares mono PCM, invokes whisper, verifies
       published = true;
       assert.equal(request.verifiedOutput.mimeType, 'text/vtt');
       assert.match(request.storageKey, /\.vtt$/);
-      assert.equal(request.verifiedOutput.metadata?.language, 'en-US');
+      assert.equal(request.verifiedOutput.metadata?.language, 'en-us');
     },
     {
       ffmpegExecutable: '/usr/bin/ffmpeg',
