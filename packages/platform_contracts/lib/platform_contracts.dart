@@ -37,3 +37,184 @@ abstract interface class Telemetry {
   void error(Object error, StackTrace stackTrace, {String? operation});
   FutureOr<T> trace<T>(String operation, FutureOr<T> Function() body);
 }
+
+enum AppRuntimeState { resumed, inactive, paused, hidden, detached }
+
+enum MosaicPermission { camera, microphone, notifications }
+
+enum MosaicPermissionState {
+  granted,
+  denied,
+  restricted,
+  permanentlyDenied,
+  unsupported,
+}
+
+abstract interface class PermissionGateway {
+  Future<MosaicPermissionState> check(MosaicPermission permission);
+  Future<MosaicPermissionState> request(MosaicPermission permission);
+}
+
+/// User-initiated contexts that are allowed to request a platform permission.
+enum PermissionUseCase { cameraCapture, microphoneRecording, notificationOptIn }
+
+MosaicPermission permissionForUseCase(PermissionUseCase useCase) =>
+    switch (useCase) {
+      PermissionUseCase.cameraCapture => MosaicPermission.camera,
+      PermissionUseCase.microphoneRecording => MosaicPermission.microphone,
+      PermissionUseCase.notificationOptIn => MosaicPermission.notifications,
+    };
+
+/// Keeps permission requests contextual and deliberately exposes no eager
+/// request-all/startup API. Call [requestFromUserAction] only from the
+/// corresponding user gesture.
+final class ContextualPermissionService {
+  const ContextualPermissionService(this._gateway);
+
+  final PermissionGateway _gateway;
+
+  Future<MosaicPermissionState> check(PermissionUseCase useCase) =>
+      _gateway.check(permissionForUseCase(useCase));
+
+  Future<MosaicPermissionState> requestFromUserAction(
+    PermissionUseCase useCase,
+  ) => _gateway.request(permissionForUseCase(useCase));
+}
+
+enum PickedMediaKind { image, video }
+
+final class PickedMedia {
+  const PickedMedia({
+    required this.path,
+    required this.kind,
+    this.name,
+    this.mimeType,
+  });
+
+  final String path;
+  final PickedMediaKind kind;
+  final String? name;
+  final String? mimeType;
+}
+
+abstract interface class MediaPickerGateway {
+  Future<PickedMedia?> pickExistingImage();
+  Future<PickedMedia?> pickExistingVideo();
+  Future<List<PickedMedia>> recoverLostMedia();
+}
+
+/// A currently active native media resource owned by one visible Play.
+///
+/// [pause] and [release] must be safe to call more than once so lifecycle
+/// recovery can retry after a platform failure. Coordinated cleanup still
+/// attempts [release] when [pause] fails and preserves the first failure.
+abstract interface class ManagedMediaHandle {
+  Future<void> pause();
+  Future<void> release();
+}
+
+final class _SerializedOperations {
+  Future<void> _tail = Future<void>.value();
+
+  Future<T> run<T>(Future<T> Function() operation) {
+    final completer = Completer<T>();
+    _tail = _tail.then((_) async {
+      try {
+        completer.complete(await operation());
+      } catch (error, stackTrace) {
+        completer.completeError(error, stackTrace);
+      }
+    });
+    return completer.future;
+  }
+}
+
+/// Enforces the feed invariant that only one Play owns active native media.
+///
+/// All transitions are serialized. Rapid viewport/lifecycle changes cannot
+/// observe the same previous handle and accidentally leave a newer handle
+/// outside coordinator ownership.
+final class ActiveMediaCoordinator {
+  final _operations = _SerializedOperations();
+  String? _ownerId;
+  ManagedMediaHandle? _active;
+
+  String? get ownerId => _ownerId;
+  bool get hasActiveMedia => _active != null;
+
+  Future<void> activate(String ownerId, ManagedMediaHandle handle) =>
+      _operations.run(() async {
+        if (identical(_active, handle)) {
+          _ownerId = ownerId;
+          return;
+        }
+
+        final previous = _active;
+        if (previous != null) {
+          await _pauseAndRelease(previous);
+        }
+        _ownerId = ownerId;
+        _active = handle;
+      });
+
+  Future<void> suspend() => _operations.run(() async {
+    await _active?.pause();
+  });
+
+  /// Releases [ownerId] only when it still owns the active handle.
+  ///
+  /// Supplying [expectedHandle] protects asynchronous widget disposal from
+  /// releasing a replacement controller that has already taken over the same
+  /// semantic owner ID.
+  Future<void> release(String ownerId, {ManagedMediaHandle? expectedHandle}) =>
+      _operations.run(() async {
+        if (_ownerId != ownerId) return;
+        final current = _active;
+        if (expectedHandle != null && !identical(current, expectedHandle))
+          return;
+        if (current != null) {
+          await _pauseAndRelease(current);
+        }
+        _ownerId = null;
+        _active = null;
+      });
+
+  Future<void> releaseAll() => _operations.run(() async {
+    final current = _active;
+    if (current != null) {
+      await _pauseAndRelease(current);
+    }
+    _ownerId = null;
+    _active = null;
+  });
+
+  static Future<void> _pauseAndRelease(ManagedMediaHandle handle) async {
+    Object? firstError;
+    StackTrace? firstStackTrace;
+
+    try {
+      await handle.pause();
+    } catch (error, stackTrace) {
+      firstError = error;
+      firstStackTrace = stackTrace;
+    }
+
+    try {
+      await handle.release();
+    } catch (error, stackTrace) {
+      firstError ??= error;
+      firstStackTrace ??= stackTrace;
+    }
+
+    final error = firstError;
+    if (error != null) {
+      Error.throwWithStackTrace(error, firstStackTrace ?? StackTrace.current);
+    }
+  }
+}
+
+abstract final class MosaicSettingsRoute {
+  static const privacy = '/settings/privacy';
+  static const support = '/settings/support';
+  static const deleteAccount = '/settings/account/delete';
+}

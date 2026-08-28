@@ -1,12 +1,58 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:platform_contracts/platform_contracts.dart';
+import 'package:platform_flutter/platform_flutter.dart';
 import 'package:play_flutter/play_flutter.dart';
 import 'package:play_schema/play_schema.dart';
 
 void main() => runApp(const ProviderScope(child: MosaicApp()));
 
-final class MosaicApp extends StatelessWidget {
+final class MosaicApp extends StatefulWidget {
   const MosaicApp({super.key});
+
+  @override
+  State<MosaicApp> createState() => _MosaicAppState();
+}
+
+final class _MosaicAppState extends State<MosaicApp> {
+  final ActiveMediaCoordinator _mediaCoordinator = ActiveMediaCoordinator();
+  late final FlutterLifecycleBridge _lifecycle;
+
+  @override
+  void initState() {
+    super.initState();
+    _lifecycle = FlutterLifecycleBridge(
+      mediaCoordinator: _mediaCoordinator,
+      onError: _reportPlatformError,
+    );
+  }
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    unawaited(
+      _mediaCoordinator.releaseAll().catchError((
+        Object error,
+        StackTrace stackTrace,
+      ) {
+        _reportPlatformError(error, stackTrace);
+      }),
+    );
+    super.dispose();
+  }
+
+  void _reportPlatformError(Object error, StackTrace stackTrace) {
+    FlutterError.reportError(
+      FlutterErrorDetails(
+        exception: error,
+        stack: stackTrace,
+        library: 'mosaic_app',
+        context: ErrorDescription('while releasing platform media'),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) => MaterialApp(
@@ -25,10 +71,29 @@ final class MosaicApp extends StatelessWidget {
       brightness: Brightness.light,
       colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF262626)),
     ),
+    routes: {
+      MosaicSettingsRoute.privacy: (_) =>
+          const _ReservedSettingsPage('Privacy'),
+      MosaicSettingsRoute.support: (_) =>
+          const _ReservedSettingsPage('Support'),
+      MosaicSettingsRoute.deleteAccount: (_) =>
+          const _ReservedSettingsPage('Delete account'),
+    },
     home: PlaySurface(
       play: _demoPlay,
       mediaBuilder: (context, layer) => const _VisualPlaceholder(),
     ),
+  );
+}
+
+final class _ReservedSettingsPage extends StatelessWidget {
+  const _ReservedSettingsPage(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    body: SafeArea(child: Center(child: Text(label))),
   );
 }
 

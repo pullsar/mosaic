@@ -11,6 +11,8 @@ dependencies:
     sdk: flutter
   flutter_riverpod: ^3.4.2
   go_router: ^18.0.0
+  platform_contracts: ^0.1.0
+  platform_flutter: ^0.1.0
   play_flutter: ^0.1.0
   play_schema: ^0.1.0
   sentry_flutter: ^9.28.0

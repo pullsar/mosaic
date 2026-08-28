@@ -1,0 +1,170 @@
+name: platform-ci
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'apps/mosaic_app/**'
+      - 'packages/platform_contracts/**'
+      - 'packages/platform_flutter/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - '.github/workflows/platform-ci.yml'
+  pull_request:
+    paths:
+      - 'apps/mosaic_app/**'
+      - 'packages/platform_contracts/**'
+      - 'packages/platform_flutter/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - '.github/workflows/platform-ci.yml'
+
+concurrency:
+  group: platform-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  android-web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.44.7'
+          cache: true
+      - name: Resolve locked workspace
+        run: flutter pub get --enforce-lockfile
+      - name: Verify formatting
+        run: dart format --output=none --set-exit-if-changed .
+      - name: Analyze
+        run: flutter analyze
+      - name: Test platform contracts
+        working-directory: packages/platform_contracts
+        run: dart test
+      - name: Test Flutter platform adapters
+        working-directory: packages/platform_flutter
+        run: flutter test
+      - name: Test app shell
+        working-directory: apps/mosaic_app
+        run: flutter test
+      - name: Verify platform declarations and localized purpose copy
+        run: |
+          python3 - <<'PY'
+          import plistlib
+          import re
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          info_path = Path('apps/mosaic_app/ios/Runner/Info.plist')
+          privacy_path = Path('apps/mosaic_app/ios/Runner/PrivacyInfo.xcprivacy')
+          with info_path.open('rb') as handle:
+              info = plistlib.load(handle)
+          with privacy_path.open('rb') as handle:
+              plistlib.load(handle)
+
+          for forbidden in (
+              'NSLocationAlwaysAndWhenInUseUsageDescription',
+              'NSLocationAlwaysUsageDescription',
+              'NSLocationWhenInUseUsageDescription',
+          ):
+              if forbidden in info:
+                  raise SystemExit(f'Unexpected v1 location purpose: {forbidden}')
+
+          required_ios = {
+              'NSCameraUsageDescription',
+              'NSMicrophoneUsageDescription',
+              'NSPhotoLibraryUsageDescription',
+          }
+
+          def parse_strings(path: str) -> dict[str, str]:
+              text = Path(path).read_text(encoding='utf-8')
+              pairs = dict(
+                  re.findall(
+                      r'^\s*"([^"]+)"\s*=\s*"([^"]+)";\s*$',
+                      text,
+                      flags=re.MULTILINE,
+                  )
+              )
+              missing = required_ios - pairs.keys()
+              if missing:
+                  raise SystemExit(f'{path} missing {sorted(missing)}')
+              return pairs
+
+          ios_en = parse_strings(
+              'apps/mosaic_app/ios/Runner/en.lproj/InfoPlist.strings'
+          )
+          ios_es = parse_strings(
+              'apps/mosaic_app/ios/Runner/es.lproj/InfoPlist.strings'
+          )
+          if any(ios_en[key] == ios_es[key] for key in required_ios):
+              raise SystemExit('iOS purpose copy was not localized')
+
+          required_android = {
+              'app_name',
+              'permission_camera_purpose',
+              'permission_microphone_purpose',
+              'permission_notifications_purpose',
+          }
+
+          def parse_android(path: str) -> dict[str, str]:
+              root = ET.parse(path).getroot()
+              values = {
+                  node.attrib['name']: (node.text or '').strip()
+                  for node in root.findall('string')
+              }
+              missing = required_android - values.keys()
+              if missing or any(not values[key] for key in required_android):
+                  raise SystemExit(f'{path} has incomplete purpose copy')
+              return values
+
+          android_en = parse_android(
+              'apps/mosaic_app/android/app/src/main/res/values/strings.xml'
+          )
+          android_es = parse_android(
+              'apps/mosaic_app/android/app/src/main/res/values-es/strings.xml'
+          )
+          purpose_keys = required_android - {'app_name'}
+          if any(android_en[key] == android_es[key] for key in purpose_keys):
+              raise SystemExit('Android purpose copy was not localized')
+          PY
+          manifest=apps/mosaic_app/android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.CAMERA' "$manifest"
+          grep -q 'android.permission.RECORD_AUDIO' "$manifest"
+          grep -q 'android.permission.POST_NOTIFICATIONS' "$manifest"
+          grep -q 'android:label="@string/app_name"' "$manifest"
+          if grep -Eq 'READ_MEDIA_IMAGES|READ_MEDIA_VIDEO|READ_EXTERNAL_STORAGE|ACCESS_FINE_LOCATION|ACCESS_COARSE_LOCATION' "$manifest"; then
+            echo 'Unexpected broad media/location permission'
+            exit 1
+          fi
+          project=apps/mosaic_app/ios/Runner.xcodeproj/project.pbxproj
+          grep -q 'PrivacyInfo.xcprivacy in Resources' "$project"
+          grep -q 'InfoPlist.strings in Resources' "$project"
+      - name: Build web host
+        working-directory: apps/mosaic_app
+        run: flutter build web --release
+      - name: Build Android host
+        working-directory: apps/mosaic_app
+        run: flutter build apk --debug
+
+  ios:
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.44.7'
+          cache: true
+      - name: Resolve locked workspace
+        run: flutter pub get --enforce-lockfile
+      - name: Build iOS simulator host
+        working-directory: apps/mosaic_app
+        run: flutter build ios --simulator --no-codesign
