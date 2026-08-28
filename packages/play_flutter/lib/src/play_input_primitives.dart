@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -309,9 +311,24 @@ final class _PlayDragInputState extends State<PlayDragInput> {
   void didUpdateWidget(covariant PlayDragInput oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.spec, widget.spec)) {
+      _endInterruptedManipulation(oldWidget.onManipulationChanged);
       _position = widget.spec.origin;
       _activePointer = null;
-      _setDragging(false, notify: false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _activePointer = null;
+    _endInterruptedManipulation(widget.onManipulationChanged);
+    super.dispose();
+  }
+
+  void _endInterruptedManipulation(ValueChanged<bool>? callback) {
+    if (!_dragging) return;
+    _dragging = false;
+    if (callback != null) {
+      scheduleMicrotask(() => callback(false));
     }
   }
 
