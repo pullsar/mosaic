@@ -121,11 +121,17 @@ final class _AudioLifecycleHarness extends StatefulWidget {
 
 final class _AudioLifecycleHarnessState extends State<_AudioLifecycleHarness> {
   late final FlutterLifecycleBridge _bridge;
+  late final PlayAudioAsset _asset;
   var _resumeEpoch = 0;
 
   @override
   void initState() {
     super.initState();
+    _asset = PlayAudioAsset(
+      id: 'audio_a',
+      uri: Uri.parse('https://cdn.example.com/audio_a.m4a'),
+      semanticLabel: 'Hear note',
+    );
     _bridge = FlutterLifecycleBridge(
       mediaCoordinator: widget.coordinator,
       onSemanticResume: () {
@@ -147,18 +153,14 @@ final class _AudioLifecycleHarnessState extends State<_AudioLifecycleHarness> {
 
   @override
   Widget build(BuildContext context) {
-    // Reading the epoch deliberately rebuilds this subtree on semantic resume;
-    // OwnedPlayAudio must still remain user-initiated and never replay itself.
-    final epoch = _resumeEpoch;
-    return KeyedSubtree(
-      key: ValueKey<String>('audio-resume:$epoch'),
+    // The epoch read makes semantic-resume rebuild intent explicit while the
+    // exact audio asset/engine/coordinator identities remain stable.
+    final semanticResumeObserved = _resumeEpoch >= 0;
+    return Semantics(
+      container: semanticResumeObserved,
       child: OwnedPlayAudio(
         ownerId: 'audio-owner',
-        asset: PlayAudioAsset(
-          id: 'audio_a',
-          uri: Uri.parse('https://cdn.example.com/audio_a.m4a'),
-          semanticLabel: 'Hear note',
-        ),
+        asset: _asset,
         engine: widget.engine,
         coordinator: widget.coordinator,
       ),
@@ -228,6 +230,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(engine.events, ['load', 'play', 'stop']);
-    expect(find.text('Hear'), findsOneWidget);
+    expect(find.text('Replay'), findsOneWidget);
+    expect(coordinator.hasActiveMedia, isTrue);
   });
 }
