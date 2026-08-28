@@ -20,6 +20,11 @@ final class SequenceAction extends PlayAction {
   final List<String> values;
 }
 
+final class DragAction extends PlayAction {
+  const DragAction(this.targetId);
+  final String targetId;
+}
+
 final class PlaySession {
   const PlaySession({
     required this.play,
@@ -114,6 +119,10 @@ final class PlayEngine {
             )
             ? const _Evaluation(outcome: 'correct', wasCorrect: true)
             : const _Evaluation(outcome: 'incorrect', wasCorrect: false),
+      PlayValidatorType.targetRegion =>
+        value == validation.value
+            ? const _Evaluation(outcome: 'correct', wasCorrect: true)
+            : const _Evaluation(outcome: 'incorrect', wasCorrect: false),
       _ => throw UnsupportedError(
         'Validator ${validation.type.name} is not executable in M0.',
       ),
@@ -124,6 +133,7 @@ final class PlayEngine {
     TapAction() => null,
     ChoiceAction(:final optionId) => optionId,
     SequenceAction(:final values) => values,
+    DragAction(:final targetId) => targetId,
   };
 
   void _assertCompatible(PlayInputType input, PlayAction action) {
@@ -132,6 +142,7 @@ final class PlayEngine {
       PlayInputType.singleChoice => action is ChoiceAction,
       PlayInputType.multipleChoice || PlayInputType.pianoKey =>
         action is SequenceAction || action is ChoiceAction,
+      PlayInputType.drag => action is DragAction,
       _ => true,
     };
     if (!compatible) {
