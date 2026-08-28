@@ -9,6 +9,7 @@ abstract final class MosaicEventName {
   static const playSaved = 'play_saved';
   static const playShared = 'play_shared';
   static const moreLikeThis = 'more_like_this';
+  static const mediaPlayback = 'media_playback';
 }
 
 final class MosaicEventEnvelope {
