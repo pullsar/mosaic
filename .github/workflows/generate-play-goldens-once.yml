@@ -1,0 +1,58 @@
+name: generate-play-goldens-once
+
+on:
+  push:
+    branches:
+      - agent/m06-golden-perf-20260828
+
+permissions:
+  contents: write
+
+jobs:
+  goldens:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/m06-golden-perf-20260828
+      - name: Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.44.7'
+          cache: true
+      - name: Resolve locked workspace
+        run: flutter pub get --enforce-lockfile
+      - name: Add focused golden harness
+        run: python3 .github/scripts/add_play_surface_goldens.py
+      - name: Canonical format
+        run: dart format packages/play_flutter/test/play_surface_golden_test.dart
+      - name: Analyze
+        run: flutter analyze
+      - name: Generate pinned Linux baselines
+        working-directory: packages/play_flutter
+        run: flutter test test/play_surface_golden_test.dart --update-goldens
+      - name: Verify generated baselines
+        working-directory: packages/play_flutter
+        run: flutter test test/play_surface_golden_test.dart
+      - name: Run complete renderer suite
+        working-directory: packages/play_flutter
+        run: flutter test
+      - name: Verify baseline inventory
+        run: |
+          test "$(find packages/play_flutter/test/goldens -maxdepth 1 -type f -name '*.png' | wc -l)" -eq 5
+          test -s packages/play_flutter/test/goldens/four_day_getaway_320x640.png
+          test -s packages/play_flutter/test/goldens/which_century_dark_390x844.png
+          test -s packages/play_flutter/test/goldens/play_it_back_large_text_390x844.png
+          test -s packages/play_flutter/test/goldens/move_one_match_reduced_motion_320x640.png
+          test -s packages/play_flutter/test/goldens/four_day_getaway_reveal_320x640.png
+      - name: Remove one-shot orchestration
+        run: git rm .github/workflows/generate-play-goldens-once.yml .github/scripts/add_play_surface_goldens.py
+      - name: Commit validated goldens
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add packages/play_flutter/test/play_surface_golden_test.dart packages/play_flutter/test/goldens
+          git commit -m "test(renderer): add focused deterministic Play goldens"
+          git push origin HEAD:agent/m06-golden-perf-20260828
