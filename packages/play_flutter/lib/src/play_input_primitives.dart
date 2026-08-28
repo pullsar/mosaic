@@ -173,8 +173,18 @@ final class _PianoKey extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final sharp = note.contains('#') || note.contains('♯');
-    final background = sharp ? colorScheme.onSurface : colorScheme.surface;
-    final foreground = sharp ? colorScheme.surface : colorScheme.onSurface;
+    final baseBackground = sharp
+        ? colorScheme.onSurface
+        : colorScheme.surface;
+    final baseForeground = sharp
+        ? colorScheme.surface
+        : colorScheme.onSurface;
+    final background = selected
+        ? colorScheme.primaryContainer
+        : baseBackground;
+    final foreground = selected
+        ? colorScheme.onPrimaryContainer
+        : baseForeground;
     final display = _displayNote(note);
 
     return Padding(
@@ -183,7 +193,7 @@ final class _PianoKey extends StatelessWidget {
         button: true,
         label: note,
         child: Material(
-          color: selected ? colorScheme.primaryContainer : background,
+          color: background,
           shape: RoundedRectangleBorder(
             side: BorderSide(color: colorScheme.outlineVariant),
             borderRadius: const BorderRadius.vertical(
@@ -329,8 +339,12 @@ final class _PlayDragInputState extends State<PlayDragInput> {
     final maxY = 1 - widget.spec.size.height;
     setState(() {
       _position = Offset(
-        (_position.dx + details.delta.dx / bounds.width).clamp(0.0, maxX),
-        (_position.dy + details.delta.dy / bounds.height).clamp(0.0, maxY),
+        (_position.dx + details.delta.dx / bounds.width)
+            .clamp(0.0, maxX)
+            .toDouble(),
+        (_position.dy + details.delta.dy / bounds.height)
+            .clamp(0.0, maxY)
+            .toDouble(),
       );
     });
   }
@@ -359,12 +373,6 @@ final class _PlayDragInputState extends State<PlayDragInput> {
   void _cancel() {
     _setDragging(false);
     setState(() => _position = widget.spec.origin);
-  }
-
-  @override
-  void dispose() {
-    if (_dragging) widget.onManipulationChanged?.call(false);
-    super.dispose();
   }
 
   @override
