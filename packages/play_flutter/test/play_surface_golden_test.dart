@@ -1,10 +1,4 @@
-from pathlib import Path
-
-path = Path('packages/play_flutter/test/play_surface_golden_test.dart')
-if path.exists():
-    raise SystemExit('golden test already exists')
-
-path.write_text(r'''import 'dart:convert';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -173,7 +167,9 @@ void main() {
     );
   });
 
-  testWidgets('audio and piano controls tolerate enlarged text', (tester) async {
+  testWidgets('audio and piano controls tolerate enlarged text', (
+    tester,
+  ) async {
     final play = _playFixture('play_it_back.json');
     final audio = _audioFixture('audio_ceg.json');
 
@@ -237,4 +233,3 @@ void main() {
     );
   });
 }
-''')
