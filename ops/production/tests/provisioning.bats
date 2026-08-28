@@ -69,10 +69,19 @@ run_ip_refresh() {
 @test "production firewall covers Docker-published ports through DOCKER-USER" {
   script="$REPO_ROOT/ops/production/bin/update-cloudflare-ips.sh"
   grep -Fq 'DOCKER-USER' "$script"
+  grep -Fq -- '-i "$interface" -j MIXLI-CLOUDFLARE' "$script"
   grep -Fq -- '--dports 80,443' "$script"
   grep -Fq 'mixli_cloudflare_v4' "$script"
   grep -Fq 'mixli_cloudflare_v6' "$script"
   grep -Fq -- '-j REJECT' "$script"
+}
+
+@test "Cloudflare Docker policy does not intercept container egress" {
+  script="$REPO_ROOT/ops/production/bin/update-cloudflare-ips.sh"
+  grep -Fq "ip -4 route show default" "$script"
+  grep -Fq "ip -6 route show default" "$script"
+  grep -Fq -- '-D DOCKER-USER -j MIXLI-CLOUDFLARE' "$script"
+  ! grep -Fq -- '-I DOCKER-USER 1 -j MIXLI-CLOUDFLARE' "$script"
 }
 
 @test "host input policy is default deny while preserving key SSH" {

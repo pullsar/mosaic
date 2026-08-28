@@ -183,10 +183,15 @@ check_backup_wal() {
 }
 
 check_firewall() {
+  local interface_v4 interface_v6
+  interface_v4="$(ip -4 route show default | awk '$1 == "default" {print $5; exit}')"
+  interface_v6="$(ip -6 route show default | awk '$1 == "default" {print $5; exit}')"
+  [[ -n "$interface_v4" ]]
+  [[ -n "$interface_v6" ]] || interface_v6="$interface_v4"
   nft list table inet mixli_host_filter | grep -Fq 'policy drop'
   nft list table inet mixli_host_filter | grep -Eq 'tcp dport 22.*accept'
-  iptables -C DOCKER-USER -j MIXLI-CLOUDFLARE
-  ip6tables -C DOCKER-USER -j MIXLI-CLOUDFLARE
+  iptables -C DOCKER-USER -i "$interface_v4" -j MIXLI-CLOUDFLARE
+  ip6tables -C DOCKER-USER -i "$interface_v6" -j MIXLI-CLOUDFLARE
   iptables -S MIXLI-CLOUDFLARE | grep -Fq -- '--dports 80,443'
   ip6tables -S MIXLI-CLOUDFLARE | grep -Fq -- '--dports 80,443'
   ipset list mixli_cloudflare_v4 | grep -Eq '^Number of entries: [1-9][0-9]*$'

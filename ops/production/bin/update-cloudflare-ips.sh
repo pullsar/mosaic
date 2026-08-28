@@ -59,7 +59,8 @@ render_contract() {
 }
 
 ensure_filter_chain() {
-  local command="$1" set_name="$2"
+  local command="$1" set_name="$2" interface="$3"
+  [[ "$interface" =~ ^[A-Za-z0-9_.:-]+$ ]]
   "$command" -N MIXLI-CLOUDFLARE 2>/dev/null || true
   "$command" -F MIXLI-CLOUDFLARE
   "$command" -A MIXLI-CLOUDFLARE -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
@@ -67,12 +68,15 @@ ensure_filter_chain() {
     -m set --match-set "$set_name" src -j RETURN
   "$command" -A MIXLI-CLOUDFLARE -p tcp -m multiport --dports 80,443 -j REJECT
   "$command" -A MIXLI-CLOUDFLARE -j RETURN
-  "$command" -C DOCKER-USER -j MIXLI-CLOUDFLARE 2>/dev/null || \
-    "$command" -I DOCKER-USER 1 -j MIXLI-CLOUDFLARE
+  # Restrict only traffic entering from the public interface. An unconditional
+  # DOCKER-USER jump also matches container egress to destination ports 80/443.
+  "$command" -D DOCKER-USER -j MIXLI-CLOUDFLARE 2>/dev/null || true
+  "$command" -C DOCKER-USER -i "$interface" -j MIXLI-CLOUDFLARE 2>/dev/null || \
+    "$command" -I DOCKER-USER 1 -i "$interface" -j MIXLI-CLOUDFLARE
 }
 
 install_sets() {
-  local v4="$1" v6="$2" cidr
+  local v4="$1" v6="$2" cidr interface_v4 interface_v6
   ipset create mixli_cf4_next hash:net family inet maxelem 256
   while IFS= read -r cidr; do ipset add mixli_cf4_next "$cidr"; done <"$v4"
   ipset create mixli_cf6_next hash:net family inet6 maxelem 256
@@ -84,8 +88,12 @@ install_sets() {
   ipset swap mixli_cf6_next mixli_cloudflare_v6
   ipset destroy mixli_cf4_next
   ipset destroy mixli_cf6_next
-  ensure_filter_chain iptables mixli_cloudflare_v4
-  ensure_filter_chain ip6tables mixli_cloudflare_v6
+  interface_v4="$(ip -4 route show default | awk '$1 == "default" {print $5; exit}')"
+  interface_v6="$(ip -6 route show default | awk '$1 == "default" {print $5; exit}')"
+  [[ -n "$interface_v4" ]]
+  [[ -n "$interface_v6" ]] || interface_v6="$interface_v4"
+  ensure_filter_chain iptables mixli_cloudflare_v4 "$interface_v4"
+  ensure_filter_chain ip6tables mixli_cloudflare_v6 "$interface_v6"
 }
 
 main() {
