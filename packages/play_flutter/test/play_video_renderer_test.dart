@@ -182,17 +182,18 @@ void main() {
     expect(find.byType(PlayVideoUnavailable), findsOneWidget);
   });
 
-  testWidgets('unmuted video may initialize when autoplay is disabled', (
+  testWidgets('manual unmuted video stays idle across semantic resume', (
     tester,
   ) async {
     final coordinator = ActiveMediaCoordinator();
     final controller = _FakeVideoController('manual');
+    final asset = _asset('video_a', autoplay: false, muted: false);
 
     await tester.pumpWidget(
       MaterialApp(
         home: OwnedPlayVideo(
           ownerId: 'play_a',
-          asset: _asset('video_a', autoplay: false, muted: false),
+          asset: asset,
           coordinator: coordinator,
           controllerFactory: (_) => controller,
         ),
@@ -204,6 +205,24 @@ void main() {
     expect(controller.playCount, 0);
     expect(coordinator.owns('play_a', controller), isTrue);
     expect(find.text('view:manual'), findsOneWidget);
+
+    await coordinator.suspend();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: OwnedPlayVideo(
+          ownerId: 'play_a',
+          asset: asset,
+          coordinator: coordinator,
+          controllerFactory: (_) => controller,
+          semanticResumeEpoch: 1,
+        ),
+      ),
+    );
+    await _settleOwnership(tester);
+
+    expect(controller.pauseCount, 1);
+    expect(controller.playCount, 0);
+    expect(coordinator.owns('play_a', controller), isTrue);
   });
 
   testWidgets(
@@ -231,6 +250,45 @@ void main() {
       expect(coordinator.owns('play_a', controller), isTrue);
     },
   );
+
+  testWidgets('semantic resume restarts a previously playing exact controller', (
+    tester,
+  ) async {
+    final coordinator = ActiveMediaCoordinator();
+    final controller = _FakeVideoController('active');
+    final asset = _asset('video_a');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: OwnedPlayVideo(
+          ownerId: 'play_a',
+          asset: asset,
+          coordinator: coordinator,
+          controllerFactory: (_) => controller,
+        ),
+      ),
+    );
+    await _settleOwnership(tester);
+    expect(controller.playCount, 1);
+
+    await coordinator.suspend();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: OwnedPlayVideo(
+          ownerId: 'play_a',
+          asset: asset,
+          coordinator: coordinator,
+          controllerFactory: (_) => controller,
+          semanticResumeEpoch: 1,
+        ),
+      ),
+    );
+    await _settleOwnership(tester);
+
+    expect(controller.pauseCount, 1);
+    expect(controller.playCount, 2);
+    expect(coordinator.owns('play_a', controller), isTrue);
+  });
 
   testWidgets('becoming inactive releases the exact controller', (
     tester,
@@ -327,12 +385,13 @@ void main() {
   ) async {
     final coordinator = ActiveMediaCoordinator();
     final stale = _FakeVideoController('stale');
+    final asset = _asset('video_a');
 
     await tester.pumpWidget(
       MaterialApp(
         home: OwnedPlayVideo(
           ownerId: 'play_a',
-          asset: _asset('video_a'),
+          asset: asset,
           coordinator: coordinator,
           controllerFactory: (_) => stale,
         ),
@@ -350,7 +409,7 @@ void main() {
       MaterialApp(
         home: OwnedPlayVideo(
           ownerId: 'play_a',
-          asset: _asset('video_a'),
+          asset: asset,
           coordinator: coordinator,
           controllerFactory: (_) => stale,
           semanticResumeEpoch: 1,
