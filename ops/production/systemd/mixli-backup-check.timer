@@ -1,0 +1,11 @@
+[Unit]
+Description=Schedule Mixli pgBackRest repository checks
+
+[Timer]
+OnCalendar=*-*-* 00/6:00:00 Africa/Lagos
+Persistent=true
+RandomizedDelaySec=10m
+Unit=mixli-backup-check.service
+
+[Install]
+WantedBy=timers.target

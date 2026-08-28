@@ -1,0 +1,11 @@
+[Unit]
+Description=Schedule Mixli daily incremental PostgreSQL backup
+
+[Timer]
+OnCalendar=*-*-* 02:15:00 Africa/Lagos
+Persistent=true
+RandomizedDelaySec=10m
+Unit=mixli-backup-incr.service
+
+[Install]
+WantedBy=timers.target

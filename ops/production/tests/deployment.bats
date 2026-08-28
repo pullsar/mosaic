@@ -28,6 +28,7 @@ deploy() {
     MIXLI_ROOT="$TEST_ROOT" \
     MIXLI_REPO="$TEST_ROOT/repo" \
     MIXLI_LOCK_FILE="$TEST_ROOT/locks/deploy.lock" \
+    MIXLI_BACKUP_LOCK_FILE="$TEST_ROOT/locks/backup.lock" \
     MIXLI_TEST_SHA_ALLOWED="${MIXLI_TEST_SHA_ALLOWED:-1}" \
     MIXLI_TEST_FAIL_STAGE="${MIXLI_TEST_FAIL_STAGE:-}" \
     MIXLI_DRAIN_SECONDS=0 \
@@ -73,6 +74,15 @@ deploy() {
   [ "$status" -ne 0 ]
   [ "$(cat "$TEST_ROOT/runtime/api-upstream.conf")" = 'old-upstream' ]
   [ "$(readlink "$TEST_ROOT/current")" = "$TEST_ROOT/releases/$OLD_SHA" ]
+}
+
+@test "pre-migration backup cannot overlap a scheduled backup" {
+  exec 7>"$TEST_ROOT/locks/backup.lock"
+  flock -n 7
+  run deploy "$SHA"
+  exec 7>&-
+  [ "$status" -eq 75 ]
+  [ "$(cat "$TEST_ROOT/runtime/api-upstream.conf")" = 'old-upstream' ]
 }
 
 @test "readiness failure never switches API or web" {

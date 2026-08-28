@@ -7,6 +7,7 @@ readonly TEST_MODE="${MIXLI_DEPLOY_TEST_MODE:-0}"
 readonly ROOT="${MIXLI_ROOT:-/srv/mixli}"
 readonly REPO="${MIXLI_REPO:-/opt/mixli/repo}"
 readonly LOCK_FILE="${MIXLI_LOCK_FILE:-/run/lock/mixli-deploy.lock}"
+readonly BACKUP_LOCK_FILE="${MIXLI_BACKUP_LOCK_FILE:-/run/lock/mixli-backup.lock}"
 readonly COMPOSE_FILE="${MIXLI_COMPOSE_FILE:-/opt/mixli/repo/ops/production/compose.yaml}"
 readonly ENV_FILE="${MIXLI_ENV_FILE:-/etc/mixli/production.env}"
 readonly RELEASES="$ROOT/releases"
@@ -157,9 +158,13 @@ build_release() {
 }
 
 backup_and_migrate() {
+  exec 7>"$BACKUP_LOCK_FILE"
+  flock -n 7 || return 75
   fail_if_requested migration
   [[ "$TEST_MODE" == '1' ]] && {
     log_event "migrated:$SHA"
+    flock -u 7
+    exec 7>&-
     return 0
   }
   compose exec -T --user postgres postgres pgbackrest --stanza=mixli check
@@ -170,6 +175,8 @@ backup_and_migrate() {
   else
     MIXLI_API_GREEN_IMAGE="mixli-api:$SHA" compose run --rm --no-deps api-green-1 node dist/db/migrate.js up
   fi
+  flock -u 7
+  exec 7>&-
   log_event "migrated:$SHA"
 }
 
@@ -269,7 +276,7 @@ main() {
   local current_sha current_pool
   validate_sha
   validate_root || exit 64
-  install -d -m 0750 "$(dirname "$LOCK_FILE")" "$RELEASES" "$RUNTIME" "$STATE" "$LOG_DIR"
+  install -d -m 0750 "$(dirname "$LOCK_FILE")" "$(dirname "$BACKUP_LOCK_FILE")" "$RELEASES" "$RUNTIME" "$STATE" "$LOG_DIR"
   if [[ "$TEST_MODE" == '1' ]]; then
     install -d -m 0750 "$BUILDS"
   else
