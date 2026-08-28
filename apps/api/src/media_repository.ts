@@ -272,7 +272,7 @@ export class PostgresMediaRepository {
     assetId: string,
     derivativeKey: string,
     leaseMs = DEFAULT_LEASE_MS,
-    claimToken = randomUUID(),
+    claimToken: string = randomUUID(),
   ): Promise<MediaDerivativeClaim | null> {
     const id = requiredText(assetId, 'assetId');
     const key = requiredText(derivativeKey, 'derivativeKey');
