@@ -107,7 +107,7 @@ void main() {
       },
     });
     final media = PlayMediaLayerBuilder(
-      ownerId: play.revisionId,
+      ownerId: playMediaOwnerId(play),
       visualResolver: MapPlayVisualAssetResolver(const {}),
       videoResolver: MapPlayVideoAssetResolver(const {}),
       mediaCoordinator: ActiveMediaCoordinator(),
@@ -158,7 +158,7 @@ void main() {
     final solved = _canvasFixture('puzzle_match_01_solved.json');
     final manipulation = <bool>[];
     final media = PlayMediaLayerBuilder(
-      ownerId: play.revisionId,
+      ownerId: playMediaOwnerId(play),
       visualResolver: MapPlayVisualAssetResolver(const {}),
       videoResolver: MapPlayVideoAssetResolver(const {}),
       canvasResolver: MapPlayCanvasAssetResolver({
