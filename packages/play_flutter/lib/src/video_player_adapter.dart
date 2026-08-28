@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
@@ -80,16 +81,31 @@ VideoPlayerController _controllerFor(PlayVideoSource source) {
 
   return switch (source) {
     NetworkPlayVideoSource(:final uri, :final headers) =>
-      VideoPlayerController.networkUrl(
-        uri,
-        httpHeaders: headers ?? const <String, String>{},
-        videoPlayerOptions: options,
-      ),
+      _networkController(uri, headers, options),
     BundlePlayVideoSource(:final assetName) => VideoPlayerController.asset(
       assetName,
       videoPlayerOptions: options,
     ),
   };
+}
+
+VideoPlayerController _networkController(
+  Uri uri,
+  Map<String, String>? headers,
+  VideoPlayerOptions options,
+) {
+  if (kIsWeb && headers != null && headers.isNotEmpty) {
+    throw UnsupportedError(
+      'Authenticated video headers are not supported by video_player_web. '
+      'Use a signed or cookie-compatible HTTPS media URL on web.',
+    );
+  }
+
+  return VideoPlayerController.networkUrl(
+    uri,
+    httpHeaders: headers ?? const <String, String>{},
+    videoPlayerOptions: options,
+  );
 }
 
 final class _CoverVideoPlayer extends StatelessWidget {
