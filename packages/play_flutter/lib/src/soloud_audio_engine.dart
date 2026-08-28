@@ -16,12 +16,14 @@ final class SoLoudAudioEngine implements AudioEngine {
   static const int _sampleRate = 44100;
   static const int _bufferSize = 1024;
 
-  final SoLoud _soloud = SoLoud.instance;
+  SoLoud? _backend;
   final Map<String, AudioSource> _sources = <String, AudioSource>{};
   final Map<String, Uri> _sourceUris = <String, Uri>{};
   final Map<String, Future<AudioSource>> _pendingLoads =
       <String, Future<AudioSource>>{};
   Future<void>? _initialization;
+
+  SoLoud get _soloud => _backend ??= SoLoud.instance;
 
   @override
   Future<void> load(String assetId, Uri uri) async {
@@ -145,21 +147,24 @@ final class SoLoudAudioEngine implements AudioEngine {
       }
     }
 
-    if (_soloud.isInitialized) {
-      await _soloud.deinitAsync();
+    final backend = _backend;
+    if (backend != null && backend.isInitialized) {
+      await backend.deinitAsync();
     }
     _sources.clear();
     _sourceUris.clear();
     _pendingLoads.clear();
     _initialization = null;
+    _backend = null;
   }
 
   Future<void> _ensureInitialized() {
-    if (_soloud.isInitialized) return Future<void>.value();
+    final backend = _soloud;
+    if (backend.isInitialized) return Future<void>.value();
     final pending = _initialization;
     if (pending != null) return pending;
 
-    final initializing = _soloud.init(
+    final initializing = backend.init(
       automaticCleanup: false,
       sampleRate: _sampleRate,
       bufferSize: _bufferSize,
