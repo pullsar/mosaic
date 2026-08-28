@@ -9,7 +9,10 @@ setup() {
   OLD_SHA="1111111111111111111111111111111111111111"
   PREVIOUS_SHA="2222222222222222222222222222222222222222"
   mkdir -p "$TEST_ROOT/releases/$OLD_SHA/web" "$TEST_ROOT/releases/$PREVIOUS_SHA/web" \
-    "$TEST_ROOT/runtime" "$TEST_ROOT/state" "$TEST_ROOT/log" "$TEST_ROOT/locks" "$TEST_ROOT/repo"
+    "$TEST_ROOT/runtime" "$TEST_ROOT/state" "$TEST_ROOT/log" "$TEST_ROOT/locks" "$TEST_ROOT/repo" \
+    "$TEST_ROOT/builds/$SHA/ops/production"
+  printf 'compose:%s\n' "$SHA" >"$TEST_ROOT/builds/$SHA/ops/production/compose.yaml"
+  printf 'compose:%s\n' "$OLD_SHA" >"$TEST_ROOT/runtime/compose.yaml"
   cat >"$TEST_ROOT/production.env" <<EOF
 MIXLI_API_BLUE_IMAGE=mixli-api:$OLD_SHA
 MIXLI_API_GREEN_IMAGE=mixli-api:$PREVIOUS_SHA
@@ -35,6 +38,7 @@ deploy() {
     MIXLI_REPO="$TEST_ROOT/repo" \
     MIXLI_LOCK_FILE="$TEST_ROOT/locks/deploy.lock" \
     MIXLI_BACKUP_LOCK_FILE="$TEST_ROOT/locks/backup.lock" \
+    MIXLI_COMPOSE_FILE="$TEST_ROOT/runtime/compose.yaml" \
     MIXLI_ENV_FILE="$TEST_ROOT/production.env" \
     MIXLI_TEST_SHA_ALLOWED="${MIXLI_TEST_SHA_ALLOWED:-1}" \
     MIXLI_TEST_FAIL_STAGE="${MIXLI_TEST_FAIL_STAGE:-}" \
@@ -99,6 +103,7 @@ deploy() {
   [ "$(cat "$TEST_ROOT/runtime/api-upstream.conf")" = 'old-upstream' ]
   [ "$(readlink "$TEST_ROOT/current")" = "$TEST_ROOT/releases/$OLD_SHA" ]
   grep -qx "MIXLI_API_GREEN_IMAGE=mixli-api:$PREVIOUS_SHA" "$TEST_ROOT/production.env"
+  [ "$(cat "$TEST_ROOT/runtime/compose.yaml")" = "compose:$OLD_SHA" ]
 }
 
 @test "database readiness precedes every migration" {
@@ -145,6 +150,7 @@ deploy() {
   grep -qx "MIXLI_API_BLUE_IMAGE=mixli-api:$OLD_SHA" "$TEST_ROOT/production.env"
   grep -qx "MIXLI_API_GREEN_IMAGE=mixli-api:$SHA" "$TEST_ROOT/production.env"
   grep -qx "MIXLI_API_GREEN_RELEASE_SHA=$SHA" "$TEST_ROOT/production.env"
+  [ "$(cat "$TEST_ROOT/runtime/compose.yaml")" = "compose:$SHA" ]
 }
 
 @test "public smoke failure rolls back both atomic switches" {
@@ -155,15 +161,17 @@ deploy() {
   grep -q "\"sha\":\"$OLD_SHA\"" "$TEST_ROOT/state/current.json"
   grep -qx "MIXLI_API_GREEN_IMAGE=mixli-api:$PREVIOUS_SHA" "$TEST_ROOT/production.env"
   grep -qx "MIXLI_API_GREEN_RELEASE_SHA=$PREVIOUS_SHA" "$TEST_ROOT/production.env"
+  [ "$(cat "$TEST_ROOT/runtime/compose.yaml")" = "compose:$OLD_SHA" ]
 }
 
 @test "failed first deployment leaves no latent upstream or web link" {
-  rm -f "$TEST_ROOT/current" "$TEST_ROOT/runtime/api-upstream.conf" \
+  rm -f "$TEST_ROOT/current" "$TEST_ROOT/runtime/api-upstream.conf" "$TEST_ROOT/runtime/compose.yaml" \
     "$TEST_ROOT/state/current.json" "$TEST_ROOT/state/previous.json"
   MIXLI_TEST_FAIL_STAGE=public-smoke run deploy "$SHA"
   [ "$status" -ne 0 ]
   [ ! -e "$TEST_ROOT/runtime/api-upstream.conf" ]
   [ ! -e "$TEST_ROOT/current" ]
+  [ ! -e "$TEST_ROOT/runtime/compose.yaml" ]
   grep -qx "MIXLI_API_BLUE_IMAGE=mixli-api:$OLD_SHA" "$TEST_ROOT/production.env"
   grep -qx "MIXLI_API_GREEN_IMAGE=mixli-api:$PREVIOUS_SHA" "$TEST_ROOT/production.env"
 }

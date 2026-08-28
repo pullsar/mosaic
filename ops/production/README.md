@@ -119,6 +119,11 @@ and old-pool drain. Success evidence is `deployed:<sha>:<pool>` in
 `deploy-events.log`, matching `/srv/mixli/state/current.json`, and both verifier
 modes passing.
 
+The deployer atomically pins the exact release's Compose file at
+`/srv/mixli/runtime/compose.yaml` and persists both pool image SHAs in the
+root-owned environment file. Systemd and scheduled backup jobs use only that
+runtime copy, so a reboot cannot drift to an unverified repository checkout.
+
 ## Rollback and migration-forward repair
 
 Only roll back when the previous application is compatible with every migration
@@ -209,4 +214,3 @@ sudo systemctl list-timers 'mixli-*'
 
 All checks must pass, current state must match the API release identity, backup
 and WAL evidence must be fresh, and no unexpected public listener may remain.
-

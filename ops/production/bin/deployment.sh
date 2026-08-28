@@ -8,7 +8,7 @@ readonly ROOT="${MIXLI_ROOT:-/srv/mixli}"
 readonly REPO="${MIXLI_REPO:-/srv/mixli/repository}"
 readonly LOCK_FILE="${MIXLI_LOCK_FILE:-/run/lock/mixli-deploy.lock}"
 readonly BACKUP_LOCK_FILE="${MIXLI_BACKUP_LOCK_FILE:-/run/lock/mixli-backup.lock}"
-readonly COMPOSE_FILE="${MIXLI_COMPOSE_FILE:-/srv/mixli/repository/ops/production/compose.yaml}"
+readonly COMPOSE_FILE="${MIXLI_COMPOSE_FILE:-${MIXLI_ROOT:-/srv/mixli}/runtime/compose.yaml}"
 readonly ENV_FILE="${MIXLI_ENV_FILE:-/etc/mixli/env/production.env}"
 readonly CI_RUNNER="${MIXLI_CI_RUNNER:-/opt/mixli/bin/server-ci.sh}"
 readonly RELEASES="$ROOT/releases"
@@ -24,6 +24,9 @@ previous_web=''
 upstream_backup=''
 env_backup=''
 env_changed=0
+compose_backup=''
+compose_changed=0
+compose_had_previous=0
 target_pool=''
 had_upstream=0
 
@@ -125,6 +128,30 @@ persist_runtime_images() {
   fi
 }
 
+restore_runtime_compose() {
+  local temporary="${COMPOSE_FILE}.$$.rollback"
+  [[ "$compose_changed" == '1' ]] || return 0
+  if [[ "$compose_had_previous" == '1' && -f "$compose_backup" ]]; then
+    cp --preserve=mode,ownership,timestamps "$compose_backup" "$temporary"
+    mv -fT "$temporary" "$COMPOSE_FILE"
+  else
+    rm -f -- "$COMPOSE_FILE"
+  fi
+}
+
+persist_runtime_compose() {
+  local source="$BUILDS/$SHA/ops/production/compose.yaml" temporary="${COMPOSE_FILE}.$$.tmp"
+  [[ -f "$source" ]]
+  compose_backup="$RUNTIME/.compose.yaml.previous.$$"
+  if [[ -f "$COMPOSE_FILE" ]]; then
+    cp --preserve=mode,ownership,timestamps "$COMPOSE_FILE" "$compose_backup"
+    compose_had_previous=1
+  fi
+  install -m 0640 "$source" "$temporary"
+  mv -fT "$temporary" "$COMPOSE_FILE"
+  compose_changed=1
+}
+
 rollback_switches() {
   [[ "$switched" == '1' ]] || return 0
   set +e
@@ -146,6 +173,7 @@ rollback_switches() {
 on_error() {
   local status="$1" line="$2"
   rollback_switches
+  restore_runtime_compose
   restore_runtime_env
   log_event "deploy-failed:$SHA:line-$line:status-$status"
   exit "$status"
@@ -369,6 +397,7 @@ main() {
   verify_ancestry
   prepare_checkout
   run_repository_ci
+  persist_runtime_compose
   current_sha="$(json_field "$STATE/current.json" sha)"
   current_pool="$(json_field "$STATE/current.json" pool)"
   if [[ "$current_pool" == 'blue' ]]; then
@@ -402,7 +431,9 @@ main() {
   prune_releases
   rm -f -- "$upstream_backup"
   rm -f -- "$env_backup"
+  rm -f -- "$compose_backup"
   env_changed=0
+  compose_changed=0
   switched=0
 }
 

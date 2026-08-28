@@ -96,10 +96,11 @@ production-builds" ]
   grep -Fq 'prom/alertmanager:v0.32.1' "$script"
 }
 
-@test "deployment defaults to the build-only repository under the service root" {
+@test "deployment fetches through the build-only repository and pins runtime compose" {
   script="$REPO_ROOT/ops/production/bin/deployment.sh"
   grep -Fq 'MIXLI_REPO:-/srv/mixli/repository' "$script"
-  grep -Fq 'MIXLI_COMPOSE_FILE:-/srv/mixli/repository/ops/production/compose.yaml' "$script"
+  grep -Fq 'runtime/compose.yaml' "$script"
+  grep -Fq '$BUILDS/$SHA/ops/production/compose.yaml' "$script"
 }
 
 @test "Git trusts only the exact build checkout owned by the locked builder" {
