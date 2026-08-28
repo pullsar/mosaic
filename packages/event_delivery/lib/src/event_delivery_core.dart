@@ -21,9 +21,7 @@ final class EventOutboxPolicy {
     this.maxAge = const Duration(days: 14),
     this.maxBackoff = const Duration(hours: 1),
   }) : assert(maxCount > 0),
-       assert(maxBytes > 0),
-       assert(!maxAge.isNegative),
-       assert(!maxBackoff.isNegative);
+       assert(maxBytes > 0);
 
   final int maxCount;
   final int maxBytes;
