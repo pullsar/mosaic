@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:play_engine/play_engine.dart';
 import 'package:play_schema/play_schema.dart';
 
+import 'play_input_primitives.dart';
 import 'visual_tokens.dart';
 
 typedef PlayMediaBuilder =
@@ -12,12 +13,19 @@ final class PlaySurface extends StatefulWidget {
     required this.play,
     this.mediaBuilder,
     this.onResolved,
+    this.onDirectManipulationChanged,
     super.key,
   });
 
   final PlayDocument play;
   final PlayMediaBuilder? mediaBuilder;
   final ValueChanged<PlayResolution>? onResolved;
+
+  /// True while a direct-manipulation primitive owns a drag gesture.
+  ///
+  /// Feed containers should use this to suspend vertical paging until the
+  /// manipulation ends instead of relying on gesture-arena ordering.
+  final ValueChanged<bool>? onDirectManipulationChanged;
 
   @override
   State<PlaySurface> createState() => _PlaySurfaceState();
@@ -54,7 +62,14 @@ final class _PlaySurfaceState extends State<PlaySurface> {
           children: [
             for (final layer in media) _buildMedia(context, layer),
             _TextOverlay(layers: text.toList(growable: false)),
-            _InputOverlay(input: state.input, onAction: _apply),
+            _InputOverlay(
+              input: state.input,
+              validation: state.validation,
+              inputEpoch: _session.attempts,
+              onAction: _apply,
+              onDirectManipulationChanged:
+                  widget.onDirectManipulationChanged,
+            ),
           ],
         ),
       ),
@@ -111,10 +126,19 @@ final class _TextOverlay extends StatelessWidget {
 }
 
 final class _InputOverlay extends StatelessWidget {
-  const _InputOverlay({required this.input, required this.onAction});
+  const _InputOverlay({
+    required this.input,
+    required this.validation,
+    required this.inputEpoch,
+    required this.onAction,
+    this.onDirectManipulationChanged,
+  });
 
   final PlayInputDefinition input;
+  final PlayValidationDefinition validation;
+  final int inputEpoch;
   final ValueChanged<PlayAction> onAction;
+  final ValueChanged<bool>? onDirectManipulationChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -150,7 +174,41 @@ final class _InputOverlay extends StatelessWidget {
       );
     }
 
-    return const SizedBox.shrink();
+    if (input.type == PlayInputType.pianoKey) {
+      final spec = PlayPianoInputSpec.fromDefinitions(input, validation);
+      if (spec == null) {
+        return const PlayInputUnavailable(type: 'piano_key');
+      }
+      return Align(
+        alignment: Alignment.bottomCenter,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 20, 12, 20),
+          child: PlayPianoInput(
+            key: ValueKey<String>('piano:$inputEpoch'),
+            keys: spec.keys,
+            sequenceLength: spec.sequenceLength,
+            onSequence: (values) => onAction(SequenceAction(values)),
+          ),
+        ),
+      );
+    }
+
+    if (input.type == PlayInputType.drag) {
+      final spec = PlayDragInputSpec.fromDefinition(input);
+      if (spec == null) {
+        return const PlayInputUnavailable(type: 'drag');
+      }
+      return Positioned.fill(
+        child: PlayDragInput(
+          key: ValueKey<String>('drag:$inputEpoch'),
+          spec: spec,
+          onTarget: (targetId) => onAction(DragAction(targetId)),
+          onManipulationChanged: onDirectManipulationChanged,
+        ),
+      );
+    }
+
+    return PlayInputUnavailable(type: input.type.name);
   }
 }
 
