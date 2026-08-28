@@ -90,7 +90,6 @@ test('FFprobe verifier returns normalized ready metadata for compliant playback'
   });
   const output = await verifier({
     outputPath: '/tmp/mosaic/playback.mp4',
-    storageKey: 'public/playback.mp4',
     plan: videoPlan(),
     expectedOutput: {
       mimeType: 'video/mp4',
@@ -143,7 +142,6 @@ test('FFprobe verifier fails closed on HEVC, HDR tags, odd dimensions or excessi
     await assert.rejects(
       verifier({
         outputPath: '/tmp/mosaic/playback.mp4',
-        storageKey: 'public/playback.mp4',
         plan: videoPlan(),
         expectedOutput: {
           mimeType: 'video/mp4',
@@ -179,7 +177,6 @@ test('FFprobe verifier rejects duration drift, unexpected streams and empty file
     await assert.rejects(
       verifier({
         outputPath: '/tmp/mosaic/playback.mp4',
-        storageKey: 'public/playback.mp4',
         plan: videoPlan(),
         expectedOutput: {mimeType: 'video/mp4'},
       }),
@@ -195,7 +192,6 @@ test('FFprobe verifier rejects duration drift, unexpected streams and empty file
   await assert.rejects(
     emptyVerifier({
       outputPath: '/tmp/mosaic/playback.mp4',
-      storageKey: 'public/playback.mp4',
       plan: videoPlan(),
       expectedOutput: {mimeType: 'video/mp4'},
     }),
@@ -213,7 +209,6 @@ test('FFprobe JSON must be present, bounded by runner and syntactically valid', 
     await assert.rejects(
       verifier({
         outputPath: '/tmp/mosaic/playback.mp4',
-        storageKey: 'public/playback.mp4',
         plan: videoPlan(),
         expectedOutput: {mimeType: 'video/mp4'},
       }),
