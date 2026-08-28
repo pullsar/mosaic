@@ -85,6 +85,7 @@ final class EventContext {
 typedef EventContextProvider = FutureOr<EventContext> Function();
 typedef EventIdFactory = String Function();
 typedef EventClock = DateTime Function();
+typedef EventQueuedCallback = FutureOr<void> Function();
 typedef EventInternalErrorReporter =
     void Function(Object error, StackTrace stackTrace, {String? operation});
 
@@ -96,12 +97,14 @@ final class MosaicEventTelemetry implements Telemetry {
     required this.contextProvider,
     EventIdFactory? eventIdFactory,
     EventClock? clock,
+    this.onQueued,
     this.onInternalError,
   }) : _eventIdFactory = eventIdFactory ?? secureUuidV4,
        _clock = clock ?? DateTime.now;
 
   final EventOutbox outbox;
   final EventContextProvider contextProvider;
+  final EventQueuedCallback? onQueued;
   final EventInternalErrorReporter? onInternalError;
   final EventIdFactory _eventIdFactory;
   final EventClock _clock;
@@ -146,6 +149,14 @@ final class MosaicEventTelemetry implements Telemetry {
           payload: payload,
         ),
       );
+      final callback = onQueued;
+      if (callback != null) {
+        unawaited(
+          Future<void>.sync(callback).catchError((Object error, StackTrace stackTrace) {
+            _reportInternal(error, stackTrace, operation: 'event_drain');
+          }),
+        );
+      }
     } on Object catch (error, stackTrace) {
       _reportInternal(error, stackTrace, operation: 'event_enqueue');
     }
