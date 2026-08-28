@@ -134,14 +134,20 @@ final class PlayInputDefinition {
     required this.type,
     this.label,
     this.options = const [],
+    this.properties = const {},
   });
 
   final PlayInputType type;
   final String? label;
   final List<PlayOption> options;
+  final Map<String, Object?> properties;
 
   factory PlayInputDefinition.fromJson(Map<String, Object?> json) {
     final rawOptions = json['options'];
+    final properties = Map<String, Object?>.from(json)
+      ..remove('type')
+      ..remove('label')
+      ..remove('options');
     return PlayInputDefinition(
       type: _enumFromWire(PlayInputType.values, json['type'], 'input.type'),
       label: json['label'] as String?,
@@ -153,10 +159,12 @@ final class PlayInputDefinition {
                       PlayOption.fromJson(_map(value, 'input.options[]')),
                 )
                 .toList(growable: false),
+      properties: Map.unmodifiable(properties),
     );
   }
 
   Map<String, Object?> toJson() => {
+    ...properties,
     'type': _wireName(type),
     if (label != null) 'label': label,
     if (options.isNotEmpty)
