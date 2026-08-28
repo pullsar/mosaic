@@ -13,6 +13,7 @@ import {
 } from './media_process.js';
 import {
   MediaIdentityConflictError,
+  type MediaDerivativeClaim,
   type MediaDerivativeOutput,
   type MediaDerivativeRecord,
   type PostgresMediaRepository,
@@ -68,6 +69,11 @@ export interface MediaFfmpegJob {
   outputPath: string;
 }
 
+export interface MediaClaimedFfmpegJob {
+  inputPath: string;
+  outputPath: string;
+}
+
 export interface MediaFfmpegWorkerOptions {
   leaseMs?: number;
   timeoutMs?: number;
@@ -105,6 +111,13 @@ export class MediaOutputPublicationError extends Error {
   }
 }
 
+class MediaClaimLeaseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'MediaClaimLeaseError';
+  }
+}
+
 const DEFAULT_LEASE_MS = 15 * 60 * 1000;
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 const MAX_LEASE_MS = 60 * 60 * 1000;
@@ -120,8 +133,12 @@ export async function processFfmpegDerivative(
 ): Promise<MediaFfmpegWorkerResult> {
   const assetId = requiredText(job.assetId, 'assetId');
   const derivativeKey = requiredText(job.derivativeKey, 'derivativeKey');
-  const leaseMs = boundedPositiveInteger(options.leaseMs ?? DEFAULT_LEASE_MS, 'leaseMs', MAX_LEASE_MS);
-  const timeoutMs = boundedPositiveInteger(options.timeoutMs ?? DEFAULT_TIMEOUT_MS, 'timeoutMs', MAX_LEASE_MS);
+  const leaseMs = boundedPositiveInteger(
+    options.leaseMs ?? DEFAULT_LEASE_MS,
+    'leaseMs',
+    MAX_LEASE_MS,
+  );
+  const timeoutMs = workerTimeout(options.timeoutMs);
   if (timeoutMs + CLAIM_COMPLETION_MARGIN_MS >= leaseMs) {
     throw new TypeError(
       `timeoutMs must leave at least ${CLAIM_COMPLETION_MARGIN_MS} ms before the derivative lease expires`,
@@ -146,14 +163,49 @@ export async function processFfmpegDerivative(
     };
   }
 
+  return await processClaimedFfmpegDerivative(
+    repository,
+    claim,
+    {inputPath: job.inputPath, outputPath: job.outputPath},
+    verifyOutput,
+    publishOutput,
+    {...options, timeoutMs},
+  );
+}
+
+export async function processClaimedFfmpegDerivative(
+  repository: MediaFfmpegWorkerRepository,
+  claim: MediaDerivativeClaim,
+  job: MediaClaimedFfmpegJob,
+  verifyOutput: MediaOutputVerifier,
+  publishOutput: MediaOutputPublisher,
+  options: Omit<MediaFfmpegWorkerOptions, 'leaseMs'> = {},
+): Promise<MediaFfmpegWorkerResult> {
+  const assetId = requiredText(claim.derivative.assetId, 'claim.derivative.assetId');
+  const derivativeKey = requiredText(
+    claim.derivative.derivativeKey,
+    'claim.derivative.derivativeKey',
+  );
+  const claimToken = requiredText(claim.claimToken, 'claimToken');
+  const timeoutMs = workerTimeout(options.timeoutMs);
   const storageKey = mediaAttemptStorageKey(
     assetId,
     derivativeKey,
-    claim.claimToken,
+    claimToken,
     claim.derivative.purpose,
   );
 
   try {
+    assertClaimUsable(claim, timeoutMs);
+    if (options.signal?.aborted) {
+      throw new MediaProcessError('aborted', 'Media process was aborted before execution');
+    }
+    if (!supportsFfmpegPlan(claim.derivative.plan)) {
+      throw new MediaPlanCompileError(
+        `Unsupported claimed media processor ${claim.derivative.plan.processor}`,
+      );
+    }
+
     const invocation = compileFfmpegInvocation(
       claim.derivative.plan,
       {inputPath: job.inputPath, outputPath: job.outputPath},
@@ -181,7 +233,7 @@ export async function processFfmpegDerivative(
       await publishOutput({
         assetId,
         derivativeKey,
-        claimToken: claim.claimToken,
+        claimToken,
         outputPath: job.outputPath,
         storageKey,
         plan: claim.derivative.plan,
@@ -200,7 +252,7 @@ export async function processFfmpegDerivative(
       const ready = await repository.markDerivativeReady(
         assetId,
         derivativeKey,
-        claim.claimToken,
+        claimToken,
         {storageKey, ...verified},
       );
       return {status: 'ready', derivative: ready};
@@ -219,7 +271,7 @@ export async function processFfmpegDerivative(
       const failed = await repository.markDerivativeFailed(
         assetId,
         derivativeKey,
-        claim.claimToken,
+        claimToken,
         errorCode,
       );
       return {status: 'failed', derivative: failed, errorCode};
@@ -284,7 +336,26 @@ export function mediaWorkerErrorCode(error: unknown): string {
   if (error instanceof MediaPlanCompileError) return 'media_plan_invalid';
   if (error instanceof MediaOutputVerificationError) return 'media_output_invalid';
   if (error instanceof MediaOutputPublicationError) return 'media_publish_failed';
+  if (error instanceof MediaClaimLeaseError) return 'media_claim_invalid';
   return 'media_worker_failed';
+}
+
+function assertClaimUsable(claim: MediaDerivativeClaim, timeoutMs: number): void {
+  if (claim.derivative.state !== 'processing') {
+    throw new MediaClaimLeaseError(
+      `Claimed derivative is ${claim.derivative.state}, not processing`,
+    );
+  }
+  const leaseExpiresAt = claim.derivative.leaseExpiresAt;
+  if (leaseExpiresAt === null || !Number.isFinite(leaseExpiresAt.getTime())) {
+    throw new MediaClaimLeaseError('Claimed derivative has no valid lease expiry');
+  }
+  const remainingMs = leaseExpiresAt.getTime() - Date.now();
+  if (remainingMs <= timeoutMs + CLAIM_COMPLETION_MARGIN_MS) {
+    throw new MediaClaimLeaseError(
+      `Claim lease has only ${remainingMs} ms remaining for ${timeoutMs} ms timeout`,
+    );
+  }
 }
 
 function assertVerifiedOutput(
@@ -341,4 +412,12 @@ function boundedPositiveInteger(value: number, name: string, maximum: number): n
     throw new TypeError(`${name} must be a positive safe integer <= ${maximum}`);
   }
   return value;
+}
+
+function workerTimeout(value: number | undefined): number {
+  return boundedPositiveInteger(
+    value ?? DEFAULT_TIMEOUT_MS,
+    'timeoutMs',
+    MAX_LEASE_MS,
+  );
 }
