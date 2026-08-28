@@ -201,10 +201,12 @@ test('S3 source corruption fails closed and removes the partial materialization'
 
 test('S3 materializer maps immutable asset identity into the isolated attempt directory', async () => {
   const work = await mkdtemp(join(tmpdir(), 'mosaic-s3-materialize-'));
-  let download: Parameters<S3CompatibleMediaStorage['downloadVerifiedObject']>[0] | null = null;
+  const observed: {
+    download?: Parameters<S3CompatibleMediaStorage['downloadVerifiedObject']>[0];
+  } = {};
   const materializer = createS3MediaSourceMaterializer({
     async downloadVerifiedObject(request) {
-      download = request;
+      observed.download = request;
       await writeFile(request.destinationPath, Buffer.from('source'));
       return request.destinationPath;
     },
@@ -227,10 +229,12 @@ test('S3 materializer maps immutable asset identity into the isolated attempt di
 
   const result = await materializer(asset, work);
   assert.equal(result.inputPath, join(work, 'source.bin'));
-  assert.equal(download?.storageKey, asset.sourceStorageKey);
-  assert.equal(download?.sha256, asset.sourceSha256);
-  assert.equal(download?.sizeBytes, asset.sourceSizeBytes);
-  assert.equal(download?.mimeType, asset.sourceMimeType);
+  const download = observed.download;
+  assert.ok(download);
+  assert.equal(download.storageKey, asset.sourceStorageKey);
+  assert.equal(download.sha256, asset.sourceSha256);
+  assert.equal(download.sizeBytes, asset.sourceSizeBytes);
+  assert.equal(download.mimeType, asset.sourceMimeType);
 });
 
 test('S3 storage rejects unsafe endpoints and ambiguous object keys before I/O', async () => {
