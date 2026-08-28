@@ -295,6 +295,14 @@ final class _OwnedPlayAudioState extends State<OwnedPlayAudio> {
         return;
       }
 
+      if (_played) {
+        await handle.pause();
+        if (!_isCurrent(generation) || !widget.active) {
+          await _releaseCurrent();
+          return;
+        }
+      }
+
       await handle.engine.play(handle.assetId);
       if (!_isCurrent(generation) || !widget.active) {
         await _releaseCurrent();
