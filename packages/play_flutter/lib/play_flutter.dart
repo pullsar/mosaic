@@ -1,5 +1,6 @@
 library;
 
+export 'src/play_audio_asset_codec.dart';
 export 'src/play_audio_renderer.dart';
 export 'src/play_canvas_renderer.dart';
 export 'src/play_input_primitives.dart';
