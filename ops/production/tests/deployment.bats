@@ -10,6 +10,12 @@ setup() {
   PREVIOUS_SHA="2222222222222222222222222222222222222222"
   mkdir -p "$TEST_ROOT/releases/$OLD_SHA/web" "$TEST_ROOT/releases/$PREVIOUS_SHA/web" \
     "$TEST_ROOT/runtime" "$TEST_ROOT/state" "$TEST_ROOT/log" "$TEST_ROOT/locks" "$TEST_ROOT/repo"
+  cat >"$TEST_ROOT/production.env" <<EOF
+MIXLI_API_BLUE_IMAGE=mixli-api:$OLD_SHA
+MIXLI_API_GREEN_IMAGE=mixli-api:$PREVIOUS_SHA
+MIXLI_API_BLUE_RELEASE_SHA=$OLD_SHA
+MIXLI_API_GREEN_RELEASE_SHA=$PREVIOUS_SHA
+EOF
   printf 'old-web' >"$TEST_ROOT/releases/$OLD_SHA/web/index.html"
   printf 'previous-web' >"$TEST_ROOT/releases/$PREVIOUS_SHA/web/index.html"
   ln -s "$TEST_ROOT/releases/$OLD_SHA" "$TEST_ROOT/current"
@@ -29,6 +35,7 @@ deploy() {
     MIXLI_REPO="$TEST_ROOT/repo" \
     MIXLI_LOCK_FILE="$TEST_ROOT/locks/deploy.lock" \
     MIXLI_BACKUP_LOCK_FILE="$TEST_ROOT/locks/backup.lock" \
+    MIXLI_ENV_FILE="$TEST_ROOT/production.env" \
     MIXLI_TEST_SHA_ALLOWED="${MIXLI_TEST_SHA_ALLOWED:-1}" \
     MIXLI_TEST_FAIL_STAGE="${MIXLI_TEST_FAIL_STAGE:-}" \
     MIXLI_DRAIN_SECONDS=0 \
@@ -91,6 +98,16 @@ deploy() {
   [ "$status" -ne 0 ]
   [ "$(cat "$TEST_ROOT/runtime/api-upstream.conf")" = 'old-upstream' ]
   [ "$(readlink "$TEST_ROOT/current")" = "$TEST_ROOT/releases/$OLD_SHA" ]
+  grep -qx "MIXLI_API_GREEN_IMAGE=mixli-api:$PREVIOUS_SHA" "$TEST_ROOT/production.env"
+}
+
+@test "database readiness precedes every migration" {
+  run deploy "$SHA"
+  [ "$status" -eq 0 ]
+  database_line="$(grep -n '^database-ready$' "$TEST_ROOT/log/deploy-events.log" | cut -d: -f1)"
+  migrated_line="$(grep -n "^migrated:$SHA$" "$TEST_ROOT/log/deploy-events.log" | cut -d: -f1)"
+  [ -n "$database_line" ]
+  [ "$database_line" -lt "$migrated_line" ]
 }
 
 @test "pre-migration backup cannot overlap a scheduled backup" {
@@ -125,6 +142,9 @@ deploy() {
   grep -q '"pool":"green"' "$TEST_ROOT/state/current.json"
   grep -q "\"sha\":\"$OLD_SHA\"" "$TEST_ROOT/state/previous.json"
   [ -f "$TEST_ROOT/releases/$SHA/release.json" ]
+  grep -qx "MIXLI_API_BLUE_IMAGE=mixli-api:$OLD_SHA" "$TEST_ROOT/production.env"
+  grep -qx "MIXLI_API_GREEN_IMAGE=mixli-api:$SHA" "$TEST_ROOT/production.env"
+  grep -qx "MIXLI_API_GREEN_RELEASE_SHA=$SHA" "$TEST_ROOT/production.env"
 }
 
 @test "public smoke failure rolls back both atomic switches" {
@@ -133,6 +153,8 @@ deploy() {
   [ "$(cat "$TEST_ROOT/runtime/api-upstream.conf")" = 'old-upstream' ]
   [ "$(readlink "$TEST_ROOT/current")" = "$TEST_ROOT/releases/$OLD_SHA" ]
   grep -q "\"sha\":\"$OLD_SHA\"" "$TEST_ROOT/state/current.json"
+  grep -qx "MIXLI_API_GREEN_IMAGE=mixli-api:$PREVIOUS_SHA" "$TEST_ROOT/production.env"
+  grep -qx "MIXLI_API_GREEN_RELEASE_SHA=$PREVIOUS_SHA" "$TEST_ROOT/production.env"
 }
 
 @test "failed first deployment leaves no latent upstream or web link" {
@@ -142,6 +164,21 @@ deploy() {
   [ "$status" -ne 0 ]
   [ ! -e "$TEST_ROOT/runtime/api-upstream.conf" ]
   [ ! -e "$TEST_ROOT/current" ]
+  grep -qx "MIXLI_API_BLUE_IMAGE=mixli-api:$OLD_SHA" "$TEST_ROOT/production.env"
+  grep -qx "MIXLI_API_GREEN_IMAGE=mixli-api:$PREVIOUS_SHA" "$TEST_ROOT/production.env"
+}
+
+@test "first successful deployment makes both pools reboot-safe" {
+  rm -f "$TEST_ROOT/current" "$TEST_ROOT/runtime/api-upstream.conf" \
+    "$TEST_ROOT/state/current.json" "$TEST_ROOT/state/previous.json"
+
+  run deploy "$SHA"
+
+  [ "$status" -eq 0 ]
+  grep -qx "MIXLI_API_BLUE_IMAGE=mixli-api:$SHA" "$TEST_ROOT/production.env"
+  grep -qx "MIXLI_API_GREEN_IMAGE=mixli-api:$SHA" "$TEST_ROOT/production.env"
+  grep -qx "MIXLI_API_BLUE_RELEASE_SHA=$SHA" "$TEST_ROOT/production.env"
+  grep -qx "MIXLI_API_GREEN_RELEASE_SHA=$SHA" "$TEST_ROOT/production.env"
 }
 
 @test "retention keeps current and previous while bounding other releases" {

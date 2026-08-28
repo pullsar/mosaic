@@ -4,11 +4,10 @@ x-api: &api
   env_file:
     - path: ${MIXLI_API_ENV_FILE:-/etc/mixli/secrets/api.env}
       required: false
-  environment:
+  environment: &api-environment
     HOST: 0.0.0.0
     PORT: "8080"
     LOG_LEVEL: ${MIXLI_LOG_LEVEL:-info}
-    MIXLI_RELEASE_SHA: ${MIXLI_RELEASE_SHA:-unknown}
   expose:
     - "8080"
   read_only: true
@@ -95,21 +94,33 @@ services:
     <<: *api
     image: ${MIXLI_API_BLUE_IMAGE:-mixli-api:bootstrap}
     hostname: api-blue-1
+    environment:
+      <<: *api-environment
+      MIXLI_RELEASE_SHA: ${MIXLI_API_BLUE_RELEASE_SHA:-unknown}
 
   api-blue-2:
     <<: *api
     image: ${MIXLI_API_BLUE_IMAGE:-mixli-api:bootstrap}
     hostname: api-blue-2
+    environment:
+      <<: *api-environment
+      MIXLI_RELEASE_SHA: ${MIXLI_API_BLUE_RELEASE_SHA:-unknown}
 
   api-green-1:
     <<: *api
     image: ${MIXLI_API_GREEN_IMAGE:-mixli-api:bootstrap}
     hostname: api-green-1
+    environment:
+      <<: *api-environment
+      MIXLI_RELEASE_SHA: ${MIXLI_API_GREEN_RELEASE_SHA:-unknown}
 
   api-green-2:
     <<: *api
     image: ${MIXLI_API_GREEN_IMAGE:-mixli-api:bootstrap}
     hostname: api-green-2
+    environment:
+      <<: *api-environment
+      MIXLI_RELEASE_SHA: ${MIXLI_API_GREEN_RELEASE_SHA:-unknown}
 
   nginx:
     image: ${MIXLI_NGINX_IMAGE:-nginx:1.28.0-alpine}

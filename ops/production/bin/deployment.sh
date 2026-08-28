@@ -22,6 +22,8 @@ readonly DRAIN_SECONDS="${MIXLI_DRAIN_SECONDS:-30}"
 switched=0
 previous_web=''
 upstream_backup=''
+env_backup=''
+env_changed=0
 target_pool=''
 had_upstream=0
 
@@ -81,8 +83,46 @@ switch_web() {
 reload_nginx() {
   fail_if_requested nginx
   [[ "$TEST_MODE" == '1' ]] && return 0
+  compose up -d --no-deps nginx
   compose exec -T nginx nginx -t
   compose exec -T nginx nginx -s reload
+}
+
+restore_runtime_env() {
+  local temporary="${ENV_FILE}.$$.rollback"
+  [[ "$env_changed" == '1' && -n "$env_backup" && -f "$env_backup" ]] || return 0
+  cp --preserve=mode,ownership,timestamps "$env_backup" "$temporary"
+  mv -fT "$temporary" "$ENV_FILE"
+}
+
+set_env_value() {
+  local key="$1" value="$2" temporary="${ENV_FILE}.$$.tmp"
+  awk -v key="$key" -v value="$value" '
+    BEGIN { found = 0 }
+    $0 ~ "^" key "=" { print key "=" value; found = 1; next }
+    { print }
+    END { if (!found) print key "=" value }
+  ' "$ENV_FILE" >"$temporary"
+  chmod --reference="$ENV_FILE" "$temporary"
+  chown --reference="$ENV_FILE" "$temporary"
+  mv -fT "$temporary" "$ENV_FILE"
+}
+
+persist_runtime_images() {
+  local current_sha="$1"
+  env_backup="$RUNTIME/.production.env.previous.$$"
+  cp --preserve=mode,ownership,timestamps "$ENV_FILE" "$env_backup"
+  env_changed=1
+
+  if [[ -z "$current_sha" ]]; then
+    set_env_value MIXLI_API_BLUE_IMAGE "mixli-api:$SHA"
+    set_env_value MIXLI_API_GREEN_IMAGE "mixli-api:$SHA"
+    set_env_value MIXLI_API_BLUE_RELEASE_SHA "$SHA"
+    set_env_value MIXLI_API_GREEN_RELEASE_SHA "$SHA"
+  else
+    set_env_value "MIXLI_API_${target_pool^^}_IMAGE" "mixli-api:$SHA"
+    set_env_value "MIXLI_API_${target_pool^^}_RELEASE_SHA" "$SHA"
+  fi
 }
 
 rollback_switches() {
@@ -106,6 +146,7 @@ rollback_switches() {
 on_error() {
   local status="$1" line="$2"
   rollback_switches
+  restore_runtime_env
   log_event "deploy-failed:$SHA:line-$line:status-$status"
   exit "$status"
 }
@@ -170,7 +211,28 @@ build_release() {
   log_event "built:$SHA"
 }
 
+prepare_database() {
+  if [[ "$TEST_MODE" == '1' ]]; then
+    log_event 'database-ready'
+    return 0
+  fi
+
+  compose up -d --no-deps postgres
+  local attempt container_id
+  for ((attempt = 1; attempt <= 60; attempt++)); do
+    container_id="$(compose ps -q postgres)"
+    if [[ -n "$container_id" && "$(docker inspect --format '{{.State.Health.Status}}' "$container_id")" == 'healthy' ]]; then
+      compose exec -T --user postgres postgres pgbackrest --stanza=mixli stanza-create
+      log_event 'database-ready'
+      return 0
+    fi
+    sleep 2
+  done
+  return 1
+}
+
 backup_and_migrate() {
+  local current_sha="$1" backup_type='incr'
   exec 7>"$BACKUP_LOCK_FILE"
   flock -n 7 || return 75
   fail_if_requested migration
@@ -180,14 +242,15 @@ backup_and_migrate() {
     exec 7>&-
     return 0
   }
+  [[ -n "$current_sha" ]] || backup_type='full'
   compose exec -T --user postgres postgres pgbackrest --stanza=mixli check
-  compose exec -T --user postgres postgres pgbackrest --stanza=mixli --type=incr backup
+  compose exec -T --user postgres postgres pgbackrest --stanza=mixli --type="$backup_type" backup
 
   if [[ "$target_pool" == 'blue' ]]; then
-    MIXLI_API_BLUE_IMAGE="mixli-api:$SHA" MIXLI_RELEASE_SHA="$SHA" \
+    MIXLI_API_BLUE_IMAGE="mixli-api:$SHA" MIXLI_API_BLUE_RELEASE_SHA="$SHA" \
       compose run --rm --no-deps api-blue-1 node dist/db/migrate.js up
   else
-    MIXLI_API_GREEN_IMAGE="mixli-api:$SHA" MIXLI_RELEASE_SHA="$SHA" \
+    MIXLI_API_GREEN_IMAGE="mixli-api:$SHA" MIXLI_API_GREEN_RELEASE_SHA="$SHA" \
       compose run --rm --no-deps api-green-1 node dist/db/migrate.js up
   fi
   flock -u 7
@@ -199,10 +262,10 @@ start_candidate() {
   local service_one="api-${target_pool}-1" service_two="api-${target_pool}-2"
   [[ "$TEST_MODE" == '1' ]] && return 0
   if [[ "$target_pool" == 'blue' ]]; then
-    MIXLI_API_BLUE_IMAGE="mixli-api:$SHA" MIXLI_RELEASE_SHA="$SHA" \
+    MIXLI_API_BLUE_IMAGE="mixli-api:$SHA" MIXLI_API_BLUE_RELEASE_SHA="$SHA" \
       compose up -d --no-deps "$service_one" "$service_two"
   else
-    MIXLI_API_GREEN_IMAGE="mixli-api:$SHA" MIXLI_RELEASE_SHA="$SHA" \
+    MIXLI_API_GREEN_IMAGE="mixli-api:$SHA" MIXLI_API_GREEN_RELEASE_SHA="$SHA" \
       compose up -d --no-deps "$service_one" "$service_two"
   fi
 }
@@ -315,7 +378,9 @@ main() {
   fi
 
   build_release
-  backup_and_migrate
+  persist_runtime_images "$current_sha"
+  prepare_database
+  backup_and_migrate "$current_sha"
   start_candidate
   wait_for_candidate
 
@@ -325,16 +390,19 @@ main() {
     cp "$RUNTIME/api-upstream.conf" "$upstream_backup"
   fi
   previous_web="$(readlink -f "$ROOT/current" 2>/dev/null || true)"
-  write_upstream "$target_pool"
   switched=1
-  reload_nginx
+  write_upstream "$target_pool"
   switch_web "$RELEASES/$SHA"
+  reload_nginx
 
   smoke_release
+  set_env_value MIXLI_ACTIVE_POOL "$target_pool"
   stop_old_pool "$current_pool"
   record_success "$current_sha" "$current_pool"
   prune_releases
   rm -f -- "$upstream_backup"
+  rm -f -- "$env_backup"
+  env_changed=0
   switched=0
 }
 
