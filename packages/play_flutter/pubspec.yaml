@@ -9,6 +9,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  platform_contracts: ^0.1.0
   play_engine: ^0.1.0
   play_schema: ^0.1.0
 dev_dependencies:
