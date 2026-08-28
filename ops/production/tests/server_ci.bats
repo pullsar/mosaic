@@ -72,3 +72,15 @@ production-builds" ]
   grep -Fq '/opt/mixli/bin/server-ci.sh' \
     "$REPO_ROOT/ops/production/bin/deployment.sh"
 }
+
+@test "CI validators use the same pinned monitoring images as production" {
+  script="$REPO_ROOT/ops/production/bin/server-ci.sh"
+  grep -Fq 'prom/prometheus:v3.5.5' "$script"
+  grep -Fq 'prom/alertmanager:v0.32.1' "$script"
+}
+
+@test "deployment defaults to the build-only repository under the service root" {
+  script="$REPO_ROOT/ops/production/bin/deployment.sh"
+  grep -Fq 'MIXLI_REPO:-/srv/mixli/repository' "$script"
+  grep -Fq 'MIXLI_COMPOSE_FILE:-/srv/mixli/repository/ops/production/compose.yaml' "$script"
+}

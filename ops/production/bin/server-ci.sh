@@ -10,8 +10,8 @@ readonly FLUTTER_IMAGE="${MIXLI_FLUTTER_CI_IMAGE:-mixli-flutter-builder:3.44.7}"
 readonly POSTGRES_IMAGE="${MIXLI_POSTGRES_CI_IMAGE:-mixli-postgres:18.3}"
 readonly API_IMAGE="mixli-api:$SHA"
 readonly NODE_IMAGE="${MIXLI_NODE_CI_IMAGE:-node:24.7.0-bookworm-slim}"
-readonly PROMETHEUS_IMAGE="${MIXLI_PROMETHEUS_CI_IMAGE:-prom/prometheus:v3.5.0}"
-readonly ALERTMANAGER_IMAGE="${MIXLI_ALERTMANAGER_CI_IMAGE:-prom/alertmanager:v0.28.1}"
+readonly PROMETHEUS_IMAGE="${MIXLI_PROMETHEUS_CI_IMAGE:-prom/prometheus:v3.5.5}"
+readonly ALERTMANAGER_IMAGE="${MIXLI_ALERTMANAGER_CI_IMAGE:-prom/alertmanager:v0.32.1}"
 
 network=''
 postgres_container=''
