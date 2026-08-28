@@ -54,10 +54,11 @@ export function signS3RequestV4(input: SignS3RequestV4Input): S3SignedRequest {
   headers['x-amz-date'] = amzDate;
   if (sessionToken !== undefined) headers['x-amz-security-token'] = sessionToken;
 
-  const canonicalEntries: ReadonlyArray<readonly [string, string]> = [
-    ['host', canonicalHeaderValue(input.url.host)],
-    ...Object.entries(headers),
-  ].sort(([left], [right]) => left.localeCompare(right));
+  const canonicalEntries: Array<readonly [string, string]> = [
+    ['host', canonicalHeaderValue(input.url.host)] as const,
+    ...Object.entries(headers).map(([name, value]) => [name, value] as const),
+  ];
+  canonicalEntries.sort((left, right) => left[0].localeCompare(right[0]));
   const signedHeaders = canonicalEntries.map(([name]) => name).join(';');
   const canonicalHeaders = canonicalEntries
     .map(([name, value]) => `${name}:${value}\n`)
