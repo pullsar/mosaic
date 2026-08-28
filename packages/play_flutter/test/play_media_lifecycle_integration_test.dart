@@ -122,7 +122,6 @@ final class _AudioLifecycleHarness extends StatefulWidget {
 final class _AudioLifecycleHarnessState extends State<_AudioLifecycleHarness> {
   late final FlutterLifecycleBridge _bridge;
   late final PlayAudioAsset _asset;
-  var _resumeEpoch = 0;
 
   @override
   void initState() {
@@ -135,7 +134,7 @@ final class _AudioLifecycleHarnessState extends State<_AudioLifecycleHarness> {
     _bridge = FlutterLifecycleBridge(
       mediaCoordinator: widget.coordinator,
       onSemanticResume: () {
-        if (mounted) setState(() => _resumeEpoch += 1);
+        if (mounted) setState(() {});
       },
     );
   }
@@ -152,18 +151,12 @@ final class _AudioLifecycleHarnessState extends State<_AudioLifecycleHarness> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    // setState on semantic resume rebuilds this subtree. The exact audio
-    // asset/engine/coordinator identities stay stable, so audio must remain
-    // stopped until the user explicitly requests Replay.
-    _resumeEpoch;
-    return OwnedPlayAudio(
-      ownerId: 'audio-owner',
-      asset: _asset,
-      engine: widget.engine,
-      coordinator: widget.coordinator,
-    );
-  }
+  Widget build(BuildContext context) => OwnedPlayAudio(
+    ownerId: 'audio-owner',
+    asset: _asset,
+    engine: widget.engine,
+    coordinator: widget.coordinator,
+  );
 }
 
 void main() {
