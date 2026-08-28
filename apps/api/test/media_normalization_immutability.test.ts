@@ -17,7 +17,10 @@ test('normalization plans are deep-frozen immutable job-identity snapshots', () 
     videoCodec: 'hevc',
     videoProfile: 'Main 10',
     dynamicRange: 'hdr',
-    colorSpace: 'bt2020nc',
+    colorPrimaries: 'bt2020',
+    colorTransfer: 'smpte2084',
+    colorMatrix: 'bt2020nc',
+    colorRange: 'limited',
     variableFrameRate: true,
     nominalFrameRate: 29.97,
     rotationDegrees: 0,
@@ -36,6 +39,7 @@ test('normalization plans are deep-frozen immutable job-identity snapshots', () 
   const audio = record(output.audio as CanonicalJsonValue);
 
   assert.equal(source.videoProfile, 'main-10');
+  assert.equal(source.colorTransfer, 'smpte2084');
   assert.equal(Object.isFrozen(plans), true);
   assert.equal(Object.isFrozen(playback), true);
   assert.equal(Object.isFrozen(playback.parameters), true);
