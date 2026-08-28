@@ -5,6 +5,7 @@ on:
     branches: ['**']
     paths:
       - 'apps/mosaic_app/**'
+      - 'packages/event_delivery/**'
       - 'packages/platform_contracts/**'
       - 'packages/platform_flutter/**'
       - 'packages/play_flutter/**'
@@ -14,6 +15,7 @@ on:
   pull_request:
     paths:
       - 'apps/mosaic_app/**'
+      - 'packages/event_delivery/**'
       - 'packages/platform_contracts/**'
       - 'packages/platform_flutter/**'
       - 'packages/play_flutter/**'
@@ -46,6 +48,9 @@ jobs:
         run: dart format --output=none --set-exit-if-changed .
       - name: Analyze
         run: flutter analyze
+      - name: Test event delivery IndexedDB in Chrome
+        working-directory: packages/event_delivery
+        run: dart test --platform chrome test_web/indexed_db_event_store_web_test.dart
       - name: Test platform contracts
         working-directory: packages/platform_contracts
         run: dart test
