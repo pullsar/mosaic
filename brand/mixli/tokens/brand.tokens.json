@@ -1,50 +1,48 @@
 {
   "$schema": "https://design-tokens.github.io/community-group/format/",
-  "brand": {
-    "color": {
-      "ink": {"$type":"color","$value":"#0B1230"},
-      "paper": {"$type":"color","$value":"#F8FAFF"},
-      "white": {"$type":"color","$value":"#FFFFFF"},
-      "dark": {"$type":"color","$value":"#080D20"},
-      "dark2": {"$type":"color","$value":"#111938"},
-      "muted": {"$type":"color","$value":"#566078"},
-      "muted_dark": {"$type":"color","$value":"#B8C0D8"},
-      "border": {"$type":"color","$value":"#DCE3F2"},
-      "border_dark": {"$type":"color","$value":"#293450"},
-      "play": {"$type":"color","$value":"#FF6B61"},
-      "learn": {"$type":"color","$value":"#8A5CFF"},
-      "transform": {"$type":"color","$value":"#23C7D9"},
-      "become": {"$type":"color","$value":"#1778F2"}
+  "color": {
+    "brand": {
+      "ink": {"$value":"#0F1B41","$type":"color"},
+      "play": {"$value":"#FF736D","$type":"color"},
+      "learn": {"$value":"#B76DF3","$type":"color"},
+      "transform": {"$value":"#7D82F4","$type":"color"},
+      "become": {"$value":"#25C5F4","$type":"color"}
     },
-    "gradient": {
-      "journey": {"$type":"gradient","$value":[
-        {"color":"#FF6B61","position":0.0},
-        {"color":"#B868FF","position":0.31},
-        {"color":"#8A5CFF","position":0.58},
-        {"color":"#23C7D9","position":0.78},
-        {"color":"#1778F2","position":1.0}
-      ]}
+    "light": {
+      "canvas": {"$value":"#F8FAFF","$type":"color"},
+      "surface": {"$value":"#FFFFFF","$type":"color"},
+      "text": {"$value":"#0F1B41","$type":"color"},
+      "textSecondary": {"$value":"#596581","$type":"color"},
+      "border": {"$value":"#DEE5F2","$type":"color"}
+    },
+    "dark": {
+      "canvas": {"$value":"#070D20","$type":"color"},
+      "surface": {"$value":"#0C1430","$type":"color"},
+      "text": {"$value":"#F7F9FF","$type":"color"},
+      "textSecondary": {"$value":"#AAB5CC","$type":"color"},
+      "border": {"$value":"#26304A","$type":"color"}
     }
   },
-  "semantic": {
-    "light": {"background":"#F8FAFF","surface":"#FFFFFF","text":"#0B1230","textSecondary":"#566078","border":"#DCE3F2"},
-    "dark": {"background":"#080D20","surface":"#111938","text":"#F8FAFF","textSecondary":"#B8C0D8","border":"#293450"}
+  "radius": {
+    "sm":{"$value":"8px","$type":"dimension"},
+    "md":{"$value":"14px","$type":"dimension"},
+    "lg":{"$value":"22px","$type":"dimension"},
+    "pill":{"$value":"999px","$type":"dimension"}
   },
-  "type": {
-    "family": {"ui":"Inter Variable, Inter, system-ui, sans-serif","display":"Inter Display, Inter Variable, Inter, system-ui, sans-serif"},
-    "weight": {"regular":400,"medium":500,"semibold":600,"bold":700},
-    "role": {
-      "display":{"size":56,"lineHeight":60,"weight":650,"tracking":-1.8},
-      "headline":{"size":32,"lineHeight":38,"weight":600,"tracking":-0.6},
-      "playPrompt":{"size":22,"lineHeight":28,"weight":600,"tracking":-0.2},
-      "choiceLabel":{"size":17,"lineHeight":22,"weight":500,"tracking":0},
-      "revealTitle":{"size":24,"lineHeight":30,"weight":650,"tracking":-0.25},
-      "revealDetail":{"size":16,"lineHeight":23,"weight":400,"tracking":0},
-      "controlLabel":{"size":14,"lineHeight":18,"weight":550,"tracking":0.1},
-      "metadata":{"size":12,"lineHeight":16,"weight":500,"tracking":0.15}
-    }
+  "space": {
+    "4":{"$value":"4px","$type":"dimension"},
+    "8":{"$value":"8px","$type":"dimension"},
+    "12":{"$value":"12px","$type":"dimension"},
+    "16":{"$value":"16px","$type":"dimension"},
+    "24":{"$value":"24px","$type":"dimension"},
+    "32":{"$value":"32px","$type":"dimension"},
+    "48":{"$value":"48px","$type":"dimension"},
+    "64":{"$value":"64px","$type":"dimension"}
   },
-  "icon":{"grid":24,"stroke":1.8,"cap":"round","join":"round"},
-  "radius":{"xs":8,"sm":12,"md":16,"lg":24,"xl":32,"pill":999},
-  "space":{"1":4,"2":8,"3":12,"4":16,"6":24,"8":32,"10":40,"12":48,"16":64}
+  "icon": {
+    "stroke":{"$value":"1.8px","$type":"dimension"},
+    "size":{"$value":"24px","$type":"dimension"},
+    "tapTargetIOS":{"$value":"44px","$type":"dimension"},
+    "tapTargetAndroid":{"$value":"48px","$type":"dimension"}
+  }
 }
