@@ -17,6 +17,12 @@ The v2 kit was rebuilt from the approved final reference after rejecting the fir
 - Six empty-state families reviewed in both themes.
 - Marketing templates reviewed together for spacing, hierarchy, clipping and contrast.
 
+## Defects caught and corrected during audit
+- Removed baked rounded corners from full-square iOS/PWA app-icon sources; the platform now owns masking.
+- Separated Share from External Link after detecting duplicate semantics in the first pass.
+- Reworked selected Create so it no longer depends on a literal white foreground; it now themes safely through `currentColor`.
+- Removed a redundant stacked-logo treatment that duplicated the Mixli mark.
+
 ## Production constraints
 - Official wordmark is outlined vector geometry; never substitute typed text.
 - Marketing templates keep live Inter text for editability; logo artwork itself has no font dependency.
