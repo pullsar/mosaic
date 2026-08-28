@@ -137,6 +137,61 @@ final class _TextOverlay extends StatelessWidget {
   }
 }
 
+PlayPianoInputSpec? _safePianoSpec(
+  PlayInputDefinition input,
+  PlayValidationDefinition validation,
+) {
+  if (validation.type != PlayValidatorType.orderedSequence) return null;
+  final expectedRaw = validation.value;
+  if (expectedRaw is! List ||
+      expectedRaw.isEmpty ||
+      expectedRaw.length > 16 ||
+      expectedRaw.any(
+        (value) => value is! String || value.trim().isEmpty,
+      )) {
+    return null;
+  }
+
+  final spec = PlayPianoInputSpec.fromDefinitions(input, validation);
+  if (spec == null || spec.sequenceLength != expectedRaw.length) return null;
+  final keys = spec.keys.toSet();
+  if (expectedRaw.any((value) => !keys.contains(value))) return null;
+  return spec;
+}
+
+PlayDragInputSpec? _safeDragSpec(
+  PlayInputDefinition input,
+  PlayValidationDefinition validation,
+) {
+  if (validation.type != PlayValidatorType.targetRegion) return null;
+  final expectedRaw = validation.value;
+  if (expectedRaw is! String || expectedRaw.trim().isEmpty) return null;
+
+  final spec = PlayDragInputSpec.fromDefinition(input);
+  if (spec == null ||
+      !spec.targets.any((target) => target.id == expectedRaw.trim())) {
+    return null;
+  }
+
+  for (var left = 0; left < spec.targets.length; left += 1) {
+    for (var right = left + 1; right < spec.targets.length; right += 1) {
+      if (_dragRectsOverlap(
+        spec.targets[left].rect,
+        spec.targets[right].rect,
+      )) {
+        return null;
+      }
+    }
+  }
+  return spec;
+}
+
+bool _dragRectsOverlap(PlayNormalizedRect left, PlayNormalizedRect right) =>
+    left.x < right.x + right.width &&
+    left.x + left.width > right.x &&
+    left.y < right.y + right.height &&
+    left.y + left.height > right.y;
+
 final class _InputOverlay extends StatelessWidget {
   const _InputOverlay({
     required this.input,
@@ -189,7 +244,7 @@ final class _InputOverlay extends StatelessWidget {
     }
 
     if (input.type == PlayInputType.pianoKey) {
-      final spec = PlayPianoInputSpec.fromDefinitions(input, validation);
+      final spec = _safePianoSpec(input, validation);
       if (spec == null) {
         return const PlayInputUnavailable(type: 'piano_key');
       }
@@ -208,7 +263,7 @@ final class _InputOverlay extends StatelessWidget {
     }
 
     if (input.type == PlayInputType.drag) {
-      final spec = PlayDragInputSpec.fromDefinition(input);
+      final spec = _safeDragSpec(input, validation);
       if (spec == null) {
         return const PlayInputUnavailable(type: 'drag');
       }
