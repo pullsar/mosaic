@@ -63,12 +63,32 @@ List<String> _strings(Object? raw, String field) {
   if (raw is! List) throw FormatException('$field must be an array');
   return raw
       .map((value) {
-        if (value is! String)
+        if (value is! String) {
           throw FormatException('$field must contain strings');
+        }
         return value;
       })
       .toList(growable: false);
 }
+
+Object? _freezeJsonValue(Object? value) {
+  if (value is Map) {
+    return Map<String, Object?>.unmodifiable(
+      value.map(
+        (key, nested) => MapEntry(key.toString(), _freezeJsonValue(nested)),
+      ),
+    );
+  }
+  if (value is List) {
+    return List<Object?>.unmodifiable(value.map(_freezeJsonValue));
+  }
+  return value;
+}
+
+Map<String, Object?> _freezeJsonMap(Map<String, Object?> value) =>
+    Map<String, Object?>.unmodifiable(
+      value.map((key, nested) => MapEntry(key, _freezeJsonValue(nested))),
+    );
 
 final class PlayOption {
   const PlayOption({required this.id, required this.label, this.assetId});
@@ -116,7 +136,7 @@ final class PresentationLayer {
       role: json['role'] as String?,
       value: json['value'] as String?,
       assetId: json['assetId'] as String?,
-      properties: Map.unmodifiable(properties),
+      properties: _freezeJsonMap(properties),
     );
   }
 
@@ -153,13 +173,13 @@ final class PlayInputDefinition {
       label: json['label'] as String?,
       options: rawOptions == null
           ? const []
-          : (rawOptions as List)
-                .map(
-                  (value) =>
-                      PlayOption.fromJson(_map(value, 'input.options[]')),
-                )
-                .toList(growable: false),
-      properties: Map.unmodifiable(properties),
+          : List<PlayOption>.unmodifiable(
+              (rawOptions as List).map(
+                (value) =>
+                    PlayOption.fromJson(_map(value, 'input.options[]')),
+              ),
+            ),
+      properties: _freezeJsonMap(properties),
     );
   }
 
@@ -185,7 +205,7 @@ final class PlayValidationDefinition {
           json['type'],
           'validation.type',
         ),
-        value: json['value'],
+        value: _freezeJsonValue(json['value']),
       );
 
   Map<String, Object?> toJson() => {
@@ -219,30 +239,32 @@ final class PlayStateDefinition {
     final rawResponses = json['responses'];
     final responseMap = rawResponses == null
         ? const <String, Map<String, Object?>>{}
-        : _map(
-            rawResponses,
-            'responses',
-          ).map((key, value) => MapEntry(key, _map(value, 'responses.$key')));
+        : _map(rawResponses, 'responses').map((key, value) {
+            final response = _map(value, 'responses.$key');
+            return MapEntry(key, _freezeJsonMap(response));
+          });
 
     return PlayStateDefinition(
-      presentation: rawLayers
-          .map(
-            (value) => PresentationLayer.fromJson(
-              _map(value, 'presentation.layers[]'),
-            ),
-          )
-          .toList(growable: false),
+      presentation: List<PresentationLayer>.unmodifiable(
+        rawLayers.map(
+          (value) => PresentationLayer.fromJson(
+            _map(value, 'presentation.layers[]'),
+          ),
+        ),
+      ),
       input: PlayInputDefinition.fromJson(_map(json['input'], 'input')),
       validation: PlayValidationDefinition.fromJson(
         _map(json['validation'], 'validation'),
       ),
-      transitions: transitionMap.map((key, value) {
-        if (value is! String) {
-          throw FormatException('transition.$key must be a string');
-        }
-        return MapEntry(key, value);
-      }),
-      responses: Map.unmodifiable(responseMap),
+      transitions: Map<String, String>.unmodifiable(
+        transitionMap.map((key, value) {
+          if (value is! String) {
+            throw FormatException('transition.$key must be a string');
+          }
+          return MapEntry(key, value);
+        }),
+      ),
+      responses: Map<String, Map<String, Object?>>.unmodifiable(responseMap),
     );
   }
 
@@ -319,19 +341,21 @@ final class PlayDocument {
         json['classification'],
         'classification',
       ),
-      topics: List.unmodifiable(_strings(json['topics'], 'topics')),
-      learningTopics: List.unmodifiable(
+      topics: List<String>.unmodifiable(_strings(json['topics'], 'topics')),
+      learningTopics: List<String>.unmodifiable(
         _strings(json['learningTopics'], 'learningTopics'),
       ),
       estimatedDurationSec: json['estimatedDurationSec'] as int,
-      assets: List.unmodifiable(_strings(json['assets'], 'assets')),
+      assets: List<String>.unmodifiable(_strings(json['assets'], 'assets')),
       sources: rawSources == null
           ? const []
-          : (rawSources as List)
-                .map((source) => PlaySource.fromJson(_map(source, 'sources[]')))
-                .toList(growable: false),
+          : List<PlaySource>.unmodifiable(
+              (rawSources as List).map(
+                (source) => PlaySource.fromJson(_map(source, 'sources[]')),
+              ),
+            ),
       entryState: json['entryState'] as String,
-      states: Map.unmodifiable(
+      states: Map<String, PlayStateDefinition>.unmodifiable(
         rawStates.map(
           (key, value) => MapEntry(
             key,
