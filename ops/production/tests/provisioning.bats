@@ -56,6 +56,16 @@ run_ip_refresh() {
   [ "$first" = "$second" ]
 }
 
+@test "forced-command deploy user can traverse the installed command directory" {
+  root="$TEST_ROOT/root"
+  mkdir -p "$root"
+  run env MIXLI_PROVISION_TEST_MODE=1 MIXLI_PROVISION_ROOT="$root" \
+    "$REPO_ROOT/ops/production/bin/provision-host.sh"
+  [ "$status" -eq 0 ]
+  [ "$(stat -c '%a' "$root/opt/mixli/bin")" = '755' ]
+  [ "$(stat -c '%a' "$root/opt/mixli/bin/deploy-dispatch")" = '755' ]
+}
+
 @test "production firewall covers Docker-published ports through DOCKER-USER" {
   script="$REPO_ROOT/ops/production/bin/update-cloudflare-ips.sh"
   grep -Fq 'DOCKER-USER' "$script"
