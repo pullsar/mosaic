@@ -64,4 +64,42 @@ void main() {
     expect(result.outcome, 'incorrect');
     expect(result.session.stateId, 'solve');
   });
+
+  test('unimplemented typed inputs reject arbitrary actions', () {
+    final play = PlayDocument.fromJson({
+      'schemaVersion': 1,
+      'id': 'unsupported_input',
+      'revisionId': 'rev_1',
+      'format': 'play',
+      'classification': 'challenge',
+      'topics': <String>[],
+      'learningTopics': <String>[],
+      'estimatedDurationSec': 10,
+      'assets': <String>[],
+      'sources': <Object>[],
+      'entryState': 'active',
+      'states': {
+        'active': {
+          'presentation': {
+            'layers': [
+              {'type': 'text', 'role': 'prompt', 'value': 'Order these.'},
+            ],
+          },
+          'input': {'type': 'order'},
+          'validation': {'type': 'none'},
+          'transition': {'default': r'$end'},
+        },
+      },
+    });
+    final session = engine.start(play);
+
+    expect(
+      () => engine.apply(session, const TapAction()),
+      throwsA(isA<StateError>()),
+    );
+    expect(
+      () => engine.apply(session, const ChoiceAction('anything')),
+      throwsA(isA<StateError>()),
+    );
+  });
 }
