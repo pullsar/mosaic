@@ -123,6 +123,141 @@ void main() {
     expect(result, isA<DecodedPlay>());
   });
 
+  test('authored input extension properties survive typed round-trip', () {
+    final play = PlayDocument.fromJson(_fixture('play_it_back.json'));
+    final input = play.states['playback']!.input;
+
+    expect(input.properties['keys'], [
+      'C4',
+      'D4',
+      'E4',
+      'F4',
+      'G4',
+      'A4',
+      'B4',
+    ]);
+    expect(input.properties['sequenceLength'], 3);
+
+    final encoded = play.toJson();
+    final states = encoded['states']! as Map<String, Object?>;
+    final playback = states['playback']! as Map<String, Object?>;
+    final encodedInput = playback['input']! as Map<String, Object?>;
+    expect(encodedInput['type'], 'piano_key');
+    expect(encodedInput['sequenceLength'], 3);
+    expect(encodedInput['keys'], input.properties['keys']);
+  });
+
+  test(
+    'reserved input fields cannot be overridden by extension properties',
+    () {
+      final input = PlayInputDefinition(
+        type: PlayInputType.pianoKey,
+        label: 'Play',
+        properties: {'type': 'drag', 'label': 'Wrong', 'sequenceLength': 3},
+      );
+
+      final encoded = input.toJson();
+      expect(encoded['type'], 'piano_key');
+      expect(encoded['label'], 'Play');
+      expect(encoded['sequenceLength'], 3);
+    },
+  );
+
+  test('piano publication validation rejects impossible authored sequence', () {
+    final raw = _fixture('play_it_back.json');
+    final states = Map<String, Object?>.from(raw['states']! as Map);
+    final playback = Map<String, Object?>.from(states['playback']! as Map);
+    final input = Map<String, Object?>.from(playback['input']! as Map);
+    states['playback'] = {
+      ...playback,
+      'input': {
+        ...input,
+        'keys': ['C4', 'E4'],
+        'sequenceLength': 2,
+      },
+    };
+
+    final play = PlayDocument.fromJson({...raw, 'states': states});
+    final issues = const PlaySchemaValidator().validate(play);
+    expect(
+      issues.map((issue) => issue.code),
+      containsAll(['piano_sequence_length', 'piano_expected_key_missing']),
+    );
+  });
+
+  test('drag publication validation rejects bad geometry and target id', () {
+    final raw = _fixture('move_one_match.json');
+    final states = Map<String, Object?>.from(raw['states']! as Map);
+    final solve = Map<String, Object?>.from(states['solve']! as Map);
+    final input = Map<String, Object?>.from(solve['input']! as Map);
+    states['solve'] = {
+      ...solve,
+      'input': {
+        ...input,
+        'targets': [
+          {'id': 'elsewhere', 'x': 0.9, 'y': 0.2, 'width': 0.2, 'height': 0.2},
+        ],
+      },
+    };
+
+    final play = PlayDocument.fromJson({...raw, 'states': states});
+    final issues = const PlaySchemaValidator().validate(play);
+    expect(issues.any((issue) => issue.code == 'drag_targets'), isTrue);
+  });
+
+  test('drag publication validation rejects overlapping targets', () {
+    final raw = _fixture('move_one_match.json');
+    final states = Map<String, Object?>.from(raw['states']! as Map);
+    final solve = Map<String, Object?>.from(states['solve']! as Map);
+    final input = Map<String, Object?>.from(solve['input']! as Map);
+    states['solve'] = {
+      ...solve,
+      'input': {
+        ...input,
+        'targets': [
+          {
+            'id': 'solution_a',
+            'x': 0.55,
+            'y': 0.25,
+            'width': 0.2,
+            'height': 0.2,
+          },
+          {
+            'id': 'solution_b',
+            'x': 0.65,
+            'y': 0.3,
+            'width': 0.2,
+            'height': 0.2,
+          },
+        ],
+      },
+    };
+
+    final play = PlayDocument.fromJson({...raw, 'states': states});
+    final issues = const PlaySchemaValidator().validate(play);
+    expect(issues.any((issue) => issue.code == 'drag_target_overlap'), isTrue);
+  });
+
+  test(
+    'drag publication validation requires validator target to be authored',
+    () {
+      final raw = _fixture('move_one_match.json');
+      final states = Map<String, Object?>.from(raw['states']! as Map);
+      final solve = Map<String, Object?>.from(states['solve']! as Map);
+      states['solve'] = {
+        ...solve,
+        'validation': {'type': 'target_region', 'value': 'missing_target'},
+      };
+
+      final play = PlayDocument.fromJson({...raw, 'states': states});
+      final issues = const PlaySchemaValidator().validate(play);
+      expect(
+        issues.any((issue) => issue.code == 'drag_expected_target_missing'),
+        isTrue,
+      );
+    },
+  );
+
   test('malformed raw capability shape returns MalformedPlay', () {
     final raw = {..._fixture('where_is_this.json'), 'states': 'broken'};
     final result = const PlayCompatibilityChecker().decode(

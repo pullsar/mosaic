@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "getaway_mood_01",
+  "semanticLabel": "Warm walkable city-break mood",
+  "elements": [
+    {"type": "rect", "x": 0.04, "y": 0.08, "width": 0.92, "height": 0.72, "radius": 0.05, "fill": true, "tone": "surface"},
+    {"type": "circle", "x": 0.78, "y": 0.23, "radius": 0.08, "fill": true, "tone": "accent"},
+    {"type": "rect", "x": 0.12, "y": 0.45, "width": 0.16, "height": 0.22, "radius": 0.02, "fill": true, "tone": "muted"},
+    {"type": "rect", "x": 0.31, "y": 0.38, "width": 0.18, "height": 0.29, "radius": 0.02, "fill": true, "tone": "foreground"},
+    {"type": "rect", "x": 0.53, "y": 0.49, "width": 0.14, "height": 0.18, "radius": 0.02, "fill": true, "tone": "muted"},
+    {"type": "line", "x1": 0.10, "y1": 0.71, "x2": 0.88, "y2": 0.71, "width": 0.018, "tone": "accent"},
+    {"type": "line", "x1": 0.18, "y1": 0.77, "x2": 0.82, "y2": 0.77, "width": 0.010, "tone": "muted"},
+    {"type": "circle", "x": 0.23, "y": 0.30, "radius": 0.045, "strokeWidth": 0.012, "tone": "foreground"},
+    {"type": "circle", "x": 0.23, "y": 0.30, "radius": 0.012, "fill": true, "tone": "accent"}
+  ]
+}

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "play_play_it_back",
-  "revisionId": "rev_1",
+  "revisionId": "rev_2",
   "format": "play",
   "classification": "challenge",
   "topics": ["music", "piano"],
@@ -16,7 +16,11 @@
         {"type": "audio", "role": "media", "assetId": "audio_ceg"},
         {"type": "text", "role": "prompt", "value": "Play it back."}
       ]},
-      "input": {"type": "piano_key"},
+      "input": {
+        "type": "piano_key",
+        "keys": ["C4", "D4", "E4", "F4", "G4", "A4", "B4"],
+        "sequenceLength": 3
+      },
       "validation": {"type": "ordered_sequence", "value": ["C4", "E4", "G4"]},
       "transition": {"correct": "reveal", "incorrect": "reveal"}
     },

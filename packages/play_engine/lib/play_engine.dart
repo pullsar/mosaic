@@ -20,6 +20,11 @@ final class SequenceAction extends PlayAction {
   final List<String> values;
 }
 
+final class DragAction extends PlayAction {
+  const DragAction(this.targetId);
+  final String targetId;
+}
+
 final class PlaySession {
   const PlaySession({
     required this.play,
@@ -104,18 +109,22 @@ final class PlayEngine {
         outcome: action is ChoiceAction ? action.optionId : 'default',
       ),
       PlayValidatorType.equals =>
-        value == validation.value
+        value == _equalsPayload(validation.value)
             ? const _Evaluation(outcome: 'correct', wasCorrect: true)
             : const _Evaluation(outcome: 'incorrect', wasCorrect: false),
       PlayValidatorType.orderedSequence =>
         _listEquals(
               value is List<String> ? value : const <String>[],
-              (validation.value as List).cast<String>(),
+              _orderedSequencePayload(validation.value),
             )
             ? const _Evaluation(outcome: 'correct', wasCorrect: true)
             : const _Evaluation(outcome: 'incorrect', wasCorrect: false),
+      PlayValidatorType.targetRegion =>
+        value == _targetRegionPayload(validation.value)
+            ? const _Evaluation(outcome: 'correct', wasCorrect: true)
+            : const _Evaluation(outcome: 'incorrect', wasCorrect: false),
       _ => throw UnsupportedError(
-        'Validator ${validation.type.name} is not executable in M0.',
+        'Validator ${validation.type.name} is not executable in M1.',
       ),
     };
   }
@@ -124,6 +133,7 @@ final class PlayEngine {
     TapAction() => null,
     ChoiceAction(:final optionId) => optionId,
     SequenceAction(:final values) => values,
+    DragAction(:final targetId) => targetId,
   };
 
   void _assertCompatible(PlayInputType input, PlayAction action) {
@@ -132,7 +142,8 @@ final class PlayEngine {
       PlayInputType.singleChoice => action is ChoiceAction,
       PlayInputType.multipleChoice || PlayInputType.pianoKey =>
         action is SequenceAction || action is ChoiceAction,
-      _ => true,
+      PlayInputType.drag => action is DragAction,
+      _ => false,
     };
     if (!compatible) {
       throw StateError(
@@ -146,6 +157,30 @@ final class _Evaluation {
   const _Evaluation({required this.outcome, this.wasCorrect});
   final String outcome;
   final bool? wasCorrect;
+}
+
+Object _equalsPayload(Object? raw) {
+  if (raw == null) {
+    throw StateError('equals validation payload is malformed.');
+  }
+  return raw;
+}
+
+List<String> _orderedSequencePayload(Object? raw) {
+  if (raw is! List ||
+      raw.isEmpty ||
+      raw.length > 16 ||
+      raw.any((value) => value is! String || value.trim().isEmpty)) {
+    throw StateError('ordered_sequence validation payload is malformed.');
+  }
+  return raw.cast<String>();
+}
+
+String _targetRegionPayload(Object? raw) {
+  if (raw is! String || raw.trim().isEmpty) {
+    throw StateError('target_region validation payload is malformed.');
+  }
+  return raw;
 }
 
 bool _listEquals(List<String> a, List<String> b) {

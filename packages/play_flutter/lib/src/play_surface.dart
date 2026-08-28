@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:play_engine/play_engine.dart';
 import 'package:play_schema/play_schema.dart';
 
+import 'play_input_primitives.dart';
+import 'play_media_layer_renderer.dart';
 import 'visual_tokens.dart';
 
 typedef PlayMediaBuilder =
@@ -12,12 +14,19 @@ final class PlaySurface extends StatefulWidget {
     required this.play,
     this.mediaBuilder,
     this.onResolved,
+    this.onDirectManipulationChanged,
     super.key,
   });
 
   final PlayDocument play;
   final PlayMediaBuilder? mediaBuilder;
   final ValueChanged<PlayResolution>? onResolved;
+
+  /// True while a direct-manipulation primitive owns a drag gesture.
+  ///
+  /// Feed containers should use this to suspend vertical paging until the
+  /// manipulation ends instead of relying on gesture-arena ordering.
+  final ValueChanged<bool>? onDirectManipulationChanged;
 
   @override
   State<PlaySurface> createState() => _PlaySurfaceState();
@@ -33,6 +42,15 @@ final class _PlaySurfaceState extends State<PlaySurface> {
     _session = _engine.start(widget.play);
   }
 
+  @override
+  void didUpdateWidget(covariant PlaySurface oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.play.id != widget.play.id ||
+        oldWidget.play.revisionId != widget.play.revisionId) {
+      _session = _engine.start(widget.play);
+    }
+  }
+
   void _apply(PlayAction action) {
     if (_session.ended) return;
     final result = _engine.apply(_session, action);
@@ -45,24 +63,33 @@ final class _PlaySurfaceState extends State<PlaySurface> {
     final state = _session.state;
     final media = state.presentation.where((layer) => layer.role == 'media');
     final text = state.presentation.where((layer) => layer.type == 'text');
+    final input = _InputOverlay(
+      input: state.input,
+      validation: state.validation,
+      inputEpoch: _session.attempts,
+      onAction: _apply,
+      onDirectManipulationChanged: widget.onDirectManipulationChanged,
+    );
 
     return ColoredBox(
       color: MosaicVisualTokens.surface,
-      child: SafeArea(
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            for (final layer in media) _buildMedia(context, layer),
-            _TextOverlay(layers: text.toList(growable: false)),
-            _InputOverlay(input: state.input, onAction: _apply),
-          ],
-        ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          for (final layer in media) _buildMedia(context, layer),
+          SafeArea(child: _TextOverlay(layers: text.toList(growable: false))),
+          if (state.input.type == PlayInputType.drag)
+            input
+          else
+            SafeArea(child: input),
+        ],
       ),
     );
   }
 
   Widget _buildMedia(BuildContext context, PresentationLayer layer) =>
-      widget.mediaBuilder?.call(context, layer) ?? const SizedBox.expand();
+      widget.mediaBuilder?.call(context, layer) ??
+      PlayMediaUnavailable(type: layer.type);
 }
 
 final class _TextOverlay extends StatelessWidget {
@@ -110,21 +137,85 @@ final class _TextOverlay extends StatelessWidget {
   }
 }
 
+PlayPianoInputSpec? _safePianoSpec(
+  PlayInputDefinition input,
+  PlayValidationDefinition validation,
+) {
+  if (validation.type != PlayValidatorType.orderedSequence) return null;
+  final expectedRaw = validation.value;
+  if (expectedRaw is! List ||
+      expectedRaw.isEmpty ||
+      expectedRaw.length > 16 ||
+      expectedRaw.any((value) => value is! String || value.trim().isEmpty)) {
+    return null;
+  }
+
+  final spec = PlayPianoInputSpec.fromDefinitions(input, validation);
+  if (spec == null || spec.sequenceLength != expectedRaw.length) return null;
+  final keys = spec.keys.toSet();
+  if (expectedRaw.any((value) => !keys.contains(value))) return null;
+  return spec;
+}
+
+PlayDragInputSpec? _safeDragSpec(
+  PlayInputDefinition input,
+  PlayValidationDefinition validation,
+) {
+  if (validation.type != PlayValidatorType.targetRegion) return null;
+  final expectedRaw = validation.value;
+  if (expectedRaw is! String || expectedRaw.trim().isEmpty) return null;
+
+  final spec = PlayDragInputSpec.fromDefinition(input);
+  if (spec == null ||
+      !spec.targets.any((target) => target.id == expectedRaw.trim())) {
+    return null;
+  }
+
+  for (var left = 0; left < spec.targets.length; left += 1) {
+    for (var right = left + 1; right < spec.targets.length; right += 1) {
+      if (_dragRectsOverlap(
+        spec.targets[left].rect,
+        spec.targets[right].rect,
+      )) {
+        return null;
+      }
+    }
+  }
+  return spec;
+}
+
+bool _dragRectsOverlap(PlayNormalizedRect left, PlayNormalizedRect right) =>
+    left.x < right.x + right.width &&
+    left.x + left.width > right.x &&
+    left.y < right.y + right.height &&
+    left.y + left.height > right.y;
+
 final class _InputOverlay extends StatelessWidget {
-  const _InputOverlay({required this.input, required this.onAction});
+  const _InputOverlay({
+    required this.input,
+    required this.validation,
+    required this.inputEpoch,
+    required this.onAction,
+    this.onDirectManipulationChanged,
+  });
 
   final PlayInputDefinition input;
+  final PlayValidationDefinition validation;
+  final int inputEpoch;
   final ValueChanged<PlayAction> onAction;
+  final ValueChanged<bool>? onDirectManipulationChanged;
 
   @override
   Widget build(BuildContext context) {
     if (input.type == PlayInputType.tap) {
-      return Positioned(
-        right: 20,
-        bottom: 24,
-        child: _ControlButton(
-          label: input.label ?? 'Done',
-          onPressed: () => onAction(const TapAction()),
+      return Align(
+        alignment: Alignment.bottomRight,
+        child: Padding(
+          padding: const EdgeInsets.only(right: 20, bottom: 24),
+          child: _ControlButton(
+            label: input.label ?? 'Done',
+            onPressed: () => onAction(const TapAction()),
+          ),
         ),
       );
     }
@@ -150,7 +241,41 @@ final class _InputOverlay extends StatelessWidget {
       );
     }
 
-    return const SizedBox.shrink();
+    if (input.type == PlayInputType.pianoKey) {
+      final spec = _safePianoSpec(input, validation);
+      if (spec == null) {
+        return const PlayInputUnavailable(type: 'piano_key');
+      }
+      return Align(
+        alignment: Alignment.bottomCenter,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 20, 12, 20),
+          child: PlayPianoInput(
+            key: ValueKey<String>('piano:$inputEpoch'),
+            keys: spec.keys,
+            sequenceLength: spec.sequenceLength,
+            onSequence: (values) => onAction(SequenceAction(values)),
+          ),
+        ),
+      );
+    }
+
+    if (input.type == PlayInputType.drag) {
+      final spec = _safeDragSpec(input, validation);
+      if (spec == null) {
+        return const PlayInputUnavailable(type: 'drag');
+      }
+      return Positioned.fill(
+        child: PlayDragInput(
+          key: ValueKey<String>('drag:$inputEpoch'),
+          spec: spec,
+          onTarget: (targetId) => onAction(DragAction(targetId)),
+          onManipulationChanged: onDirectManipulationChanged,
+        ),
+      );
+    }
+
+    return PlayInputUnavailable(type: input.type.name);
   }
 }
 

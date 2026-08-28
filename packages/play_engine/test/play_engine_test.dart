@@ -12,6 +12,41 @@ PlayDocument fixture(String name) {
   return PlayDocument.fromJson(raw);
 }
 
+PlayDocument playWithValidation({
+  required String inputType,
+  required Map<String, Object?> validation,
+}) => PlayDocument.fromJson({
+  'schemaVersion': 1,
+  'id': 'malformed_validator',
+  'revisionId': 'rev_1',
+  'format': 'play',
+  'classification': 'challenge',
+  'topics': <String>[],
+  'learningTopics': <String>[],
+  'estimatedDurationSec': 10,
+  'assets': <String>[],
+  'sources': <Object>[],
+  'entryState': 'active',
+  'states': {
+    'active': {
+      'presentation': {
+        'layers': [
+          {'type': 'text', 'role': 'prompt', 'value': 'Try it.'},
+        ],
+      },
+      'input': {'type': inputType},
+      'validation': validation,
+      'transition': {'correct': r'$end', 'incorrect': r'$end'},
+    },
+  },
+});
+
+Matcher stateErrorMessage(String message) => isA<StateError>().having(
+  (StateError error) => error.message,
+  'message',
+  message,
+);
+
 void main() {
   const engine = PlayEngine();
 
@@ -42,5 +77,115 @@ void main() {
     );
     expect(result.wasCorrect, isTrue);
     expect(result.session.stateId, 'reveal');
+  });
+
+  test('validates typed drag target and rejects unrelated actions', () {
+    final session = engine.start(fixture('move_one_match.json'));
+    final result = engine.apply(session, const DragAction('solution_a'));
+
+    expect(result.wasCorrect, isTrue);
+    expect(result.session.stateId, 'reveal');
+    expect(
+      () => engine.apply(session, const TapAction()),
+      throwsA(isA<StateError>()),
+    );
+  });
+
+  test('incorrect drag target can stay in the authored solve state', () {
+    final session = engine.start(fixture('move_one_match.json'));
+    final result = engine.apply(session, const DragAction('miss'));
+
+    expect(result.wasCorrect, isFalse);
+    expect(result.outcome, 'incorrect');
+    expect(result.session.stateId, 'solve');
+  });
+
+  test('unimplemented typed inputs reject arbitrary actions', () {
+    final play = PlayDocument.fromJson({
+      'schemaVersion': 1,
+      'id': 'unsupported_input',
+      'revisionId': 'rev_1',
+      'format': 'play',
+      'classification': 'challenge',
+      'topics': <String>[],
+      'learningTopics': <String>[],
+      'estimatedDurationSec': 10,
+      'assets': <String>[],
+      'sources': <Object>[],
+      'entryState': 'active',
+      'states': {
+        'active': {
+          'presentation': {
+            'layers': [
+              {'type': 'text', 'role': 'prompt', 'value': 'Order these.'},
+            ],
+          },
+          'input': {'type': 'order'},
+          'validation': {'type': 'none'},
+          'transition': {'default': r'$end'},
+        },
+      },
+    });
+    final session = engine.start(play);
+
+    expect(
+      () => engine.apply(session, const TapAction()),
+      throwsA(isA<StateError>()),
+    );
+    expect(
+      () => engine.apply(session, const ChoiceAction('anything')),
+      throwsA(isA<StateError>()),
+    );
+  });
+
+  test('malformed equals payload fails with a stable engine error', () {
+    final session = engine.start(
+      playWithValidation(
+        inputType: 'single_choice',
+        validation: {'type': 'equals', 'value': null},
+      ),
+    );
+
+    expect(
+      () => engine.apply(session, const ChoiceAction('anything')),
+      throwsA(stateErrorMessage('equals validation payload is malformed.')),
+    );
+  });
+
+  test(
+    'malformed ordered-sequence payload fails with a stable engine error',
+    () {
+      final session = engine.start(
+        playWithValidation(
+          inputType: 'piano_key',
+          validation: {'type': 'ordered_sequence', 'value': 'C4,E4,G4'},
+        ),
+      );
+
+      expect(
+        () => engine.apply(session, const SequenceAction(['C4', 'E4', 'G4'])),
+        throwsA(
+          stateErrorMessage(
+            'ordered_sequence validation payload is malformed.',
+          ),
+        ),
+      );
+    },
+  );
+
+  test('malformed target-region payload fails with a stable engine error', () {
+    final session = engine.start(
+      playWithValidation(
+        inputType: 'drag',
+        validation: {'type': 'target_region', 'value': 42},
+      ),
+    );
+
+    expect(
+      () => engine.apply(session, const DragAction('solution_a')),
+      throwsA(
+        stateErrorMessage('target_region validation payload is malformed.'),
+      ),
+    );
   });
 }
