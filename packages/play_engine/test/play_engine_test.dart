@@ -12,6 +12,35 @@ PlayDocument fixture(String name) {
   return PlayDocument.fromJson(raw);
 }
 
+PlayDocument playWithValidation({
+  required String inputType,
+  required Map<String, Object?> validation,
+}) => PlayDocument.fromJson({
+  'schemaVersion': 1,
+  'id': 'malformed_validator',
+  'revisionId': 'rev_1',
+  'format': 'play',
+  'classification': 'challenge',
+  'topics': <String>[],
+  'learningTopics': <String>[],
+  'estimatedDurationSec': 10,
+  'assets': <String>[],
+  'sources': <Object>[],
+  'entryState': 'active',
+  'states': {
+    'active': {
+      'presentation': {
+        'layers': [
+          {'type': 'text', 'role': 'prompt', 'value': 'Try it.'},
+        ],
+      },
+      'input': {'type': inputType},
+      'validation': validation,
+      'transition': {'correct': r'$end', 'incorrect': r'$end'},
+    },
+  },
+});
+
 void main() {
   const engine = PlayEngine();
 
@@ -100,6 +129,49 @@ void main() {
     expect(
       () => engine.apply(session, const ChoiceAction('anything')),
       throwsA(isA<StateError>()),
+    );
+  });
+
+  test('malformed ordered-sequence payload fails with a stable engine error', () {
+    final session = engine.start(
+      playWithValidation(
+        inputType: 'piano_key',
+        validation: {'type': 'ordered_sequence', 'value': 'C4,E4,G4'},
+      ),
+    );
+
+    expect(
+      () => engine.apply(
+        session,
+        const SequenceAction(['C4', 'E4', 'G4']),
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          'ordered_sequence validation payload is malformed.',
+        ),
+      ),
+    );
+  });
+
+  test('malformed target-region payload fails with a stable engine error', () {
+    final session = engine.start(
+      playWithValidation(
+        inputType: 'drag',
+        validation: {'type': 'target_region', 'value': 42},
+      ),
+    );
+
+    expect(
+      () => engine.apply(session, const DragAction('solution_a')),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          'target_region validation payload is malformed.',
+        ),
+      ),
     );
   });
 }
