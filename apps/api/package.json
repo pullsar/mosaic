@@ -9,6 +9,7 @@
     "start": "node --enable-source-maps dist/server.js",
     "worker:media": "node --enable-source-maps dist/media_worker_main.js",
     "worker:media:local": "node --enable-source-maps dist/media_worker_main.js",
+    "worker:transcript": "node --enable-source-maps dist/media_transcript_worker_main.js",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --import tsx --test test/**/*.test.ts",
