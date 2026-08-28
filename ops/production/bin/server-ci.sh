@@ -15,8 +15,6 @@ readonly ALERTMANAGER_IMAGE="${MIXLI_ALERTMANAGER_CI_IMAGE:-prom/alertmanager:v0
 
 network=''
 postgres_container=''
-node_modules_volume=''
-api_dist_volume=''
 systemd_verify_root=''
 alertmanager_verify_root=''
 
@@ -35,12 +33,6 @@ cleanup() {
   fi
   if [[ -n "$network" ]]; then
     docker network rm "$network" >/dev/null 2>&1 || true
-  fi
-  if [[ -n "$node_modules_volume" ]]; then
-    docker volume rm "$node_modules_volume" >/dev/null 2>&1 || true
-  fi
-  if [[ -n "$api_dist_volume" ]]; then
-    docker volume rm "$api_dist_volume" >/dev/null 2>&1 || true
   fi
   if [[ "$systemd_verify_root" == /tmp/mixli-systemd-verify.* && -d "$systemd_verify_root" ]]; then
     rm -rf -- "$systemd_verify_root"
@@ -145,12 +137,8 @@ wait_for_postgres() {
 api_postgres_integration() {
   network="mixli-ci-$SHORT_SHA"
   postgres_container="mixli-ci-postgres-$SHORT_SHA"
-  node_modules_volume="mixli-ci-node-modules-$SHORT_SHA"
-  api_dist_volume="mixli-ci-api-dist-$SHORT_SHA"
 
   docker network create "$network" >/dev/null
-  docker volume create "$node_modules_volume" >/dev/null
-  docker volume create "$api_dist_volume" >/dev/null
   docker run -d --name "$postgres_container" --network "$network" --network-alias postgres \
     --tmpfs /var/lib/postgresql:rw,nosuid,nodev,size=2g \
     -e POSTGRES_DB=mosaic -e POSTGRES_USER=mosaic -e POSTGRES_PASSWORD=mosaic \
@@ -160,19 +148,22 @@ api_postgres_integration() {
 
   docker run --rm --network "$network" \
     -e DATABASE_URL=postgres://mosaic:mosaic@postgres:5432/mosaic \
-    -v "$CHECKOUT:/workspace:ro" \
-    -v "$node_modules_volume:/workspace/apps/api/node_modules" \
-    -v "$api_dist_volume:/workspace/apps/api/dist" \
-    -w /workspace/apps/api "$NODE_IMAGE" bash -lc \
-    'set -Eeuo pipefail; npm ci --ignore-scripts; npm run typecheck; npm test; npm run build'
+    -v "$CHECKOUT:/source:ro" -w /workspace "$NODE_IMAGE" bash -lc \
+    'set -Eeuo pipefail
+     install -d apps/api packages
+     cp -a /source/apps/api/. apps/api/
+     cp -a /source/contracts ./contracts
+     cp -a /source/packages/play_schema ./packages/play_schema
+     cd apps/api
+     npm ci --ignore-scripts
+     npm run typecheck
+     npm test
+     npm run build'
 
   docker rm -f "$postgres_container" >/dev/null
   postgres_container=''
   docker network rm "$network" >/dev/null
   network=''
-  docker volume rm "$node_modules_volume" "$api_dist_volume" >/dev/null
-  node_modules_volume=''
-  api_dist_volume=''
 }
 
 flutter_workspace() {

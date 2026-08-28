@@ -58,6 +58,8 @@ production-builds" ]
     'mktemp -d /tmp/mixli-alertmanager-verify.XXXXXX' \
     'https://example.invalid/hooks/ci' \
     'DATABASE_URL=' \
+    '$CHECKOUT:/source:ro' \
+    'cp -a /source/apps/api/. apps/api/' \
     'npm ci --ignore-scripts' \
     'npm run typecheck' \
     'npm test' \
