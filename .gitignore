@@ -9,6 +9,7 @@ coverage/
 .vscode/
 *.iml
 .DS_Store
+.worktrees/
 **/android/local.properties
 **/ios/Flutter/ephemeral/
 **/macos/Flutter/ephemeral/
