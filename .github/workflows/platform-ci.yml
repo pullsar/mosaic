@@ -43,9 +43,7 @@ jobs:
       - name: Resolve locked workspace
         run: flutter pub get --enforce-lockfile
       - name: Verify formatting
-        run: |
-          dart format .
-          git diff --exit-code
+        run: dart format --output=none --set-exit-if-changed .
       - name: Analyze
         run: flutter analyze
       - name: Test platform contracts
