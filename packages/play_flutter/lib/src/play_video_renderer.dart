@@ -275,10 +275,12 @@ final class _OwnedPlayVideoState extends State<OwnedPlayVideo> {
   void _scheduleUserPlay() {
     if (_userPlayInFlight) return;
     final generation = _generation;
+    _publishUserPlayInFlight(generation, true);
     final operation = _tail.then((_) => _playFromUser(generation));
     _tail = operation.then<void>(
-      (_) {},
+      (_) => _publishUserPlayInFlight(generation, false),
       onError: (Object error, StackTrace stackTrace) {
+        _publishUserPlayInFlight(generation, false);
         _reportPlaybackError(widget.asset, error, stackTrace);
       },
     );
@@ -385,7 +387,6 @@ final class _OwnedPlayVideoState extends State<OwnedPlayVideo> {
     if (controller == null || coordinator == null || ownerId == null) return;
     if (!coordinator.owns(ownerId, controller)) return;
 
-    _publishUserPlayInFlight(generation, true);
     try {
       await controller.play();
       if (!_isCurrent(generation) ||
@@ -407,8 +408,6 @@ final class _OwnedPlayVideoState extends State<OwnedPlayVideo> {
         _retryUserPlay = true;
       }
       _reportPlaybackError(widget.asset, error, stackTrace);
-    } finally {
-      _publishUserPlayInFlight(generation, false);
     }
   }
 
