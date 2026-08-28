@@ -50,6 +50,11 @@ export interface MediaProcessResult {
   stdoutText?: string;
 }
 
+export type MediaProcessRunner = (
+  invocation: MediaProcessInvocation,
+  options: MediaProcessRunOptions,
+) => Promise<MediaProcessResult>;
+
 const DEFAULT_KILL_GRACE_MS = 2_000;
 const DEFAULT_STDERR_CHARS = 32 * 1024;
 const DEFAULT_STDOUT_CHARS = 512 * 1024;
