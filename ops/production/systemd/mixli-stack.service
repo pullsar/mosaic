@@ -1,0 +1,17 @@
+[Unit]
+Description=Mixli production Compose stack
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+WorkingDirectory=/srv/mixli/repository
+ExecStart=/usr/bin/docker compose --env-file /etc/mixli/env/production.env -f /srv/mixli/repository/ops/production/compose.yaml up -d
+ExecStop=/usr/bin/docker compose --env-file /etc/mixli/env/production.env -f /srv/mixli/repository/ops/production/compose.yaml down
+TimeoutStartSec=15m
+TimeoutStopSec=5m
+
+[Install]
+WantedBy=multi-user.target

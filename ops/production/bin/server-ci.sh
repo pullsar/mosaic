@@ -93,8 +93,10 @@ infrastructure_contracts() {
   shellcheck "${shell_files[@]}"
 
   systemd_verify_root="$(mktemp -d /tmp/mixli-systemd-verify.XXXXXX)"
-  install -d "$systemd_verify_root/opt/mixli/bin" "$systemd_verify_root/etc/systemd/system"
+  install -d "$systemd_verify_root/opt/mixli/bin" \
+    "$systemd_verify_root/etc/systemd/system" "$systemd_verify_root/usr/bin"
   install -m 0755 "${shell_files[@]}" "$systemd_verify_root/opt/mixli/bin/"
+  install -m 0755 /usr/bin/true "$systemd_verify_root/usr/bin/docker"
   install -m 0644 "$CHECKOUT"/ops/production/systemd/* \
     "$systemd_verify_root/etc/systemd/system/"
   systemd-analyze verify --recursive-errors=no --root="$systemd_verify_root" \

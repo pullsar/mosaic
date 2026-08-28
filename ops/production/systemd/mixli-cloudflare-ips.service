@@ -1,0 +1,15 @@
+[Unit]
+Description=Refresh Cloudflare origin allowlists
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/mixli/bin/update-cloudflare-ips.sh
+TimeoutStartSec=2m
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

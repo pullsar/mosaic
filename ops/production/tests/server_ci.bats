@@ -54,6 +54,7 @@ production-builds" ]
     'systemd-analyze verify' \
     '--recursive-errors=no' \
     'mktemp -d /tmp/mixli-systemd-verify.XXXXXX' \
+    '$systemd_verify_root/usr/bin/docker' \
     '--entrypoint promtool' \
     'mktemp -d /tmp/mixli-alertmanager-verify.XXXXXX' \
     'mktemp -d /tmp/mixli-prometheus-verify.XXXXXX' \
