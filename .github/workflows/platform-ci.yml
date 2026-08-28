@@ -7,6 +7,7 @@ on:
       - 'apps/mosaic_app/**'
       - 'packages/platform_contracts/**'
       - 'packages/platform_flutter/**'
+      - 'packages/play_flutter/**'
       - 'pubspec.yaml'
       - 'pubspec.lock'
       - '.github/workflows/platform-ci.yml'
@@ -15,6 +16,7 @@ on:
       - 'apps/mosaic_app/**'
       - 'packages/platform_contracts/**'
       - 'packages/platform_flutter/**'
+      - 'packages/play_flutter/**'
       - 'pubspec.yaml'
       - 'pubspec.lock'
       - '.github/workflows/platform-ci.yml'
@@ -29,7 +31,7 @@ permissions:
 jobs:
   android-web:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -49,6 +51,9 @@ jobs:
         run: dart test
       - name: Test Flutter platform adapters
         working-directory: packages/platform_flutter
+        run: flutter test
+      - name: Test renderer adapters
+        working-directory: packages/play_flutter
         run: flutter test
       - name: Test app shell
         working-directory: apps/mosaic_app
@@ -134,6 +139,7 @@ jobs:
               raise SystemExit('Android purpose copy was not localized')
           PY
           manifest=apps/mosaic_app/android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.INTERNET' "$manifest"
           grep -q 'android.permission.CAMERA' "$manifest"
           grep -q 'android.permission.RECORD_AUDIO' "$manifest"
           grep -q 'android.permission.POST_NOTIFICATIONS' "$manifest"
@@ -145,16 +151,20 @@ jobs:
           project=apps/mosaic_app/ios/Runner.xcodeproj/project.pbxproj
           grep -q 'PrivacyInfo.xcprivacy in Resources' "$project"
           grep -q 'InfoPlist.strings in Resources' "$project"
+          grep -q '^STRIP_STYLE = non-global$' apps/mosaic_app/ios/Flutter/Release.xcconfig
+          web=apps/mosaic_app/web/index.html
+          grep -q 'assets/packages/flutter_soloud/web/libflutter_soloud_plugin.js' "$web"
+          grep -q 'assets/packages/flutter_soloud/web/init_module.dart.js' "$web"
       - name: Build web host
         working-directory: apps/mosaic_app
         run: flutter build web --release
-      - name: Build Android host
+      - name: Build Android release host
         working-directory: apps/mosaic_app
-        run: flutter build apk --debug
+        run: flutter build apk --release
 
   ios:
     runs-on: macos-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
