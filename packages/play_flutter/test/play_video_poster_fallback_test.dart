@@ -61,6 +61,11 @@ Future<void> _settle(WidgetTester tester) async {
   await tester.pump(const Duration(milliseconds: 200));
 }
 
+void _expectPoster(WidgetTester tester) {
+  expect(find.byType(Image), findsOneWidget);
+  expect(tester.widget<Image>(find.byType(Image)).semanticLabel, 'Travel clip poster');
+}
+
 void main() {
   testWidgets('managed poster is shown while video initialization is pending', (
     tester,
@@ -82,7 +87,7 @@ void main() {
     );
     await _settle(tester);
 
-    expect(find.bySemanticsLabel('Travel clip poster'), findsOneWidget);
+    _expectPoster(tester);
     expect(find.text('video-frame'), findsNothing);
 
     gate.complete();
@@ -113,7 +118,7 @@ void main() {
       await _settle(tester);
 
       expect(controller.releaseCount, 1);
-      expect(find.bySemanticsLabel('Travel clip poster'), findsOneWidget);
+      _expectPoster(tester);
       expect(find.byType(PlayVideoUnavailable), findsNothing);
     },
   );
