@@ -59,10 +59,11 @@ final class CallbackPlayVideoPosterResolver implements PlayVideoPosterResolver {
 }
 
 final class MapPlayVideoPosterResolver implements PlayVideoPosterResolver {
-  MapPlayVideoPosterResolver(Map<String, PlayVisualAsset> postersByVideoAssetId)
-    : _posters = Map<String, PlayVisualAsset>.unmodifiable(
-        postersByVideoAssetId,
-      );
+  MapPlayVideoPosterResolver(
+    Map<String, PlayVisualAsset> postersByVideoAssetId,
+  ) : _posters = Map<String, PlayVisualAsset>.unmodifiable(
+         postersByVideoAssetId,
+       );
 
   final Map<String, PlayVisualAsset> _posters;
 
@@ -146,26 +147,26 @@ final class _ResolvedPlayVideoState extends State<ResolvedPlayVideo> {
       }
 
       final posterResolver = widget.posterResolver;
-      final loadingBuilder = widget.loadingBuilder ??
+      final loadingBuilder =
+          widget.loadingBuilder ??
           (posterResolver == null
               ? null
-              : (BuildContext context, PlayVideoAsset asset) =>
-                    _ResolvedVideoPoster(
-                      videoAssetId: asset.id,
-                      resolver: posterResolver,
-                      fallback: const _VideoAssetLookupState(
-                        label: 'Loading video',
-                      ),
-                    ));
-      final errorBuilder = widget.errorBuilder ??
+              : (_, asset) => _ResolvedVideoPoster(
+                  videoAssetId: asset.id,
+                  resolver: posterResolver,
+                  fallback: const _VideoAssetLookupState(
+                    label: 'Loading video',
+                  ),
+                ));
+      final errorBuilder =
+          widget.errorBuilder ??
           (posterResolver == null
               ? null
-              : (BuildContext context, PlayVideoAsset asset) =>
-                    _ResolvedVideoPoster(
-                      videoAssetId: asset.id,
-                      resolver: posterResolver,
-                      fallback: const PlayVideoUnavailable(),
-                    ));
+              : (_, asset) => _ResolvedVideoPoster(
+                  videoAssetId: asset.id,
+                  resolver: posterResolver,
+                  fallback: const PlayVideoUnavailable(),
+                ));
 
       return OwnedPlayVideo(
         ownerId: widget.ownerId,
