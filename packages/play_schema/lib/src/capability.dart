@@ -29,12 +29,30 @@ final class PlayCapabilityEnvelope {
   final Set<String> validatorTypes;
   final Set<String> platformFlags;
 
-  /// Capabilities implemented by the M0 client/runtime today.
+  /// Capabilities implemented by the M0 client/runtime.
   factory PlayCapabilityEnvelope.m0() => const PlayCapabilityEnvelope(
     schemaVersions: {1},
     presentationTypes: {'text', 'image', 'video_clip', 'audio'},
     inputTypes: {'tap', 'single_choice'},
     validatorTypes: {'none', 'equals'},
+  );
+
+  /// Capability envelope for the M1 declarative renderer.
+  ///
+  /// This extends M0 without rewriting its historical contract. Platform flags
+  /// remain empty because timing-sensitive/audio-focus guarantees are advertised
+  /// separately only when the production native adapter has been installed and
+  /// measured on the running client.
+  factory PlayCapabilityEnvelope.m1() => const PlayCapabilityEnvelope(
+    schemaVersions: {1},
+    presentationTypes: {'text', 'image', 'video_clip', 'audio', 'canvas'},
+    inputTypes: {'tap', 'single_choice', 'piano_key', 'drag'},
+    validatorTypes: {
+      'none',
+      'equals',
+      'ordered_sequence',
+      'target_region',
+    },
   );
 
   factory PlayCapabilityEnvelope.fromJson(Map<String, Object?> json) {
