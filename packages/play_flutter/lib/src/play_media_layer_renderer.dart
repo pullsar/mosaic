@@ -59,11 +59,10 @@ final class CallbackPlayVideoPosterResolver implements PlayVideoPosterResolver {
 }
 
 final class MapPlayVideoPosterResolver implements PlayVideoPosterResolver {
-  MapPlayVideoPosterResolver(
-    Map<String, PlayVisualAsset> postersByVideoAssetId,
-  ) : _posters = Map<String, PlayVisualAsset>.unmodifiable(
-         postersByVideoAssetId,
-       );
+  MapPlayVideoPosterResolver(Map<String, PlayVisualAsset> postersByVideoAssetId)
+    : _posters = Map<String, PlayVisualAsset>.unmodifiable(
+        postersByVideoAssetId,
+      );
 
   final Map<String, PlayVisualAsset> _posters;
 
