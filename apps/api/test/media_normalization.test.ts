@@ -26,9 +26,12 @@ function video(overrides: VideoOverrides = {}): VerifiedVideoSourceMetadata {
     height: 2160,
     durationMs: 8_000,
     videoCodec: 'HEVC',
-    videoProfile: 'Main10',
+    videoProfile: 'Main 10',
     dynamicRange: 'hdr',
-    colorSpace: 'BT2020',
+    colorPrimaries: 'BT2020',
+    colorTransfer: 'SMPTE2084',
+    colorMatrix: 'BT2020NC',
+    colorRange: 'limited',
     variableFrameRate: true,
     nominalFrameRate: 59.94,
     rotationDegrees: 90,
@@ -58,9 +61,12 @@ test('HDR HEVC VFR video plans an SDR H264/AAC baseline, poster and captions', (
   const playbackSource = record(playbackParameters.source as CanonicalJsonValue);
   const playbackOutput = record(playbackParameters.output as CanonicalJsonValue);
   assert.equal(playbackSource.videoCodec, 'hevc');
-  assert.equal(playbackSource.videoProfile, 'main10');
+  assert.equal(playbackSource.videoProfile, 'main-10');
   assert.equal(playbackSource.dynamicRange, 'hdr');
-  assert.equal(playbackSource.colorSpace, 'bt2020');
+  assert.equal(playbackSource.colorPrimaries, 'bt2020');
+  assert.equal(playbackSource.colorTransfer, 'smpte2084');
+  assert.equal(playbackSource.colorMatrix, 'bt2020nc');
+  assert.equal(playbackSource.colorRange, 'limited');
   assert.equal(playbackSource.variableFrameRate, true);
   assert.equal(playbackSource.rotationDegrees, 90);
   assert.equal(playbackOutput.container, 'mp4');
@@ -68,7 +74,10 @@ test('HDR HEVC VFR video plans an SDR H264/AAC baseline, poster and captions', (
   assert.equal(playbackOutput.videoProfile, 'main');
   assert.equal(playbackOutput.pixelFormat, 'yuv420p');
   assert.equal(playbackOutput.dynamicRange, 'sdr');
-  assert.equal(playbackOutput.colorSpace, 'bt709');
+  assert.equal(playbackOutput.colorPrimaries, 'bt709');
+  assert.equal(playbackOutput.colorTransfer, 'bt709');
+  assert.equal(playbackOutput.colorMatrix, 'bt709');
+  assert.equal(playbackOutput.colorRange, 'limited');
   assert.equal(playbackOutput.frameRateMode, 'cfr');
   assert.equal(playbackOutput.maxFps, 30);
   assert.equal(playbackOutput.orientation, 'pixels-normalized');
@@ -93,12 +102,19 @@ test('HDR HEVC VFR video plans an SDR H264/AAC baseline, poster and captions', (
 
 test('source traits that change execution also change deterministic derivative identity', () => {
   const hdrPlayback = planMediaNormalization(video())[0];
-  const sdrPlayback = planMediaNormalization(video({dynamicRange: 'sdr', colorSpace: 'bt709'}))[0];
+  const sdrPlayback = planMediaNormalization(video({
+    dynamicRange: 'sdr',
+    colorPrimaries: 'bt709',
+    colorTransfer: 'bt709',
+    colorMatrix: 'bt709',
+  }))[0];
+  const hlgPlayback = planMediaNormalization(video({colorTransfer: 'arib-std-b67'}))[0];
   const uprightPlayback = planMediaNormalization(video({rotationDegrees: 0}))[0];
-  assert.ok(hdrPlayback && sdrPlayback && uprightPlayback);
+  assert.ok(hdrPlayback && sdrPlayback && hlgPlayback && uprightPlayback);
 
   const hdrKey = mediaDerivativeKey(sourceSha256, hdrPlayback);
   assert.notEqual(hdrKey, mediaDerivativeKey(sourceSha256, sdrPlayback));
+  assert.notEqual(hdrKey, mediaDerivativeKey(sourceSha256, hlgPlayback));
   assert.notEqual(hdrKey, mediaDerivativeKey(sourceSha256, uprightPlayback));
 });
 
@@ -107,7 +123,9 @@ test('already compatible H264 SDR video still receives the bounded launch profil
     videoCodec: 'h264',
     videoProfile: 'main',
     dynamicRange: 'sdr',
-    colorSpace: 'bt709',
+    colorPrimaries: 'bt709',
+    colorTransfer: 'bt709',
+    colorMatrix: 'bt709',
     variableFrameRate: false,
     nominalFrameRate: 24,
     rotationDegrees: 0,
@@ -170,8 +188,18 @@ test('audio source plans a 48 kHz stereo-bounded AAC derivative and optional cap
 });
 
 test('planner output is deterministic and fail-closed for inconsistent verified metadata', () => {
-  const first = planMediaNormalization(video({videoCodec: ' HEVC ', colorSpace: ' BT2020 '}));
-  const second = planMediaNormalization(video({videoCodec: 'hevc', colorSpace: 'bt2020'}));
+  const first = planMediaNormalization(video({
+    videoCodec: ' HEVC ',
+    colorPrimaries: ' BT2020 ',
+    colorTransfer: ' SMPTE2084 ',
+    colorMatrix: ' BT2020NC ',
+  }));
+  const second = planMediaNormalization(video({
+    videoCodec: 'hevc',
+    colorPrimaries: 'bt2020',
+    colorTransfer: 'smpte2084',
+    colorMatrix: 'bt2020nc',
+  }));
   assert.equal(canonicalJson(first), canonicalJson(second));
 
   assert.throws(() => planMediaNormalization(video({durationMs: 0})), /durationMs/);
@@ -181,4 +209,12 @@ test('planner output is deterministic and fail-closed for inconsistent verified 
     /requires codec, sample rate and channel count/,
   );
   assert.throws(() => planMediaNormalization(video({languageTag: 'not a tag!'})), /languageTag/);
+  assert.throws(
+    () => planMediaNormalization(video({
+      colorPrimaries: undefined,
+      colorTransfer: undefined,
+      colorMatrix: undefined,
+    })),
+    /HDR video requires color primaries, transfer and matrix/,
+  );
 });
