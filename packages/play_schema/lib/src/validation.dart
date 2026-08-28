@@ -1,4 +1,5 @@
 import 'capability.dart';
+import 'interaction_defaults.dart';
 import 'model.dart';
 
 enum PlayValidationSeverity { error, warning }
@@ -280,20 +281,20 @@ final class PlaySchemaValidator {
     final expected = expectedRaw.cast<String>();
 
     final keysRaw = state.input.properties['keys'];
+    final parsedKeys = keysRaw == null
+        ? MosaicPianoInputDefaults.keys.toSet()
+        : _uniqueStrings(keysRaw);
     Set<String>? keys;
-    if (keysRaw != null) {
-      final parsed = _uniqueStrings(keysRaw);
-      if (parsed == null || parsed.isEmpty) {
-        issues.add(
-          PlayValidationIssue(
-            code: 'piano_keys',
-            path: '$path.keys',
-            message: 'piano_key keys must be unique non-empty strings.',
-          ),
-        );
-      } else {
-        keys = parsed;
-      }
+    if (parsedKeys == null || parsedKeys.isEmpty) {
+      issues.add(
+        PlayValidationIssue(
+          code: 'piano_keys',
+          path: '$path.keys',
+          message: 'piano_key keys must be unique non-empty strings.',
+        ),
+      );
+    } else {
+      keys = parsedKeys;
     }
 
     final lengthRaw = state.input.properties['sequenceLength'];
@@ -317,12 +318,12 @@ final class PlaySchemaValidator {
       );
     }
 
-    if (keys != null && expected.any((note) => !keys!.contains(note))) {
+    if (keys != null && expected.any((note) => !keys.contains(note))) {
       issues.add(
         PlayValidationIssue(
           code: 'piano_expected_key_missing',
           path: '$path.keys',
-          message: 'Every expected piano note must exist in the authored keys.',
+          message: 'Every expected piano note must exist in the rendered keys.',
         ),
       );
     }

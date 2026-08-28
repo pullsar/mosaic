@@ -1,21 +1,7 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:play_schema/play_schema.dart';
-
-const _defaultPianoKeys = <String>[
-  'C4',
-  'C#4',
-  'D4',
-  'D#4',
-  'E4',
-  'F4',
-  'F#4',
-  'G4',
-  'G#4',
-  'A4',
-  'A#4',
-  'B4',
-];
 
 final class PlayPianoInputSpec {
   const PlayPianoInputSpec({
@@ -34,7 +20,7 @@ final class PlayPianoInputSpec {
 
     final rawKeys = input.properties['keys'];
     final keys = rawKeys == null
-        ? _defaultPianoKeys
+        ? MosaicPianoInputDefaults.keys
         : _readUniqueStrings(rawKeys);
     if (keys == null || keys.isEmpty) return null;
 
@@ -316,6 +302,7 @@ final class PlayDragInput extends StatefulWidget {
 
 final class _PlayDragInputState extends State<PlayDragInput> {
   late Offset _position = widget.spec.origin;
+  int? _activePointer;
   bool _dragging = false;
 
   @override
@@ -323,6 +310,7 @@ final class _PlayDragInputState extends State<PlayDragInput> {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.spec, widget.spec)) {
       _position = widget.spec.origin;
+      _activePointer = null;
       _setDragging(false, notify: false);
     }
   }
@@ -331,6 +319,18 @@ final class _PlayDragInputState extends State<PlayDragInput> {
     if (_dragging == value) return;
     _dragging = value;
     if (notify) widget.onManipulationChanged?.call(value);
+  }
+
+  void _pointerDown(PointerDownEvent event) {
+    if (_activePointer != null) return;
+    _activePointer = event.pointer;
+    _setDragging(true);
+  }
+
+  void _pointerEnded(PointerEvent event) {
+    if (_activePointer != event.pointer) return;
+    _activePointer = null;
+    _setDragging(false);
   }
 
   void _move(DragUpdateDetails details, Size bounds) {
@@ -371,6 +371,7 @@ final class _PlayDragInputState extends State<PlayDragInput> {
   }
 
   void _cancel() {
+    _activePointer = null;
     _setDragging(false);
     setState(() => _position = widget.spec.origin);
   }
@@ -414,20 +415,25 @@ final class _PlayDragInputState extends State<PlayDragInput> {
             child: Semantics(
               button: true,
               label: widget.spec.handleLabel,
-              child: GestureDetector(
+              child: Listener(
                 behavior: HitTestBehavior.opaque,
-                onPanStart: (_) => _setDragging(true),
-                onPanUpdate: (details) => _move(details, bounds),
-                onPanEnd: (_) => _finish(),
-                onPanCancel: _cancel,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: colorScheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Icon(
-                    Icons.drag_indicator,
-                    color: colorScheme.onPrimaryContainer,
+                onPointerDown: _pointerDown,
+                onPointerUp: _pointerEnded,
+                onPointerCancel: _pointerEnded,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onPanUpdate: (details) => _move(details, bounds),
+                  onPanEnd: (_) => _finish(),
+                  onPanCancel: _cancel,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: colorScheme.primaryContainer,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Icon(
+                      Icons.drag_indicator,
+                      color: colorScheme.onPrimaryContainer,
+                    ),
                   ),
                 ),
               ),
