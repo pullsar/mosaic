@@ -38,6 +38,20 @@ export type MediaOutputVerifier = (
   request: MediaOutputVerificationRequest,
 ) => Promise<VerifiedMediaOutput>;
 
+export interface MediaOutputPublicationRequest {
+  outputPath: string;
+  storageKey: string;
+  plan: MediaDerivativePlan;
+  verifiedOutput: VerifiedMediaOutput;
+  signal?: AbortSignal;
+}
+
+/// Publishes a verified local artifact to its deterministic managed storage key.
+/// Implementations must be idempotent for repeated publication of the same key.
+export type MediaOutputPublisher = (
+  request: MediaOutputPublicationRequest,
+) => Promise<void>;
+
 export type MediaProcessRunner = (
   invocation: MediaProcessInvocation,
   options: MediaProcessRunOptions,
@@ -81,6 +95,13 @@ export class MediaOutputVerificationError extends Error {
   }
 }
 
+export class MediaOutputPublicationError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'MediaOutputPublicationError';
+  }
+}
+
 const DEFAULT_LEASE_MS = 15 * 60 * 1000;
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 const MAX_LEASE_MS = 60 * 60 * 1000;
@@ -90,6 +111,7 @@ export async function processFfmpegDerivative(
   repository: MediaFfmpegWorkerRepository,
   job: MediaFfmpegJob,
   verifyOutput: MediaOutputVerifier,
+  publishOutput: MediaOutputPublisher,
   options: MediaFfmpegWorkerOptions = {},
 ): Promise<MediaFfmpegWorkerResult> {
   const assetId = requiredText(job.assetId, 'assetId');
@@ -137,14 +159,31 @@ export async function processFfmpegDerivative(
         : {timeoutMs, signal: options.signal},
     );
 
-    const verified = await verifyOutput({
+    const verificationRequest = {
       outputPath: job.outputPath,
       storageKey,
       plan: claim.derivative.plan,
       expectedOutput: invocation.expectedOutput,
       ...(options.signal === undefined ? {} : {signal: options.signal}),
-    });
+    };
+    const verified = await verifyOutput(verificationRequest);
     assertVerifiedOutput(invocation.expectedOutput, verified);
+
+    try {
+      await publishOutput({
+        outputPath: job.outputPath,
+        storageKey,
+        plan: claim.derivative.plan,
+        verifiedOutput: verified,
+        ...(options.signal === undefined ? {} : {signal: options.signal}),
+      });
+    } catch (error) {
+      if (error instanceof MediaOutputPublicationError) throw error;
+      throw new MediaOutputPublicationError(
+        `Failed to publish verified media output to ${storageKey}`,
+        {cause: error},
+      );
+    }
 
     try {
       const ready = await repository.markDerivativeReady(
@@ -201,6 +240,7 @@ export function mediaWorkerErrorCode(error: unknown): string {
   }
   if (error instanceof MediaPlanCompileError) return 'media_plan_invalid';
   if (error instanceof MediaOutputVerificationError) return 'media_output_invalid';
+  if (error instanceof MediaOutputPublicationError) return 'media_publish_failed';
   return 'media_worker_failed';
 }
 
