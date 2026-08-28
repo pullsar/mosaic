@@ -104,9 +104,11 @@ infrastructure_contracts() {
 
   if [[ -f "$CHECKOUT/ops/production/prometheus/prometheus.yml" ]]; then
     docker run --rm -v "$CHECKOUT/ops/production/prometheus:/etc/prometheus:ro" \
-      "$PROMETHEUS_IMAGE" promtool check config /etc/prometheus/prometheus.yml
+      --entrypoint promtool "$PROMETHEUS_IMAGE" \
+      check config /etc/prometheus/prometheus.yml
     docker run --rm -v "$CHECKOUT/ops/production/prometheus:/etc/prometheus:ro" \
-      "$PROMETHEUS_IMAGE" promtool check rules /etc/prometheus/rules.yml
+      --entrypoint promtool "$PROMETHEUS_IMAGE" \
+      check rules /etc/prometheus/rules.yml
   fi
   if [[ -f "$CHECKOUT/ops/production/alertmanager/alertmanager.yml" ]]; then
     docker run --rm -v "$CHECKOUT/ops/production/alertmanager:/etc/alertmanager:ro" \

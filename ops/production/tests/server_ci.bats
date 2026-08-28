@@ -54,6 +54,7 @@ production-builds" ]
     'systemd-analyze verify' \
     '--recursive-errors=no' \
     'mktemp -d /tmp/mixli-systemd-verify.XXXXXX' \
+    '--entrypoint promtool' \
     'DATABASE_URL=' \
     'npm ci --ignore-scripts' \
     'npm run typecheck' \
