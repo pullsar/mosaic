@@ -19,14 +19,23 @@ final class MosaicApp extends StatefulWidget {
 final class _MosaicAppState extends State<MosaicApp> {
   final ActiveMediaCoordinator _mediaCoordinator = ActiveMediaCoordinator();
   late final FlutterLifecycleBridge _lifecycle;
+  late final PlayCanvasAssetResolver _canvasResolver;
+  var _semanticResumeEpoch = 0;
 
   @override
   void initState() {
     super.initState();
+    _canvasResolver = MapPlayCanvasAssetResolver({_demoCanvas.id: _demoCanvas});
     _lifecycle = FlutterLifecycleBridge(
       mediaCoordinator: _mediaCoordinator,
+      onSemanticResume: _resumeSemanticMedia,
       onError: _reportPlatformError,
     );
+  }
+
+  void _resumeSemanticMedia() {
+    if (!mounted) return;
+    setState(() => _semanticResumeEpoch += 1);
   }
 
   @override
@@ -54,6 +63,20 @@ final class _MosaicAppState extends State<MosaicApp> {
     );
   }
 
+  Widget _buildPlayMedia(BuildContext context, PresentationLayer layer) {
+    final media = PlayMediaLayerBuilder(
+      ownerId: playMediaOwnerId(_demoPlay),
+      visualResolver: MapPlayVisualAssetResolver(const {}),
+      videoResolver: MapPlayVideoAssetResolver(const {}),
+      canvasResolver: _canvasResolver,
+      mediaCoordinator: _mediaCoordinator,
+      videoControllerFactory: (_) =>
+          throw StateError('No video adapter is installed in the bootstrap app.'),
+      semanticResumeEpoch: _semanticResumeEpoch,
+    );
+    return media.call(context, layer);
+  }
+
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: 'Mosaic',
@@ -79,10 +102,7 @@ final class _MosaicAppState extends State<MosaicApp> {
       MosaicSettingsRoute.deleteAccount: (_) =>
           const _ReservedSettingsPage('Delete account'),
     },
-    home: PlaySurface(
-      play: _demoPlay,
-      mediaBuilder: (context, layer) => const _VisualPlaceholder(),
-    ),
+    home: PlaySurface(play: _demoPlay, mediaBuilder: _buildPlayMedia),
   );
 }
 
@@ -97,25 +117,49 @@ final class _ReservedSettingsPage extends StatelessWidget {
   );
 }
 
-final class _VisualPlaceholder extends StatelessWidget {
-  const _VisualPlaceholder();
-
-  @override
-  Widget build(BuildContext context) => const DecoratedBox(
-    decoration: BoxDecoration(
-      gradient: LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [Color(0xFF113044), Color(0xFF8D5B3E)],
-      ),
+final _demoCanvas = PlayCanvasAsset(
+  id: 'demo_visual',
+  semanticLabel: 'Warm walkable city scene',
+  elements: [
+    PlayCanvasRect(
+      rect: const Rect.fromLTWH(0.04, 0.08, 0.92, 0.72),
+      fill: true,
+      tone: PlayCanvasTone.surface,
     ),
-  );
-}
+    PlayCanvasCircle(
+      center: const Offset(0.79, 0.23),
+      radius: 0.08,
+      fill: true,
+      tone: PlayCanvasTone.accent,
+    ),
+    PlayCanvasRect(
+      rect: const Rect.fromLTWH(0.12, 0.44, 0.18, 0.24),
+      fill: true,
+      tone: PlayCanvasTone.muted,
+    ),
+    PlayCanvasRect(
+      rect: const Rect.fromLTWH(0.34, 0.36, 0.19, 0.32),
+      fill: true,
+      tone: PlayCanvasTone.foreground,
+    ),
+    PlayCanvasRect(
+      rect: const Rect.fromLTWH(0.57, 0.48, 0.15, 0.20),
+      fill: true,
+      tone: PlayCanvasTone.muted,
+    ),
+    PlayCanvasLine(
+      start: const Offset(0.10, 0.73),
+      end: const Offset(0.90, 0.73),
+      width: 0.018,
+      tone: PlayCanvasTone.accent,
+    ),
+  ],
+);
 
 final _demoPlay = PlayDocument.fromJson({
   'schemaVersion': 1,
   'id': 'demo_where_is_this',
-  'revisionId': 'rev_1',
+  'revisionId': 'rev_2',
   'format': 'guess',
   'classification': 'challenge',
   'topics': ['travel'],
@@ -128,7 +172,7 @@ final _demoPlay = PlayDocument.fromJson({
     'guess': {
       'presentation': {
         'layers': [
-          {'type': 'image', 'role': 'media', 'assetId': 'demo_visual'},
+          {'type': 'canvas', 'role': 'media', 'assetId': 'demo_visual'},
           {'type': 'text', 'role': 'prompt', 'value': 'Where is this?'},
         ],
       },
