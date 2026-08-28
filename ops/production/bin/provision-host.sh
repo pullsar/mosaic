@@ -19,7 +19,7 @@ target() {
 install_layout() {
   local path
   for path in \
-    /opt/mixli/bin /srv/mixli/builds /srv/mixli/releases /srv/mixli/runtime \
+    /srv/mixli/builds /srv/mixli/releases /srv/mixli/runtime \
     /srv/mixli/state /srv/mixli/log /srv/mixli/metrics /srv/mixli/data/postgres \
     /srv/mixli/data/monitoring/prometheus /srv/mixli/data/monitoring/alertmanager \
     /srv/mixli/data/monitoring/grafana /srv/mixli/backups/pgbackrest \
@@ -30,6 +30,10 @@ install_layout() {
     install -d -m 0750 "$(target "$path")"
   done
 
+  # The restricted SSH account must be able to execute deploy-dispatch. The
+  # directory is traversable, while every command remains root-owned and
+  # non-writable by that account.
+  install -d -m 0755 "$(target /opt/mixli/bin)"
   install -m 0755 "$SOURCE_ROOT"/ops/production/bin/* "$(target /opt/mixli/bin/)"
   install -m 0644 "$SOURCE_ROOT/ops/production/postgres/postgresql.conf" \
     "$(target /etc/mixli/postgres/postgresql.conf)"
