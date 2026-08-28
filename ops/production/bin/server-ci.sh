@@ -74,7 +74,7 @@ infrastructure_contracts() {
     -t "$API_CI_IMAGE" "$CHECKOUT"
   docker build -f "$CHECKOUT/apps/api/Dockerfile" -t "$API_IMAGE" "$CHECKOUT"
   docker build -f "$CHECKOUT/ops/production/flutter/Dockerfile" \
-    -t "$FLUTTER_IMAGE" "$CHECKOUT/ops/production/flutter"
+    -t "$FLUTTER_IMAGE" "$CHECKOUT"
   docker build -f "$CHECKOUT/ops/production/postgres/Dockerfile" \
     -t "$POSTGRES_IMAGE" "$CHECKOUT/ops/production/postgres"
 
@@ -179,7 +179,7 @@ flutter_workspace() {
   docker run --rm --user 0:0 -e HOME=/tmp/flutter-home \
     -v "$CHECKOUT:/workspace" -w /workspace "$FLUTTER_IMAGE" bash -c \
     'set -Eeuo pipefail
-     flutter pub get --enforce-lockfile
+     flutter pub get --offline --enforce-lockfile
      dart format --output=none --set-exit-if-changed .
      flutter analyze
      (cd packages/play_schema && dart test)

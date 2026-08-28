@@ -33,6 +33,25 @@ USER flutter
 RUN flutter config --no-analytics --enable-web \
     && flutter precache --web
 
+WORKDIR /dependency-seed
+
+COPY --chown=flutter:flutter pubspec.yaml pubspec.lock ./
+COPY --chown=flutter:flutter apps/mosaic_app/pubspec.yaml apps/mosaic_app/pubspec.yaml
+COPY --chown=flutter:flutter packages/play_schema/pubspec.yaml packages/play_schema/pubspec.yaml
+COPY --chown=flutter:flutter packages/play_engine/pubspec.yaml packages/play_engine/pubspec.yaml
+COPY --chown=flutter:flutter packages/play_flutter/pubspec.yaml packages/play_flutter/pubspec.yaml
+COPY --chown=flutter:flutter packages/analytics_contract/pubspec.yaml packages/analytics_contract/pubspec.yaml
+COPY --chown=flutter:flutter packages/platform_contracts/pubspec.yaml packages/platform_contracts/pubspec.yaml
+COPY --chown=flutter:flutter packages/platform_flutter/pubspec.yaml packages/platform_flutter/pubspec.yaml
+COPY --chown=flutter:flutter packages/local_state/pubspec.yaml packages/local_state/pubspec.yaml
+
+RUN set -eu; \
+    for attempt in 1 2 3 4 5; do \
+      if flutter pub get --enforce-lockfile; then exit 0; fi; \
+      test "$attempt" -lt 5 || exit 1; \
+      sleep "$((attempt * 3))"; \
+    done
+
 WORKDIR /workspace
 
 CMD ["flutter", "--version"]

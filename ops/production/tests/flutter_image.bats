@@ -36,3 +36,10 @@ setup() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"enable-web: true"* ]]
 }
+
+@test "caches locked workspace packages and CI resolves them offline" {
+  grep -Fq 'flutter pub get --enforce-lockfile' "$DOCKERFILE"
+  grep -Fq 'pubspec.lock' "$DOCKERFILE"
+  grep -Fq 'flutter pub get --offline --enforce-lockfile' \
+    ops/production/bin/server-ci.sh
+}
