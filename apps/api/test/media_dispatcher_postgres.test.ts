@@ -8,6 +8,7 @@ import {
 } from '../src/media_dispatcher.js';
 import {PostgresMediaRepository} from '../src/media_repository.js';
 import {planMediaNormalization} from '../src/media_normalization.js';
+import {TRANSCRIPT_MEDIA_PROCESSOR} from '../src/media_transcript.js';
 import {PostgresRepository} from '../src/repository.js';
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -233,6 +234,86 @@ test(
       await assert.rejects(
         dispatcher.claimNext(FFMPEG_MEDIA_PROCESSORS, 0, `bad_lease_${suffix}`),
         /leaseMs must be/,
+      );
+    } finally {
+      await pool.end();
+    }
+  },
+);
+
+test(
+  'PostgreSQL transcript dispatch atomically distributes caption work and remains isolated from FFmpeg workers',
+  {skip: !databaseUrl},
+  async () => {
+    await runMigration();
+    const pool = new Pool({connectionString: databaseUrl});
+    const identityRepo = new PostgresRepository(pool);
+    const mediaRepo = new PostgresMediaRepository(pool);
+    const dispatcherA = new PostgresMediaDispatcher(pool, mediaRepo);
+    const dispatcherB = new PostgresMediaDispatcher(pool, mediaRepo);
+    const suffix = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const actorId = `actor_transcript_dispatch_${suffix}`;
+
+    try {
+      await identityRepo.createActor(actorId);
+      const captionPlans = audioPlans().filter(
+        (plan) => plan.processor === TRANSCRIPT_MEDIA_PROCESSOR,
+      );
+      assert.equal(captionPlans.length, 1);
+
+      for (let index = 0; index < 2; index += 1) {
+        const assetId = `transcript_${index}_${suffix}`;
+        await mediaRepo.createAsset(assetId, actorId, 'audio');
+        await mediaRepo.attachSource(assetId, {
+          storageKey: `quarantine/${assetId}/source.wav`,
+          sourceSha256: String(index + 7).repeat(64),
+          mimeType: 'audio/wav',
+          sizeBytes: 20_000 + index,
+          durationMs: 4_000,
+          metadata: {verified: true},
+        });
+        await mediaRepo.registerDerivative(assetId, captionPlans[0]!);
+      }
+
+      assert.equal(
+        await dispatcherA.claimNext(
+          FFMPEG_MEDIA_PROCESSORS,
+          60_000,
+          `ffmpeg_cannot_take_caption_${suffix}`,
+        ),
+        null,
+      );
+
+      const [first, second] = await Promise.all([
+        dispatcherA.claimNext(
+          [TRANSCRIPT_MEDIA_PROCESSOR],
+          60_000,
+          `transcript_claim_a_${suffix}`,
+        ),
+        dispatcherB.claimNext(
+          [TRANSCRIPT_MEDIA_PROCESSOR],
+          60_000,
+          `transcript_claim_b_${suffix}`,
+        ),
+      ]);
+      assert.ok(first);
+      assert.ok(second);
+      assert.notDeepEqual(
+        [first.derivative.assetId, first.derivative.derivativeKey],
+        [second.derivative.assetId, second.derivative.derivativeKey],
+      );
+      for (const claim of [first, second]) {
+        assert.equal(claim.derivative.purpose, 'captions');
+        assert.equal(claim.derivative.plan.processor, TRANSCRIPT_MEDIA_PROCESSOR);
+        assert.equal(claim.derivative.state, 'processing');
+      }
+      assert.equal(
+        await dispatcherA.claimNext(
+          [TRANSCRIPT_MEDIA_PROCESSOR],
+          60_000,
+          `transcript_none_${suffix}`,
+        ),
+        null,
       );
     } finally {
       await pool.end();
