@@ -43,4 +43,25 @@ void main() {
     expect(result.wasCorrect, isTrue);
     expect(result.session.stateId, 'reveal');
   });
+
+  test('validates typed drag target and rejects unrelated actions', () {
+    final session = engine.start(fixture('move_one_match.json'));
+    final result = engine.apply(session, const DragAction('solution_a'));
+
+    expect(result.wasCorrect, isTrue);
+    expect(result.session.stateId, 'reveal');
+    expect(
+      () => engine.apply(session, const TapAction()),
+      throwsA(isA<StateError>()),
+    );
+  });
+
+  test('incorrect drag target can stay in the authored solve state', () {
+    final session = engine.start(fixture('move_one_match.json'));
+    final result = engine.apply(session, const DragAction('miss'));
+
+    expect(result.wasCorrect, isFalse);
+    expect(result.outcome, 'incorrect');
+    expect(result.session.stateId, 'solve');
+  });
 }
