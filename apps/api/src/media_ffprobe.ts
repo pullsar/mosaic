@@ -383,10 +383,16 @@ function canonicalRecord(
   value: CanonicalJsonValue,
   context: string,
 ): Readonly<Record<string, CanonicalJsonValue>> {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+  if (!isCanonicalRecord(value)) {
     throw new MediaOutputVerificationError(`${context} must be an object`);
   }
   return value;
+}
+
+function isCanonicalRecord(
+  value: CanonicalJsonValue,
+): value is Readonly<Record<string, CanonicalJsonValue>> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function recordField(
