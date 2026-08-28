@@ -1,0 +1,73 @@
+name: fix-renderer-analyze-once
+
+on:
+  push:
+    branches:
+      - agent/m06-play-renderer-20260828
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/m06-play-renderer-20260828
+      - name: Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.44.7'
+          cache: true
+      - name: Resolve locked workspace
+        run: flutter pub get --enforce-lockfile
+      - name: Apply exact analyzer fixes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          replacements = {
+              'packages/play_flutter/lib/src/play_input_primitives.dart': [
+                  ("import 'package:flutter/gestures.dart';\n", ''),
+              ],
+              'packages/play_flutter/lib/src/soloud_audio_engine.dart': [
+                  ('        _pendingLoads.remove(id);', '        _pendingLoads.remove(id)?.ignore();'),
+                  ("      throw RangeError.value(offset, 'offset', 'must not be negative');", "      throw ArgumentError.value(offset, 'offset', 'must not be negative');"),
+              ],
+              'packages/play_flutter/test/play_media_audio_binding_test.dart': [
+                  ('    const layer = PresentationLayer(', '    final layer = PresentationLayer('),
+              ],
+              'packages/play_schema/lib/src/validation.dart': [
+                  ('    if (keys != null && expected.any((note) => !keys.contains(note))) {', "    final availableKeys = keys;\n    if (availableKeys != null &&\n        expected.any((note) => !availableKeys.contains(note))) {"),
+              ],
+          }
+
+          for path_str, pairs in replacements.items():
+              path = Path(path_str)
+              text = path.read_text()
+              for old, new in pairs:
+                  if old not in text:
+                      raise SystemExit(f'missing expected text in {path}: {old!r}')
+                  text = text.replace(old, new, 1)
+              path.write_text(text)
+          PY
+      - name: Canonical format
+        run: dart format packages/play_flutter/lib/src/play_input_primitives.dart packages/play_flutter/lib/src/soloud_audio_engine.dart packages/play_flutter/test/play_media_audio_binding_test.dart packages/play_schema/lib/src/validation.dart
+      - name: Analyze
+        run: flutter analyze
+      - name: Test renderer and schema
+        run: |
+          (cd packages/play_schema && dart test)
+          (cd packages/play_flutter && flutter test)
+      - name: Remove one-shot workflow
+        run: git rm .github/workflows/fix-renderer-analyze-once.yml
+      - name: Commit fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add packages/play_flutter packages/play_schema
+          git commit -am "fix(renderer): resolve production media analyzer findings"
+          git push origin HEAD:agent/m06-play-renderer-20260828
