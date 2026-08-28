@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:platform_contracts/platform_contracts.dart';
 import 'package:play_schema/play_schema.dart';
 
+import 'play_canvas_renderer.dart';
 import 'play_video_renderer.dart';
 import 'play_visual_renderer.dart';
 
@@ -122,9 +123,9 @@ typedef UnsupportedPlayMediaBuilder =
 
 /// Turns a declarative media [PresentationLayer] into its explicit renderer.
 ///
-/// Only media types with production adapters are routed. Audio, canvas and
-/// future media primitives remain visible as unsupported instead of being
-/// guessed into an unrelated renderer.
+/// Only media types with implemented adapters are routed. Audio and future
+/// media primitives remain visible as unsupported instead of being guessed
+/// into an unrelated renderer.
 final class PlayMediaLayerBuilder {
   const PlayMediaLayerBuilder({
     required this.ownerId,
@@ -132,6 +133,7 @@ final class PlayMediaLayerBuilder {
     required this.videoResolver,
     required this.mediaCoordinator,
     required this.videoControllerFactory,
+    this.canvasResolver,
     this.active = true,
     this.semanticResumeEpoch = 0,
     this.unsupportedBuilder,
@@ -140,6 +142,7 @@ final class PlayMediaLayerBuilder {
   final String ownerId;
   final PlayVisualAssetResolver visualResolver;
   final PlayVideoAssetResolver videoResolver;
+  final PlayCanvasAssetResolver? canvasResolver;
   final ActiveMediaCoordinator mediaCoordinator;
   final PlayVideoControllerFactory videoControllerFactory;
   final bool active;
@@ -163,8 +166,20 @@ final class PlayMediaLayerBuilder {
         active: active,
         semanticResumeEpoch: semanticResumeEpoch,
       ),
+      'canvas' => _canvas(context, layer, assetId),
       _ => _unsupported(context, layer),
     };
+  }
+
+  Widget _canvas(
+    BuildContext context,
+    PresentationLayer layer,
+    String assetId,
+  ) {
+    final resolver = canvasResolver;
+    return resolver == null
+        ? _unsupported(context, layer)
+        : ResolvedPlayCanvas(assetId: assetId, resolver: resolver);
   }
 
   Widget _unsupported(BuildContext context, PresentationLayer layer) =>
