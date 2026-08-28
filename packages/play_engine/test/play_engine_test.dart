@@ -41,6 +41,12 @@ PlayDocument playWithValidation({
   },
 });
 
+Matcher stateErrorMessage(String message) => isA<StateError>().having(
+  (StateError error) => error.message,
+  'message',
+  message,
+);
+
 void main() {
   const engine = PlayEngine();
 
@@ -132,6 +138,20 @@ void main() {
     );
   });
 
+  test('malformed equals payload fails with a stable engine error', () {
+    final session = engine.start(
+      playWithValidation(
+        inputType: 'single_choice',
+        validation: {'type': 'equals', 'value': null},
+      ),
+    );
+
+    expect(
+      () => engine.apply(session, const ChoiceAction('anything')),
+      throwsA(stateErrorMessage('equals validation payload is malformed.')),
+    );
+  });
+
   test('malformed ordered-sequence payload fails with a stable engine error', () {
     final session = engine.start(
       playWithValidation(
@@ -146,9 +166,7 @@ void main() {
         const SequenceAction(['C4', 'E4', 'G4']),
       ),
       throwsA(
-        isA<StateError>().having(
-          (error) => error.message,
-          'message',
+        stateErrorMessage(
           'ordered_sequence validation payload is malformed.',
         ),
       ),
@@ -166,11 +184,7 @@ void main() {
     expect(
       () => engine.apply(session, const DragAction('solution_a')),
       throwsA(
-        isA<StateError>().having(
-          (error) => error.message,
-          'message',
-          'target_region validation payload is malformed.',
-        ),
+        stateErrorMessage('target_region validation payload is malformed.'),
       ),
     );
   });
