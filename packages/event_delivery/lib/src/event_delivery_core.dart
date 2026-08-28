@@ -155,7 +155,11 @@ final class MosaicEventTelemetry implements Telemetry {
 
   @override
   void error(Object error, StackTrace stackTrace, {String? operation}) {
-    _reportInternal(error, stackTrace, operation: operation ?? 'telemetry_error');
+    _reportInternal(
+      error,
+      stackTrace,
+      operation: operation ?? 'telemetry_error',
+    );
   }
 
   @override

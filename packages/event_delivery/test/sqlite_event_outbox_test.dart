@@ -27,12 +27,17 @@ void main() {
     await outbox.enqueue(_event('analytics'), createdAt: now);
 
     final first = await outbox.due(now: now.add(const Duration(seconds: 2)));
-    expect(first.map((event) => event.envelope.eventId), ['critical', 'analytics']);
+    expect(first.map((event) => event.envelope.eventId), [
+      'critical',
+      'analytics',
+    ]);
     expect(first.first.priority, EventPriority.critical);
 
     await outbox.markRetryableFailure('critical', now: now);
     final immediatelyDue = await outbox.due(now: now);
-    expect(immediatelyDue.map((event) => event.envelope.eventId), ['analytics']);
+    expect(immediatelyDue.map((event) => event.envelope.eventId), [
+      'analytics',
+    ]);
     final afterBackoff = await outbox.due(
       now: now.add(const Duration(seconds: 2)),
     );

@@ -38,7 +38,11 @@ final class IndexedDbEventStore implements EventOutbox, ActorIdentityStore {
   }) async {
     final normalizedName = databaseName.trim();
     if (normalizedName.isEmpty) {
-      throw ArgumentError.value(databaseName, 'databaseName', 'must not be empty');
+      throw ArgumentError.value(
+        databaseName,
+        'databaseName',
+        'must not be empty',
+      );
     }
     final factory = web.window.indexedDB;
     final request = factory.open(normalizedName, _databaseVersion);
@@ -76,11 +80,7 @@ final class IndexedDbEventStore implements EventOutbox, ActorIdentityStore {
     database.onversionchange = ((web.Event _) {
       database.close();
     }).toJS;
-    return IndexedDbEventStore._(
-      database,
-      normalizedName,
-      policy: policy,
-    );
+    return IndexedDbEventStore._(database, normalizedName, policy: policy);
   }
 
   static Future<void> deleteDatabase(String databaseName) async {
@@ -147,7 +147,8 @@ final class IndexedDbEventStore implements EventOutbox, ActorIdentityStore {
     final records = await _readAllEventRecords();
     records.removeWhere(
       (record) =>
-          record.nextAttemptAt != null && record.nextAttemptAt!.isAfter(instant),
+          record.nextAttemptAt != null &&
+          record.nextAttemptAt!.isAfter(instant),
     );
     records.sort(_compareQueueOrder);
     return records
@@ -187,10 +188,7 @@ final class IndexedDbEventStore implements EventOutbox, ActorIdentityStore {
   @override
   Future<void> clear() => _serializeWrite(() async {
     _ensureOpen();
-    final transaction = _database.transaction(
-      _eventsStore.toJS,
-      'readwrite',
-    );
+    final transaction = _database.transaction(_eventsStore.toJS, 'readwrite');
     final completion = _transactionCompletion(transaction);
     transaction.objectStore(_eventsStore).clear();
     await completion;
@@ -254,12 +252,16 @@ final class IndexedDbEventStore implements EventOutbox, ActorIdentityStore {
     return _request<List<_WebEventRecord>>(request, (result) {
       final value = result?.dartify();
       if (value is! List) return <_WebEventRecord>[];
-      return value.map((entry) {
-        if (entry is! String) {
-          throw const FormatException('IndexedDB event record must be a string.');
-        }
-        return _WebEventRecord.decode(entry);
-      }).toList(growable: true);
+      return value
+          .map((entry) {
+            if (entry is! String) {
+              throw const FormatException(
+                'IndexedDB event record must be a string.',
+              );
+            }
+            return _WebEventRecord.decode(entry);
+          })
+          .toList(growable: true);
     });
   }
 
@@ -293,10 +295,11 @@ final class IndexedDbEventStore implements EventOutbox, ActorIdentityStore {
 
     records = await _readAllEventRecords();
     while (_overCapacity(records)) {
-      final candidates = records
-          .where((record) => record.priority != EventPriority.critical)
-          .toList(growable: false)
-        ..sort(_compareEvictionOrder);
+      final candidates =
+          records
+              .where((record) => record.priority != EventPriority.critical)
+              .toList(growable: false)
+            ..sort(_compareEvictionOrder);
       if (candidates.isEmpty) return;
       final victim = candidates.first;
       await _deleteEvent(victim.event.eventId);
@@ -344,17 +347,15 @@ final class _WebEventRecord {
     nextAttemptAt: nextAttemptAt,
   );
 
-  _WebEventRecord copyWith({
-    int? attemptCount,
-    DateTime? nextAttemptAt,
-  }) => _WebEventRecord(
-    event: event,
-    encodedEventBytes: encodedEventBytes,
-    priority: priority,
-    attemptCount: attemptCount ?? this.attemptCount,
-    createdAt: createdAt,
-    nextAttemptAt: nextAttemptAt ?? this.nextAttemptAt,
-  );
+  _WebEventRecord copyWith({int? attemptCount, DateTime? nextAttemptAt}) =>
+      _WebEventRecord(
+        event: event,
+        encodedEventBytes: encodedEventBytes,
+        priority: priority,
+        attemptCount: attemptCount ?? this.attemptCount,
+        createdAt: createdAt,
+        nextAttemptAt: nextAttemptAt ?? this.nextAttemptAt,
+      );
 
   String encode() => jsonEncode({
     'event': event.toJson(),

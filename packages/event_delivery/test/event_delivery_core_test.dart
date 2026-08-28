@@ -17,7 +17,8 @@ final class _MemoryOutbox implements EventOutbox {
     EventPriority priority = EventPriority.analytics,
     DateTime? createdAt,
   }) async {
-    if (events.any((queued) => queued.envelope.eventId == event.eventId)) return;
+    if (events.any((queued) => queued.envelope.eventId == event.eventId))
+      return;
     events.add(
       QueuedEvent(
         envelope: event,
@@ -84,48 +85,52 @@ MosaicEventEnvelope _event(String id) => MosaicEventEnvelope(
 );
 
 void main() {
-  test('telemetry captures a stable envelope before asynchronous context resolves', () async {
-    final outbox = _MemoryOutbox();
-    final contextGate = Completer<EventContext>();
-    final payload = <String, Object?>{
-      'phase': 'firstFramePainted',
-      'nested': <String, Object?>{'codec': 'h264'},
-    };
-    final telemetry = MosaicEventTelemetry(
-      outbox: outbox,
-      contextProvider: () => contextGate.future,
-      eventIdFactory: () => 'evt_fixed',
-      clock: () => DateTime.utc(2026, 8, 28, 18, 30),
-    );
+  test(
+    'telemetry captures a stable envelope before asynchronous context resolves',
+    () async {
+      final outbox = _MemoryOutbox();
+      final contextGate = Completer<EventContext>();
+      final payload = <String, Object?>{
+        'phase': 'firstFramePainted',
+        'nested': <String, Object?>{'codec': 'h264'},
+      };
+      final telemetry = MosaicEventTelemetry(
+        outbox: outbox,
+        contextProvider: () => contextGate.future,
+        eventIdFactory: () => 'evt_fixed',
+        clock: () => DateTime.utc(2026, 8, 28, 18, 30),
+      );
 
-    telemetry.event(MosaicEventName.mediaPlayback, payload);
-    (payload['nested']! as Map<String, Object?>)['codec'] = 'mutated';
-    contextGate.complete(
-      EventContext(
-        actorId: 'actor_fixed',
-        sessionId: 'session_fixed',
-        feedRequestId: 'feed_1',
-        playRevisionId: 'rev_1',
-      ),
-    );
-    await outbox.enqueued.future;
+      telemetry.event(MosaicEventName.mediaPlayback, payload);
+      (payload['nested']! as Map<String, Object?>)['codec'] = 'mutated';
+      contextGate.complete(
+        EventContext(
+          actorId: 'actor_fixed',
+          sessionId: 'session_fixed',
+          feedRequestId: 'feed_1',
+          playRevisionId: 'rev_1',
+        ),
+      );
+      await outbox.enqueued.future;
 
-    final event = outbox.events.single.envelope;
-    expect(event.eventId, 'evt_fixed');
-    expect(event.occurredAt, DateTime.utc(2026, 8, 28, 18, 30));
-    expect(event.actorId, 'actor_fixed');
-    expect(event.sessionId, 'session_fixed');
-    expect(event.feedRequestId, 'feed_1');
-    expect(event.playRevisionId, 'rev_1');
-    expect((event.payload['nested']! as Map)['codec'], 'h264');
-  });
+      final event = outbox.events.single.envelope;
+      expect(event.eventId, 'evt_fixed');
+      expect(event.occurredAt, DateTime.utc(2026, 8, 28, 18, 30));
+      expect(event.actorId, 'actor_fixed');
+      expect(event.sessionId, 'session_fixed');
+      expect(event.feedRequestId, 'feed_1');
+      expect(event.playRevisionId, 'rev_1');
+      expect((event.payload['nested']! as Map)['codec'], 'h264');
+    },
+  );
 
   test('invalid telemetry payload is isolated from the observed feature', () {
     final outbox = _MemoryOutbox();
     final errors = <String>[];
     final telemetry = MosaicEventTelemetry(
       outbox: outbox,
-      contextProvider: () => EventContext(actorId: 'actor', sessionId: 'session'),
+      contextProvider: () =>
+          EventContext(actorId: 'actor', sessionId: 'session'),
       eventIdFactory: () => 'evt',
       onInternalError: (error, stackTrace, {operation}) {
         errors.add(operation ?? 'unknown');
@@ -139,31 +144,48 @@ void main() {
     expect(errors, ['event_prepare']);
   });
 
-  test('retryable delivery stops the drain and leaves later events untouched', () async {
-    final outbox = _MemoryOutbox();
-    await outbox.enqueue(_event('evt_1'));
-    await outbox.enqueue(_event('evt_2'));
-    final transport = _SequenceTransport([
-      const EventDeliveryResult(EventDeliveryDisposition.retryableFailure),
-    ]);
-    final controller = EventDrainController(outbox: outbox, transport: transport);
+  test(
+    'retryable delivery stops the drain and leaves later events untouched',
+    () async {
+      final outbox = _MemoryOutbox();
+      await outbox.enqueue(_event('evt_1'));
+      await outbox.enqueue(_event('evt_2'));
+      final transport = _SequenceTransport([
+        const EventDeliveryResult(EventDeliveryDisposition.retryableFailure),
+      ]);
+      final controller = EventDrainController(
+        outbox: outbox,
+        transport: transport,
+      );
 
-    final summary = await controller.drain(now: DateTime.utc(2026, 8, 28, 18));
+      final summary = await controller.drain(
+        now: DateTime.utc(2026, 8, 28, 18),
+      );
 
-    expect(summary.delivered, 0);
-    expect(summary.retryDeferred, 1);
-    expect(outbox.failed, ['evt_1']);
-    expect(transport.calls, 1);
-    expect(outbox.events.map((event) => event.envelope.eventId), ['evt_1', 'evt_2']);
-  });
+      expect(summary.delivered, 0);
+      expect(summary.retryDeferred, 1);
+      expect(outbox.failed, ['evt_1']);
+      expect(transport.calls, 1);
+      expect(outbox.events.map((event) => event.envelope.eventId), [
+        'evt_1',
+        'evt_2',
+      ]);
+    },
+  );
 
   test('permanent rejection is discarded and drain continues', () async {
     final outbox = _MemoryOutbox();
     await outbox.enqueue(_event('evt_bad'));
     await outbox.enqueue(_event('evt_good'));
     final transport = _SequenceTransport([
-      const EventDeliveryResult(EventDeliveryDisposition.rejected, statusCode: 400),
-      const EventDeliveryResult(EventDeliveryDisposition.accepted, statusCode: 202),
+      const EventDeliveryResult(
+        EventDeliveryDisposition.rejected,
+        statusCode: 400,
+      ),
+      const EventDeliveryResult(
+        EventDeliveryDisposition.accepted,
+        statusCode: 202,
+      ),
     ]);
     final rejected = <String>[];
     final controller = EventDrainController(
@@ -187,9 +209,15 @@ void main() {
     await outbox.enqueue(_event('evt_1'));
     final gate = Completer<void>();
     final transport = _SequenceTransport([
-      const EventDeliveryResult(EventDeliveryDisposition.accepted, statusCode: 202),
+      const EventDeliveryResult(
+        EventDeliveryDisposition.accepted,
+        statusCode: 202,
+      ),
     ], gate: gate);
-    final controller = EventDrainController(outbox: outbox, transport: transport);
+    final controller = EventDrainController(
+      outbox: outbox,
+      transport: transport,
+    );
 
     final first = controller.drain();
     final second = controller.drain();
