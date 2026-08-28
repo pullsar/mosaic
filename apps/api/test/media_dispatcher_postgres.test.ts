@@ -8,6 +8,7 @@ import {
 } from '../src/media_dispatcher.js';
 import {PostgresMediaRepository} from '../src/media_repository.js';
 import {planMediaNormalization} from '../src/media_normalization.js';
+import {TRANSCRIPT_MEDIA_PROCESSOR} from '../src/media_transcript.js';
 import {PostgresRepository} from '../src/repository.js';
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -233,6 +234,135 @@ test(
       await assert.rejects(
         dispatcher.claimNext(FFMPEG_MEDIA_PROCESSORS, 0, `bad_lease_${suffix}`),
         /leaseMs must be/,
+      );
+    } finally {
+      await pool.end();
+    }
+  },
+);
+
+test(
+  'PostgreSQL transcript dispatch atomically distributes caption work and remains isolated from FFmpeg workers',
+  {skip: !databaseUrl},
+  async () => {
+    await runMigration();
+    const pool = new Pool({connectionString: databaseUrl});
+    const identityRepo = new PostgresRepository(pool);
+    const mediaRepo = new PostgresMediaRepository(pool);
+    const dispatcherA = new PostgresMediaDispatcher(pool, mediaRepo);
+    const dispatcherB = new PostgresMediaDispatcher(pool, mediaRepo);
+    const suffix = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const actorId = `actor_transcript_dispatch_${suffix}`;
+
+    try {
+      await identityRepo.createActor(actorId);
+      const captionPlans = audioPlans().filter(
+        (plan) => plan.processor === TRANSCRIPT_MEDIA_PROCESSOR,
+      );
+      assert.equal(captionPlans.length, 1);
+
+      const expected = new Map<string, string>();
+      for (let index = 0; index < 2; index += 1) {
+        const assetId = `transcript_${index}_${suffix}`;
+        await mediaRepo.createAsset(assetId, actorId, 'audio');
+        await mediaRepo.attachSource(assetId, {
+          storageKey: `quarantine/${assetId}/source.wav`,
+          sourceSha256: String(index + 7).repeat(64),
+          mimeType: 'audio/wav',
+          sizeBytes: 20_000 + index,
+          durationMs: 4_000,
+          metadata: {verified: true},
+        });
+        const registered = await mediaRepo.registerDerivative(assetId, captionPlans[0]!);
+        expected.set(assetId, registered.derivative.derivativeKey);
+      }
+
+      // The suite shares one PostgreSQL database, so an FFmpeg claim may consume
+      // unrelated work left by another test. The invariant is that it cannot
+      // mutate either caption created above.
+      await dispatcherA.claimNext(
+        FFMPEG_MEDIA_PROCESSORS,
+        60_000,
+        `ffmpeg_probe_${suffix}`,
+      );
+      for (const [assetId, derivativeKey] of expected) {
+        assert.equal(
+          (await mediaRepo.getDerivative(assetId, derivativeKey))?.state,
+          'pending',
+        );
+      }
+
+      const [first, second] = await Promise.all([
+        dispatcherA.claimNext(
+          [TRANSCRIPT_MEDIA_PROCESSOR],
+          60_000,
+          `transcript_claim_a_${suffix}`,
+        ),
+        dispatcherB.claimNext(
+          [TRANSCRIPT_MEDIA_PROCESSOR],
+          60_000,
+          `transcript_claim_b_${suffix}`,
+        ),
+      ]);
+      assert.ok(first);
+      assert.ok(second);
+      assert.notDeepEqual(
+        [first.derivative.assetId, first.derivative.derivativeKey],
+        [second.derivative.assetId, second.derivative.derivativeKey],
+      );
+      for (const claim of [first, second]) {
+        assert.equal(claim.derivative.purpose, 'captions');
+        assert.equal(claim.derivative.plan.processor, TRANSCRIPT_MEDIA_PROCESSOR);
+        assert.equal(claim.derivative.state, 'processing');
+      }
+
+      const observed = new Set<string>();
+      const recordExpected = (claim: typeof first): void => {
+        if (!expected.has(claim.derivative.assetId)) return;
+        assert.equal(
+          claim.derivative.derivativeKey,
+          expected.get(claim.derivative.assetId),
+        );
+        observed.add(claim.derivative.assetId);
+      };
+      recordExpected(first);
+      recordExpected(second);
+
+      const eligible = await pool.query<{count: string}>(
+        `select count(*)::text as count
+         from media_derivatives d
+         join media_assets a on a.id = d.asset_id
+         where a.state <> 'revoked'
+           and a.source_sha256 = d.source_sha256
+           and d.plan->>'processor' = $1
+           and (
+             d.state in ('pending', 'failed')
+             or (d.state = 'processing' and d.lease_expires_at <= now())
+           )`,
+        [TRANSCRIPT_MEDIA_PROCESSOR],
+      );
+      const remainingEligible = Number(eligible.rows[0]?.count ?? '0');
+      assert.ok(Number.isSafeInteger(remainingEligible) && remainingEligible >= 0);
+
+      for (
+        let index = 0;
+        index < remainingEligible && observed.size < expected.size;
+        index += 1
+      ) {
+        const claim = await dispatcherA.claimNext(
+          [TRANSCRIPT_MEDIA_PROCESSOR],
+          60_000,
+          `transcript_drain_${index}_${suffix}`,
+        );
+        assert.ok(claim);
+        assert.equal(claim.derivative.purpose, 'captions');
+        assert.equal(claim.derivative.plan.processor, TRANSCRIPT_MEDIA_PROCESSOR);
+        recordExpected(claim);
+      }
+
+      assert.deepEqual(
+        [...observed].sort(),
+        [...expected.keys()].sort(),
       );
     } finally {
       await pool.end();
