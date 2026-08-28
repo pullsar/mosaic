@@ -4,8 +4,9 @@ import {
   processFfmpegDerivative,
   type MediaFfmpegWorkerRepository,
   type MediaOutputVerifier,
+  type MediaProcessRunner,
 } from '../src/media_ffmpeg_worker.js';
-import {MediaProcessError, type MediaProcessRunner} from '../src/media_process.js';
+import {MediaProcessError} from '../src/media_process.js';
 import {
   MediaIdentityConflictError,
   type MediaDerivativeClaim,
