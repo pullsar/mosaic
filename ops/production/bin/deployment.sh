@@ -25,6 +25,10 @@ upstream_backup=''
 target_pool=''
 had_upstream=0
 
+builder_git() {
+  runuser -u mixli-build -- git "$@"
+}
+
 log_event() {
   install -d -m 0750 "$LOG_DIR"
   printf '%s\n' "$1" >>"$EVENTS"
@@ -122,8 +126,8 @@ verify_ancestry() {
     [[ "${MIXLI_TEST_SHA_ALLOWED:-1}" == '1' ]] || exit 65
     return 0
   fi
-  git -C "$REPO" fetch --prune origin main
-  git -C "$REPO" merge-base --is-ancestor "$SHA" origin/main || exit 65
+  builder_git -C "$REPO" fetch --prune origin main
+  builder_git -C "$REPO" merge-base --is-ancestor "$SHA" origin/main || exit 65
 }
 
 run_repository_ci() {
@@ -137,16 +141,15 @@ run_repository_ci() {
 }
 
 prepare_checkout() {
-  local build_dir="$BUILDS/$SHA"
+  local build_dir="$BUILDS/$SHA" actual
   [[ "$TEST_MODE" == '1' ]] && return 0
   if [[ -d "$build_dir/.git" || -f "$build_dir/.git" ]]; then
-    git -C "$REPO" worktree remove --force "$build_dir"
+    actual="$(builder_git -C "$build_dir" rev-parse HEAD)"
+    [[ "$actual" == "$SHA" ]] || exit 66
+    return 0
   fi
-  if [[ -e "$build_dir" ]]; then
-    [[ "$build_dir" == "$BUILDS/$SHA" ]]
-    rm -rf -- "$build_dir"
-  fi
-  runuser -u mixli-build -- git -C "$REPO" worktree add --detach "$build_dir" "$SHA"
+  [[ ! -e "$build_dir" ]] || exit 66
+  builder_git -C "$REPO" worktree add --detach "$build_dir" "$SHA"
 }
 
 build_release() {

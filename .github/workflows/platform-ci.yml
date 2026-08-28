@@ -1,25 +1,7 @@
 name: platform-ci
 
 on:
-  push:
-    branches: ['**']
-    paths:
-      - 'apps/mosaic_app/**'
-      - 'packages/platform_contracts/**'
-      - 'packages/platform_flutter/**'
-      - 'packages/play_flutter/**'
-      - 'pubspec.yaml'
-      - 'pubspec.lock'
-      - '.github/workflows/platform-ci.yml'
-  pull_request:
-    paths:
-      - 'apps/mosaic_app/**'
-      - 'packages/platform_contracts/**'
-      - 'packages/platform_flutter/**'
-      - 'packages/play_flutter/**'
-      - 'pubspec.yaml'
-      - 'pubspec.lock'
-      - '.github/workflows/platform-ci.yml'
+  workflow_dispatch:
 
 concurrency:
   group: platform-ci-${{ github.ref }}

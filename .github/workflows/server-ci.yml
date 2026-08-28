@@ -1,0 +1,38 @@
+name: server-ci
+
+on:
+  push:
+    branches-ignore: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: mixli-server-ci
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    environment: production
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Install restricted deployment identity
+        env:
+          DEPLOY_KEY: ${{ secrets.MIXLI_DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOST: ${{ secrets.MIXLI_DEPLOY_KNOWN_HOST }}
+        run: |
+          install -d -m 0700 "$HOME/.ssh"
+          install -m 0600 /dev/null "$HOME/.ssh/mixli-deploy"
+          install -m 0600 /dev/null "$HOME/.ssh/known_hosts"
+          printf '%s\n' "$DEPLOY_KEY" >"$HOME/.ssh/mixli-deploy"
+          printf '%s\n' "$DEPLOY_KNOWN_HOST" >"$HOME/.ssh/known_hosts"
+      - name: Trigger server CI
+        run: >-
+          ssh -i "$HOME/.ssh/mixli-deploy"
+          -o BatchMode=yes
+          -o IdentitiesOnly=yes
+          -o StrictHostKeyChecking=yes
+          -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
+          mixli-deploy@152.53.55.38 "ci ${GITHUB_SHA}"

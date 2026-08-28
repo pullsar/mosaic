@@ -3,16 +3,24 @@ set -Eeuo pipefail
 
 readonly command_to_run="${SSH_ORIGINAL_COMMAND-}"
 
-if [[ ! "$command_to_run" =~ ^deploy\ ([0-9a-f]{40})$ ]]; then
-  printf '%s\n' 'Only deploy followed by an exact lowercase commit SHA is allowed.' >&2
+if [[ ! "$command_to_run" =~ ^(ci|deploy)\ ([0-9a-f]{40})$ ]]; then
+  printf '%s\n' 'Only ci or deploy followed by an exact lowercase commit SHA is allowed.' >&2
   exit 64
 fi
 
-readonly sha="${BASH_REMATCH[1]}"
+readonly action="${BASH_REMATCH[1]}"
+readonly sha="${BASH_REMATCH[2]}"
 
 if [[ "${MIXLI_DEPLOY_TEST_MODE-0}" == '1' ]]; then
-  printf '%s\n' "$sha"
+  if [[ "$action" == 'deploy' ]]; then
+    printf '%s\n' "$sha"
+  else
+    printf 'ci:%s\n' "$sha"
+  fi
   exit 0
 fi
 
-exec sudo -n /opt/mixli/bin/deployment.sh "$sha"
+if [[ "$action" == 'deploy' ]]; then
+  exec sudo -n /opt/mixli/bin/deployment.sh "$sha"
+fi
+exec sudo -n /opt/mixli/bin/ci-request.sh "$sha"
