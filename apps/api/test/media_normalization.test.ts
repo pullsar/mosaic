@@ -10,13 +10,17 @@ import {
 
 const sourceSha256 = 'c'.repeat(64);
 
+type VideoOverrides = {
+  [Key in keyof VerifiedVideoSourceMetadata]?: VerifiedVideoSourceMetadata[Key] | undefined;
+};
+
 function record(value: CanonicalJsonValue): Readonly<Record<string, CanonicalJsonValue>> {
   assert.ok(value !== null && typeof value === 'object' && !Array.isArray(value));
   return value as Readonly<Record<string, CanonicalJsonValue>>;
 }
 
-function video(overrides: Partial<VerifiedVideoSourceMetadata> = {}): VerifiedVideoSourceMetadata {
-  return {
+function video(overrides: VideoOverrides = {}): VerifiedVideoSourceMetadata {
+  const merged: Record<string, unknown> = {
     kind: 'video',
     width: 3840,
     height: 2160,
@@ -36,6 +40,10 @@ function video(overrides: Partial<VerifiedVideoSourceMetadata> = {}): VerifiedVi
     languageTag: 'EN-US',
     ...overrides,
   };
+  for (const [key, value] of Object.entries(merged)) {
+    if (value === undefined) delete merged[key];
+  }
+  return merged as unknown as VerifiedVideoSourceMetadata;
 }
 
 test('HDR HEVC VFR video plans an SDR H264/AAC baseline, poster and captions', () => {
