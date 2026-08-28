@@ -7,10 +7,13 @@ environment:
   sdk: '>=3.12.0 <4.0.0'
   flutter: '>=3.44.0'
 dependencies:
+  event_delivery: ^0.1.0
   flutter:
     sdk: flutter
   flutter_riverpod: ^3.4.2
   go_router: ^18.0.0
+  local_state: ^0.1.0
+  path_provider: ^2.1.5
   platform_contracts: ^0.1.0
   platform_flutter: ^0.1.0
   play_flutter: ^0.1.0
