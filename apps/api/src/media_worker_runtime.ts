@@ -70,6 +70,12 @@ const DEFAULT_IDLE_MS = 1_000;
 const MAX_INTERVAL_MS = 60 * 60 * 1000;
 const CLAIM_MARGIN_MS = 30_000;
 
+interface ClaimAttemptSignal {
+  signal: AbortSignal;
+  deadlineSignal: AbortSignal;
+  dispose: () => void;
+}
+
 export async function runMediaWorkerOnce(
   dispatcher: MediaWorkerDispatcher,
   repository: MediaWorkerRepository,
@@ -89,72 +95,79 @@ export async function runMediaWorkerOnce(
     return emit(options, {status: 'idle', claim: null});
   }
 
-  const asset = await repository.getAsset(claim.derivative.assetId);
-  if (
-    asset === null ||
-    asset.state === 'revoked' ||
-    asset.sourceStorageKey === null ||
-    asset.sourceSha256 === null ||
-    asset.sourceSizeBytes === null ||
-    asset.sourceSha256 !== claim.derivative.sourceSha256
-  ) {
-    return await failClaim(
-      repository,
-      claim,
-      'media_source_unavailable',
-      options,
-    );
+  const attemptSignal = createClaimAttemptSignal(claim, options.signal);
+  if (attemptSignal === null) {
+    return await failClaim(repository, claim, 'media_claim_invalid', options);
   }
 
-  await mkdir(workRoot, {recursive: true, mode: 0o700});
-  const workDirectory = await mkdtemp(join(workRoot, 'attempt-'));
-  let materialized: MaterializedMediaSource | null = null;
   try {
-    try {
-      materialized = await options.sourceMaterializer(
-        asset,
-        workDirectory,
-        options.signal,
+    const asset = await repository.getAsset(claim.derivative.assetId);
+    if (
+      asset === null ||
+      asset.state === 'revoked' ||
+      asset.sourceStorageKey === null ||
+      asset.sourceSha256 === null ||
+      asset.sourceSizeBytes === null ||
+      asset.sourceSha256 !== claim.derivative.sourceSha256
+    ) {
+      return await failClaim(
+        repository,
+        claim,
+        'media_source_unavailable',
+        options,
       );
-    } catch (error) {
-      const errorCode = isAbortError(error)
-        ? 'media_worker_aborted'
-        : 'media_source_unavailable';
-      return await failClaim(repository, claim, errorCode, options);
     }
 
-    const outputPath = join(
-      workDirectory,
-      outputFileName(claim.derivative.purpose),
-    );
-    const workerResult = await processClaimedFfmpegDerivative(
-      repository,
-      claim,
-      {inputPath: materialized.inputPath, outputPath},
-      options.verifyOutput,
-      options.publishOutput,
-      {
-        timeoutMs: timing.timeoutMs,
-        ...(options.signal === undefined ? {} : {signal: options.signal}),
-        ...(options.ffmpegExecutable === undefined
+    await mkdir(workRoot, {recursive: true, mode: 0o700});
+    const workDirectory = await mkdtemp(join(workRoot, 'attempt-'));
+    let materialized: MaterializedMediaSource | null = null;
+    try {
+      try {
+        materialized = await options.sourceMaterializer(
+          asset,
+          workDirectory,
+          attemptSignal.signal,
+        );
+      } catch (error) {
+        const errorCode = sourceFailureCode(error, options.signal, attemptSignal.deadlineSignal);
+        return await failClaim(repository, claim, errorCode, options);
+      }
+
+      const outputPath = join(
+        workDirectory,
+        outputFileName(claim.derivative.purpose),
+      );
+      const workerResult = await processClaimedFfmpegDerivative(
+        repository,
+        claim,
+        {inputPath: materialized.inputPath, outputPath},
+        options.verifyOutput,
+        options.publishOutput,
+        {
+          timeoutMs: timing.timeoutMs,
+          signal: attemptSignal.signal,
+          ...(options.ffmpegExecutable === undefined
+            ? {}
+            : {ffmpegExecutable: options.ffmpegExecutable}),
+          ...(options.runProcess === undefined
+            ? {}
+            : {runProcess: options.runProcess}),
+        },
+      );
+      return emit(options, {
+        status: workerResult.status === 'stale' ? 'stale' : 'processed',
+        claim,
+        workerResult,
+        ...(workerResult.errorCode === undefined
           ? {}
-          : {ffmpegExecutable: options.ffmpegExecutable}),
-        ...(options.runProcess === undefined
-          ? {}
-          : {runProcess: options.runProcess}),
-      },
-    );
-    return emit(options, {
-      status: workerResult.status === 'stale' ? 'stale' : 'processed',
-      claim,
-      workerResult,
-      ...(workerResult.errorCode === undefined
-        ? {}
-        : {errorCode: workerResult.errorCode}),
-    });
+          : {errorCode: workerResult.errorCode}),
+      });
+    } finally {
+      await materialized?.cleanup?.().catch(() => undefined);
+      await rm(workDirectory, {recursive: true, force: true}).catch(() => undefined);
+    }
   } finally {
-    await materialized?.cleanup?.().catch(() => undefined);
-    await rm(workDirectory, {recursive: true, force: true}).catch(() => undefined);
+    attemptSignal.dispose();
   }
 }
 
@@ -231,6 +244,43 @@ async function failClaim(
     }
     throw error;
   }
+}
+
+function createClaimAttemptSignal(
+  claim: MediaDerivativeClaim,
+  outerSignal?: AbortSignal,
+): ClaimAttemptSignal | null {
+  const leaseExpiresAt = claim.derivative.leaseExpiresAt?.getTime();
+  if (leaseExpiresAt === undefined || !Number.isFinite(leaseExpiresAt)) return null;
+  const delayMs = leaseExpiresAt - Date.now() - CLAIM_MARGIN_MS;
+  if (delayMs <= 0) return null;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => {
+    const error = new Error('Media claim reached its completion deadline');
+    error.name = 'AbortError';
+    controller.abort(error);
+  }, delayMs);
+  timer.unref();
+
+  return {
+    signal: outerSignal === undefined
+      ? controller.signal
+      : AbortSignal.any([outerSignal, controller.signal]),
+    deadlineSignal: controller.signal,
+    dispose: () => clearTimeout(timer),
+  };
+}
+
+function sourceFailureCode(
+  error: unknown,
+  outerSignal: AbortSignal | undefined,
+  deadlineSignal: AbortSignal,
+): string {
+  if (outerSignal?.aborted) return 'media_worker_aborted';
+  if (deadlineSignal.aborted) return 'media_claim_deadline';
+  if (isAbortError(error)) return 'media_worker_aborted';
+  return 'media_source_unavailable';
 }
 
 function normalizeTiming(options: MediaWorkerRuntimeOptions): {
