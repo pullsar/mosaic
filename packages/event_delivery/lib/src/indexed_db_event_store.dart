@@ -44,6 +44,7 @@ final class IndexedDbEventStore implements EventOutbox, ActorIdentityStore {
         'must not be empty',
       );
     }
+    _validatePolicy(policy);
     final factory = web.window.indexedDB;
     final request = factory.open(normalizedName, _databaseVersion);
     final completer = Completer<web.IDBDatabase>();
@@ -479,4 +480,23 @@ Future<void> _transactionCompletion(web.IDBTransaction transaction) {
 StateError _requestFailure(String operation, web.DOMException? error) {
   final name = error?.name ?? 'unknown';
   return StateError('IndexedDB $operation failed ($name).');
+}
+
+void _validatePolicy(EventOutboxPolicy policy) {
+  if (policy.maxCount <= 0) {
+    throw ArgumentError.value(policy.maxCount, 'policy.maxCount', 'must be positive');
+  }
+  if (policy.maxBytes <= 0) {
+    throw ArgumentError.value(policy.maxBytes, 'policy.maxBytes', 'must be positive');
+  }
+  if (policy.maxAge.isNegative) {
+    throw ArgumentError.value(policy.maxAge, 'policy.maxAge', 'must not be negative');
+  }
+  if (policy.maxBackoff.isNegative) {
+    throw ArgumentError.value(
+      policy.maxBackoff,
+      'policy.maxBackoff',
+      'must not be negative',
+    );
+  }
 }
