@@ -63,7 +63,8 @@ final class _MosaicAppState extends State<MosaicApp> {
     );
   }
 
-  Widget _buildPlayMedia(BuildContext context, PresentationLayer layer) {
+  @override
+  Widget build(BuildContext context) {
     final media = PlayMediaLayerBuilder(
       ownerId: playMediaOwnerId(_demoPlay),
       visualResolver: MapPlayVisualAssetResolver(const {}),
@@ -74,36 +75,34 @@ final class _MosaicAppState extends State<MosaicApp> {
           throw StateError('No video adapter is installed in the bootstrap app.'),
       semanticResumeEpoch: _semanticResumeEpoch,
     );
-    return media.call(context, layer);
-  }
 
-  @override
-  Widget build(BuildContext context) => MaterialApp(
-    title: 'Mosaic',
-    debugShowCheckedModeBanner: false,
-    themeMode: ThemeMode.system,
-    darkTheme: ThemeData(
-      brightness: Brightness.dark,
-      scaffoldBackgroundColor: MosaicVisualTokens.surface,
-      colorScheme: const ColorScheme.dark(
-        surface: MosaicVisualTokens.surface,
-        onSurface: MosaicVisualTokens.foreground,
+    return MaterialApp(
+      title: 'Mosaic',
+      debugShowCheckedModeBanner: false,
+      themeMode: ThemeMode.system,
+      darkTheme: ThemeData(
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: MosaicVisualTokens.surface,
+        colorScheme: const ColorScheme.dark(
+          surface: MosaicVisualTokens.surface,
+          onSurface: MosaicVisualTokens.foreground,
+        ),
       ),
-    ),
-    theme: ThemeData(
-      brightness: Brightness.light,
-      colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF262626)),
-    ),
-    routes: {
-      MosaicSettingsRoute.privacy: (_) =>
-          const _ReservedSettingsPage('Privacy'),
-      MosaicSettingsRoute.support: (_) =>
-          const _ReservedSettingsPage('Support'),
-      MosaicSettingsRoute.deleteAccount: (_) =>
-          const _ReservedSettingsPage('Delete account'),
-    },
-    home: PlaySurface(play: _demoPlay, mediaBuilder: _buildPlayMedia),
-  );
+      theme: ThemeData(
+        brightness: Brightness.light,
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF262626)),
+      ),
+      routes: {
+        MosaicSettingsRoute.privacy: (_) =>
+            const _ReservedSettingsPage('Privacy'),
+        MosaicSettingsRoute.support: (_) =>
+            const _ReservedSettingsPage('Support'),
+        MosaicSettingsRoute.deleteAccount: (_) =>
+            const _ReservedSettingsPage('Delete account'),
+      },
+      home: PlaySurface(play: _demoPlay, mediaBuilder: media.call),
+    );
+  }
 }
 
 final class _ReservedSettingsPage extends StatelessWidget {
