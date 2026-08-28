@@ -1,99 +1,81 @@
-# Mixli Brand System v1.0
+# Mixli Brand System v2
 
-**Play. Learn. Become.**
+**Identity line:** **Play. Learn. Become.**
 
-This package is the production source of truth for Mixli's initial identity. The logo is original vector geometry: four open paths converge without forming a mathematical ×, representing playful exploration, learning, transformation and becoming.
+## 1. Source of truth
 
-## 1. Brand idea
+The primary mark in this package is a vector reconstruction of the approved final Mixli identity concept. The wordmark letters are **custom outlined geometry**; they are not generated from a font at runtime. Never substitute a typed `mixli` for the official wordmark.
 
-**Four paths. One journey.** The identity should feel curious, alive and optimistic without becoming childish or visually noisy. The four-path mark is expressive; the product UI around it is deliberately restrained.
+The symbol is four converging loops: Play, Learn, Transform, Become. Its asymmetry and inner teardrop cuts are intentional; do not redraw it as a butterfly, mathematical ×, four generic petals, or a Figma-like stack.
 
-## 2. Typography
+## 2. Logo usage
 
-### Product UI — Inter Variable
-Use Inter Variable for all functional UI. It was designed for computer screens, with a tall x-height for mixed/lowercase readability and OpenType features useful in interfaces. Use Regular 400, Medium 500 and Semibold 600 most of the time. Avoid Light/Thin for functional text.
+- Use `wordmark-color.svg` on light neutral backgrounds.
+- Use `wordmark-color-dark.svg` on dark backgrounds.
+- Use one-color navy/white versions where gradients are unsuitable.
+- Use the full-gradient icon at 32 px and above. Below 32 px, prefer the one-color favicon/micro mark for clarity.
+- Minimum clear space: one lowercase `i` stem width on every side.
+- Do not stretch, rotate, recolor individual lobes, add outlines, glow, drop shadows, or place over visually busy media.
 
-### Display — Inter Display / Inter Variable at display optical size
-Use Inter Display for large marketing and editorial headings. This keeps one type family in the stack, minimizes font payload and avoids a decorative display font competing with Play content. The custom Mixli wordmark provides the distinctive brand voice.
+## 3. Typography
 
-**Do not bundle or redistribute font files with brand assets.** Reference the official Inter project or your licensed application bundle.
+### Wordmark
+Custom vector lettering only. No font substitution.
 
-### Product roles
-- Display: 56/60, 650, -1.8 tracking
-- Headline: 32/38, 600
-- Play prompt: 22/28, 600
-- Choice: 17/22, 500
-- Reveal title: 24/30, 650
-- Reveal detail: 16/23, 400
-- Control: 14/18, 550
-- Metadata: 12/16, 500
+### Product/UI
+**Inter Variable** — Regular 400, Medium 500, Semibold 600. It is the product face because it is designed for screens, has a tall x-height, and supports variable weight/optical size.
 
-## 3. Logo
+Recommended roles:
+- Play prompt: 20–24 / 600
+- Choice label: 16–18 / 500
+- Reveal title: 24–32 / 600
+- Body/context: 15–17 / 400
+- Control label: 13–15 / 500
+- Metadata: 12–13 / 450–500
 
-Primary: `logo/svg/wordmark-color.svg`.
+### Brand/editorial display
+Use **Inter Display** at 32 px and above with tighter tracking (-1% to -2%) and 550–650 weight. This keeps the system precise without introducing another runtime font family.
 
-The four-path icon may be used alone only when context already identifies Mixli (app icon, favicon, avatar, in-product branded moment). Use the wordmark for first-contact marketing and institutional surfaces.
+The identity line uses uppercase Inter Display Medium with generous tracking. It is supporting copy, never louder than the wordmark.
 
-Clear space: at least one **i-dot diameter** around the wordmark and one **path stroke width** around the icon. Minimum recommended icon: 20 px digital. Minimum full wordmark: 96 px digital.
+## 4. Color
 
-Do not rotate, outline, add shadows, recolor individual paths, or place the gradient logo on a visually busy image without a quieting surface.
+Identity accents are expressive. Product chrome is quiet.
 
-## 4. Color system
+| Role | Hex |
+|---|---|
+| Ink | #0F1B41 |
+| Play | #FF736D |
+| Learn | #B76DF3 |
+| Transform | #7D82F4 |
+| Become | #25C5F4 |
+| Light canvas | #F8FAFF |
+| Dark canvas | #070D20 |
 
-Core neutrals: Ink `#0B1230`, Paper `#F8FAFF`, Dark `#080D20`.
+The Journey gradient is reserved for identity, meaningful progress/transformation moments, empty states, and marketing accents. Do not gradient-fill normal buttons, navigation, body text, or every icon.
 
-Identity paths: Play `#FF6B61`, Learn `#8A5CFF`, Transform `#23C7D9`, Become `#1778F2`. These accents are **not** body-text colors on light surfaces; use semantic text colors for accessibility.
+## 5. Iconography
 
-Light text uses Ink / Muted `#566078`. Dark text uses Paper / Muted Dark `#B8C0D8`. The normal text combinations are chosen to meet or exceed WCAG AA contrast; decorative gradient elements do not communicate state by color alone.
+Production icons are 24×24 SVG with 1.8 px optical stroke, round caps/joins, and `currentColor`. Keep common actions familiar rather than inventing metaphors.
 
-## 5. Gradient rules
+- Default visible icon: 24 px
+- iOS touch target: 44×44 pt default
+- Android/web touch target: 48×48 logical px where practical
+- Always attach semantic/accessibility labels
+- Filled variants are supplied only for the four primary tab states
 
-The Journey gradient order is always **coral → violet → cyan → blue**. It expresses Play → Learn → Transform → Become. Reverse direction only when motion direction requires it; never randomly reorder the stops.
+## 6. Light and dark mode
 
-Use gradients for:
-- logo/icon identity;
-- meaningful progress or transition moments;
-- sparse ambient brand ribbons;
-- empty-state illustration accents;
-- launch/marketing surfaces.
+Do not simply invert colors. Dark mode uses a blue-black canvas and softened secondary text. Gradient identity retains the same hue order on both themes.
 
-Do not use gradients for body text, ordinary buttons, every card, or persistent navigation.
+## 7. Empty states
 
-## 6. Light / dark
+Empty-state art is deliberately text-free. Product copy should be added by the UI so localization, accessibility, and experimentation remain independent from artwork. Use one concise sentence and, only when useful, one action.
 
-Light: Paper background, white raised surfaces, Ink text.
-Dark: Dark `#080D20` background, raised `#111938`, Paper text.
+## 8. Marketing
 
-The colorful logo works on both. Prefer white monochrome logo only where the full-color mark would fight the content. Product controls remain `currentColor` monochrome and inherit the theme.
+Templates are editable SVG. Keep primary visual attention on one idea. The Journey ribbon is a supporting motion cue, not a decorative wallpaper. Replace template copy rather than stacking additional text.
 
-## 7. Iconography
+## 9. Product principle
 
-The app icon system is a 24×24 grid, 1.8 px optical stroke, round caps and joins. It is intentionally familiar and low-noise. The SVGs use `currentColor`; recolor through the UI theme rather than editing files.
-
-Do not replace familiar symbols simply to look branded. Brand differentiation belongs in the four-path mark, motion, content quality and composition.
-
-## 8. Empty states
-
-Empty-state illustrations are text-free SVGs. Pair each with one literal title and at most one short action. No motivational paragraphs. Available states: Saved, Offline, No results, First creation, Permission required.
-
-## 9. Marketing
-
-Marketing templates are vector-first SVGs with matching PNG exports. Replace copy in SVG source rather than raster-editing. Dark is the hero/launch treatment; light is used for documentation, press and email. The flowing Journey ribbon should remain secondary to the message.
-
-## 10. Product restraint
-
-On the Play surface: no persistent wordmark, no logo watermark over creator media, no gradient navigation tower, and no brand ornament unless it improves comprehension or feedback. Mixli should be recognized by craft before chrome.
-
-## 11. Package map
-
-- `logo/` — transparent wordmark, icon and lockups
-- `app-icons/` — opaque store/home-screen tiles plus SVG source
-- `icons/` — immediate mobile/web product icon set
-- `empty-states/` — text-free light/dark illustrations
-- `marketing/` — share cards, story/post templates, hero ribbon
-- `tokens/` — JSON design tokens, CSS and Flutter constants
-- `source/` — source notes / generation metadata
-
-## 12. Accessibility
-
-Normal text must target at least 4.5:1 contrast. Large text may use 3:1 where WCAG permits. Do not encode success/error/selection solely by Play/Learn/Transform/Become color. Respect scalable text and reduced motion.
+Mixli's logo should rarely appear on the main Play surface. Brand is felt through motion, precision, interaction, content quality, and restraint.
