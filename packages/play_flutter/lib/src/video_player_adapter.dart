@@ -80,8 +80,11 @@ VideoPlayerController _controllerFor(PlayVideoSource source) {
   );
 
   return switch (source) {
-    NetworkPlayVideoSource(:final uri, :final headers) =>
-      _networkController(uri, headers, options),
+    NetworkPlayVideoSource(:final uri, :final headers) => _networkController(
+      uri,
+      headers,
+      options,
+    ),
     BundlePlayVideoSource(:final assetName) => VideoPlayerController.asset(
       assetName,
       videoPlayerOptions: options,
