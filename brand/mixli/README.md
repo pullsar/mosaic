@@ -1,7 +1,11 @@
-# Mixli Brand Kit
+# Mixli Brand Source
 
-Production-ready vector-first identity assets for **Mixli — Play. Learn. Become.**
+Audited v2 identity source for **Mixli — Play. Learn. Become.**
 
-Start with `docs/BRAND_GUIDE.md`. SVG files are editable sources; PNG files are raster exports for immediate use. Font files are intentionally not included.
+The first generated reconstruction was rejected and has been replaced. The authoritative logo files in this branch now follow the approved final reference: custom outlined `mixli` lettering with the four-loop mark replacing `x`.
 
-All custom logo/icon/illustration geometry in this kit was created specifically for Mixli. Product UI icons use familiar semantic shapes by design; they are original SVG geometry and theme with `currentColor`.
+Start with `docs/BRAND_GUIDE.md`, `docs/TYPOGRAPHY.md`, `docs/ICONOGRAPHY.md`, and `docs/QA_SUMMARY.md`.
+
+`icons/mixli-icons-sprite.svg` is the immediate themeable web icon source. The complete handoff also includes transparent PNG/SVG logo variants, full-square app icons, per-icon SVG/PNG exports, empty states, marketing templates, CSS/Flutter tokens, manifests and QA evidence.
+
+No font binaries are stored here. The official wordmark itself has no font dependency.
