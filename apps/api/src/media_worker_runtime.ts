@@ -19,6 +19,11 @@ import {
   type MediaDerivativeClaim,
   type PostgresMediaRepository,
 } from './media_repository.js';
+import {
+  createMediaClaimAttemptSignal,
+  mediaAttemptFailureCode,
+  MEDIA_CLAIM_COMPLETION_MARGIN_MS,
+} from './media_worker_claim.js';
 
 export type MediaWorkerRepository = MediaFfmpegWorkerRepository &
   Pick<PostgresMediaRepository, 'getAsset'>;
@@ -68,13 +73,6 @@ const DEFAULT_LEASE_MS = 15 * 60 * 1000;
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 const DEFAULT_IDLE_MS = 1_000;
 const MAX_INTERVAL_MS = 60 * 60 * 1000;
-const CLAIM_MARGIN_MS = 30_000;
-
-interface ClaimAttemptSignal {
-  signal: AbortSignal;
-  deadlineSignal: AbortSignal;
-  dispose: () => void;
-}
 
 export async function runMediaWorkerOnce(
   dispatcher: MediaWorkerDispatcher,
@@ -95,7 +93,7 @@ export async function runMediaWorkerOnce(
     return emit(options, {status: 'idle', claim: null});
   }
 
-  const attemptSignal = createClaimAttemptSignal(claim, options.signal);
+  const attemptSignal = createMediaClaimAttemptSignal(claim, options.signal);
   if (attemptSignal === null) {
     return await failClaim(repository, claim, 'media_claim_invalid', options);
   }
@@ -129,7 +127,12 @@ export async function runMediaWorkerOnce(
           attemptSignal.signal,
         );
       } catch (error) {
-        const errorCode = sourceFailureCode(error, options.signal, attemptSignal.deadlineSignal);
+        const errorCode = mediaAttemptFailureCode(
+          error,
+          options.signal,
+          attemptSignal.deadlineSignal,
+          'media_source_unavailable',
+        );
         return await failClaim(repository, claim, errorCode, options);
       }
 
@@ -246,43 +249,6 @@ async function failClaim(
   }
 }
 
-function createClaimAttemptSignal(
-  claim: MediaDerivativeClaim,
-  outerSignal?: AbortSignal,
-): ClaimAttemptSignal | null {
-  const leaseExpiresAt = claim.derivative.leaseExpiresAt?.getTime();
-  if (leaseExpiresAt === undefined || !Number.isFinite(leaseExpiresAt)) return null;
-  const delayMs = leaseExpiresAt - Date.now() - CLAIM_MARGIN_MS;
-  if (delayMs <= 0) return null;
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => {
-    const error = new Error('Media claim reached its completion deadline');
-    error.name = 'AbortError';
-    controller.abort(error);
-  }, delayMs);
-  timer.unref();
-
-  return {
-    signal: outerSignal === undefined
-      ? controller.signal
-      : AbortSignal.any([outerSignal, controller.signal]),
-    deadlineSignal: controller.signal,
-    dispose: () => clearTimeout(timer),
-  };
-}
-
-function sourceFailureCode(
-  error: unknown,
-  outerSignal: AbortSignal | undefined,
-  deadlineSignal: AbortSignal,
-): string {
-  if (outerSignal?.aborted) return 'media_worker_aborted';
-  if (deadlineSignal.aborted) return 'media_claim_deadline';
-  if (isAbortError(error)) return 'media_worker_aborted';
-  return 'media_source_unavailable';
-}
-
 function normalizeTiming(options: MediaWorkerRuntimeOptions): {
   leaseMs: number;
   timeoutMs: number;
@@ -303,9 +269,9 @@ function normalizeTiming(options: MediaWorkerRuntimeOptions): {
     'idleMs',
     60_000,
   );
-  if (timeoutMs + CLAIM_MARGIN_MS >= leaseMs) {
+  if (timeoutMs + MEDIA_CLAIM_COMPLETION_MARGIN_MS >= leaseMs) {
     throw new TypeError(
-      `timeoutMs must leave at least ${CLAIM_MARGIN_MS} ms before lease expiry`,
+      `timeoutMs must leave at least ${MEDIA_CLAIM_COMPLETION_MARGIN_MS} ms before lease expiry`,
     );
   }
   return {leaseMs, timeoutMs, idleMs};
@@ -364,10 +330,6 @@ function abortIfRequested(signal?: AbortSignal): void {
     error.name = 'AbortError';
     throw error;
   }
-}
-
-function isAbortError(error: unknown): boolean {
-  return error instanceof Error && error.name === 'AbortError';
 }
 
 async function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
