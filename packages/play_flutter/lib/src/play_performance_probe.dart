@@ -1,6 +1,7 @@
 import 'dart:collection';
 import 'dart:developer' as developer;
 import 'dart:math' as math;
+import 'dart:ui' show FramePhase, FrameTiming;
 
 import 'package:flutter/scheduler.dart';
 
@@ -60,10 +61,7 @@ final class PlayFramePerformanceAccumulator {
     int maxSamples = 600,
   }) : targetRefreshHz = _validateRefreshRate(targetRefreshHz),
        maxSamples = _validateMaxSamples(maxSamples),
-       frameBudget = Duration(
-         microseconds: (Duration.microsecondsPerSecond / targetRefreshHz)
-             .round(),
-       );
+       frameBudget = _frameBudgetFor(_validateRefreshRate(targetRefreshHz));
 
   final double targetRefreshHz;
   final int maxSamples;
@@ -226,6 +224,10 @@ int _validateMaxSamples(int value) {
   }
   return value;
 }
+
+Duration _frameBudgetFor(double refreshRate) => Duration(
+  microseconds: (Duration.microsecondsPerSecond / refreshRate).round(),
+);
 
 Duration _percentile(List<Duration> sorted, double percentile) {
   final index = math.max(
