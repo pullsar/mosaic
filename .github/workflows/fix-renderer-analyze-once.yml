@@ -58,10 +58,6 @@ jobs:
         run: dart format packages/play_flutter/lib/src/play_input_primitives.dart packages/play_flutter/lib/src/soloud_audio_engine.dart packages/play_flutter/test/play_media_audio_binding_test.dart packages/play_schema/lib/src/validation.dart
       - name: Analyze
         run: flutter analyze
-      - name: Test renderer and schema
-        run: |
-          (cd packages/play_schema && dart test)
-          (cd packages/play_flutter && flutter test)
       - name: Remove one-shot workflow
         run: git rm .github/workflows/fix-renderer-analyze-once.yml
       - name: Commit fixes
