@@ -18,7 +18,8 @@ test('metrics expose bounded HTTP labels and active release information', async 
     releaseSha: 'b5098ec72c804b6df97a7017681ea17b9843d73c',
   });
 
-  await app.inject({method: 'GET', url: '/health'});
+  const health = await app.inject({method: 'GET', url: '/health'});
+  assert.equal(health.headers['x-mixli-release'], 'b5098ec72c804b6df97a7017681ea17b9843d73c');
   await app.inject({
     method: 'POST',
     url: '/v1/actors/actor-sensitive-id/bind-user',
