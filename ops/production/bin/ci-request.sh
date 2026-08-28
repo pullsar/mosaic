@@ -80,7 +80,10 @@ main() {
   fi
   install -d -m 0750 "$(dirname "$LOCK_FILE")"
   exec 9>"$LOCK_FILE"
-  flock -n 9 || exit 75
+  flock -w 2400 9 || {
+    log_result ci-failed
+    exit 75
+  }
   fetch_and_verify
   prepare_checkout
   if "$CI_RUNNER" "$CHECKOUT" "$SHA"; then

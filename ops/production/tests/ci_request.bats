@@ -40,6 +40,13 @@ setup() {
   grep -Fq 'ci-failed' "$script"
 }
 
+@test "server workers serialize with a bounded wait instead of dropping pushes" {
+  script="$REPO_ROOT/ops/production/bin/ci-request.sh"
+  grep -Fq 'flock -w 2400 9' "$script"
+  ! grep -Fq 'flock -n 9' "$script"
+  grep -Fq 'log_result ci-failed' "$script"
+}
+
 @test "deployment requests enqueue the synchronous deployer" {
   request="$REPO_ROOT/ops/production/bin/deployment-request.sh"
   run env MIXLI_DEPLOY_REQUEST_TEST_MODE=1 "$request" "$SHA"
