@@ -10,6 +10,13 @@ void main() {
     expect(metrics['estimatedBufferMs'], closeTo(23.22, 0.01));
   });
 
+  test('SoLoud adapter is a process-wide engine without touching FFI', () {
+    final first = SoLoudAudioEngine();
+    final second = SoLoudAudioEngine();
+
+    expect(identical(first, second), isTrue);
+  });
+
   test(
     'SoLoud adapter rejects insecure media before native initialization',
     () async {
