@@ -76,7 +76,9 @@ export async function sha256File(path: string, signal?: AbortSignal): Promise<st
   abortIfRequested(signal);
   const hash = createHash('sha256');
   const stream = createReadStream(path);
-  const abort = (): void => stream.destroy(abortError());
+  const abort = (): void => {
+    stream.destroy(abortError());
+  };
   signal?.addEventListener('abort', abort, {once: true});
   try {
     for await (const chunk of stream) {
