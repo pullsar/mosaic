@@ -116,7 +116,8 @@ configure_host() {
   [[ "$(runuser -u mixli-build -- git -C /srv/mixli/repository remote get-url origin)" == "$REPOSITORY_URL" ]]
 
   printf '%s\n' \
-    'table inet filter {' \
+    'destroy table inet mixli_host_filter' \
+    'table inet mixli_host_filter {' \
     '  chain input {' \
     '    type filter hook input priority filter; policy drop;' \
     '    ct state established,related accept' \

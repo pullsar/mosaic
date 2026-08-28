@@ -67,6 +67,8 @@ run_ip_refresh() {
 
 @test "host input policy is default deny while preserving key SSH" {
   script="$REPO_ROOT/ops/production/bin/provision-host.sh"
+  grep -Fq 'destroy table inet mixli_host_filter' "$script"
+  grep -Fq 'table inet mixli_host_filter' "$script"
   grep -Fq 'policy drop' "$script"
   grep -Fq 'tcp dport 22 ct state new accept' "$script"
   grep -Fq 'https://download.docker.com/linux/debian' "$script"
