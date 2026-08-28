@@ -42,7 +42,7 @@ export function normalizeMediaDerivativePlan(plan: MediaDerivativePlan): MediaDe
   const processor = plan.processor.trim();
   if (!processor) throw new TypeError('Media derivative processor identity must not be empty');
   const parameters = canonicalize(plan.parameters);
-  if (parameters === null || Array.isArray(parameters) || typeof parameters !== 'object') {
+  if (!isCanonicalJsonObject(parameters)) {
     throw new TypeError('Media derivative parameters must be a JSON object');
   }
   return {version: plan.version, purpose: plan.purpose, processor, parameters};
@@ -59,6 +59,12 @@ export function mediaDerivativeKey(sourceSha256: string, plan: MediaDerivativePl
 
 export function canonicalJson(value: unknown): string {
   return JSON.stringify(canonicalize(value));
+}
+
+function isCanonicalJsonObject(
+  value: CanonicalJsonValue,
+): value is {readonly [key: string]: CanonicalJsonValue} {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function canonicalize(value: unknown): CanonicalJsonValue {
