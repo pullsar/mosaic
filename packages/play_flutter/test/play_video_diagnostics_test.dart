@@ -45,44 +45,47 @@ const _runtime = _Runtime(
 );
 
 void main() {
-  test('first-frame diagnostic records format and coarse browser dimensions', () {
-    final telemetry = _FakeTelemetry();
-    final observer = PlayVideoDiagnosticObserver(
-      telemetry: telemetry,
-      runtimeDiagnostics: _runtime,
-    );
+  test(
+    'first-frame diagnostic records format and coarse browser dimensions',
+    () {
+      final telemetry = _FakeTelemetry();
+      final observer = PlayVideoDiagnosticObserver(
+        telemetry: telemetry,
+        runtimeDiagnostics: _runtime,
+      );
 
-    observer(
-      PlayVideoPlaybackEvent(
-        assetId: 'asset_1',
-        phase: PlayVideoPlaybackPhase.firstFramePainted,
-        sourceType: 'network',
-        elapsed: const Duration(milliseconds: 340),
-        format: PlayVideoFormatMetadata(
-          container: 'mp4',
-          videoCodec: 'h264',
-          videoProfile: 'main',
-          audioCodec: 'aac',
+      observer(
+        PlayVideoPlaybackEvent(
+          assetId: 'asset_1',
+          phase: PlayVideoPlaybackPhase.firstFramePainted,
+          sourceType: 'network',
+          elapsed: const Duration(milliseconds: 340),
+          format: PlayVideoFormatMetadata(
+            container: 'mp4',
+            videoCodec: 'h264',
+            videoProfile: 'main',
+            audioCodec: 'aac',
+          ),
         ),
-      ),
-    );
+      );
 
-    expect(telemetry.events, hasLength(1));
-    expect(telemetry.events.single.name, 'media_playback');
-    expect(telemetry.events.single.payload, {
-      'assetId': 'asset_1',
-      'phase': 'firstFramePainted',
-      'sourceType': 'network',
-      'runtime': 'web',
-      'operatingSystem': 'ios',
-      'browser': 'safari',
-      'elapsedMs': 340,
-      'container': 'mp4',
-      'videoCodec': 'h264',
-      'videoProfile': 'main',
-      'audioCodec': 'aac',
-    });
-  });
+      expect(telemetry.events, hasLength(1));
+      expect(telemetry.events.single.name, 'media_playback');
+      expect(telemetry.events.single.payload, {
+        'assetId': 'asset_1',
+        'phase': 'firstFramePainted',
+        'sourceType': 'network',
+        'runtime': 'web',
+        'operatingSystem': 'ios',
+        'browser': 'safari',
+        'elapsedMs': 340,
+        'container': 'mp4',
+        'videoCodec': 'h264',
+        'videoProfile': 'main',
+        'audioCodec': 'aac',
+      });
+    },
+  );
 
   test('playback error records error type without retaining the message', () {
     final telemetry = _FakeTelemetry();
