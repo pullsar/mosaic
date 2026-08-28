@@ -141,37 +141,10 @@ void main() {
   testWidgets('replacing a drag spec mid-gesture releases the feed lock', (
     tester,
   ) async {
-    final first = PlayDragInputSpec(
-      origin: const Offset(0.1, 0.5),
-      size: const Size(0.2, 0.1),
-      handleLabel: 'Move match',
-      targets: const [
-        PlayDragTarget(
-          id: 'solution_a',
-          rect: PlayNormalizedRect(
-            x: 0.6,
-            y: 0.2,
-            width: 0.2,
-            height: 0.2,
-          ),
-        ),
-      ],
-    );
-    final replacement = PlayDragInputSpec(
-      origin: const Offset(0.2, 0.5),
-      size: const Size(0.2, 0.1),
-      handleLabel: 'Move match',
-      targets: const [
-        PlayDragTarget(
-          id: 'solution_b',
-          rect: PlayNormalizedRect(
-            x: 0.6,
-            y: 0.2,
-            width: 0.2,
-            height: 0.2,
-          ),
-        ),
-      ],
+    final first = _runtimeDragSpec(const Offset(0.1, 0.5), 'solution_a');
+    final replacement = _runtimeDragSpec(
+      const Offset(0.2, 0.5),
+      'solution_b',
     );
     final manipulation = <bool>[];
 
@@ -197,22 +170,7 @@ void main() {
   testWidgets('disposing a drag mid-gesture releases the feed lock', (
     tester,
   ) async {
-    final spec = PlayDragInputSpec(
-      origin: const Offset(0.1, 0.5),
-      size: const Size(0.2, 0.1),
-      handleLabel: 'Move match',
-      targets: const [
-        PlayDragTarget(
-          id: 'solution_a',
-          rect: PlayNormalizedRect(
-            x: 0.6,
-            y: 0.2,
-            width: 0.2,
-            height: 0.2,
-          ),
-        ),
-      ],
-    );
+    final spec = _runtimeDragSpec(const Offset(0.1, 0.5), 'solution_a');
     final manipulation = <bool>[];
 
     await tester.pumpWidget(_dragTestSurface(spec, manipulation));
@@ -230,6 +188,24 @@ void main() {
     await gesture.cancel();
   });
 }
+
+PlayDragInputSpec _runtimeDragSpec(Offset origin, String targetId) =>
+    PlayDragInputSpec(
+      origin: origin,
+      size: const Size(0.2, 0.1),
+      handleLabel: 'Move match',
+      targets: [
+        PlayDragTarget(
+          id: targetId,
+          rect: const PlayNormalizedRect(
+            x: 0.6,
+            y: 0.2,
+            width: 0.2,
+            height: 0.2,
+          ),
+        ),
+      ],
+    );
 
 Widget _dragTestSurface(
   PlayDragInputSpec spec,
