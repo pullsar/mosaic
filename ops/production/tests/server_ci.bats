@@ -67,7 +67,7 @@ production-builds" ]
     'packages/platform_flutter' \
     'flutter build web --release --pwa-strategy=none' \
     'apps/api/Dockerfile'; do
-    grep -Fq "$required" "$script"
+    grep -Fq -- "$required" "$script"
   done
 }
 
