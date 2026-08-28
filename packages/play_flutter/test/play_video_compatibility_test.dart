@@ -50,9 +50,7 @@ PlayVideoAsset _asset({
 }) => PlayVideoAsset(
   id: 'clip',
   semanticLabel: 'Travel clip',
-  source: NetworkPlayVideoSource(
-    Uri.parse('https://cdn.example.com/clip.mp4'),
-  ),
+  source: NetworkPlayVideoSource(Uri.parse('https://cdn.example.com/clip.mp4')),
   autoplay: autoplay,
   muted: muted,
   format: format,
@@ -65,103 +63,105 @@ Future<void> _settle(WidgetTester tester) async {
 }
 
 void main() {
-  testWidgets('manual video exposes a user play action and resumes only after it plays', (
-    tester,
-  ) async {
-    final coordinator = ActiveMediaCoordinator();
-    final controller = _CompatibilityVideoController();
-    final asset = _asset(autoplay: false, muted: false);
+  testWidgets(
+    'manual video exposes a user play action and resumes only after it plays',
+    (tester) async {
+      final coordinator = ActiveMediaCoordinator();
+      final controller = _CompatibilityVideoController();
+      final asset = _asset(autoplay: false, muted: false);
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: OwnedPlayVideo(
-          ownerId: 'play',
-          asset: asset,
-          coordinator: coordinator,
-          controllerFactory: (_) => controller,
+      await tester.pumpWidget(
+        MaterialApp(
+          home: OwnedPlayVideo(
+            ownerId: 'play',
+            asset: asset,
+            coordinator: coordinator,
+            controllerFactory: (_) => controller,
+          ),
         ),
-      ),
-    );
-    await _settle(tester);
+      );
+      await _settle(tester);
 
-    expect(controller.playCount, 0);
-    expect(coordinator.owns('play', controller), isTrue);
-    expect(find.bySemanticsLabel('Play video'), findsOneWidget);
+      expect(controller.playCount, 0);
+      expect(coordinator.owns('play', controller), isTrue);
+      expect(find.bySemanticsLabel('Play video'), findsOneWidget);
 
-    await tester.tap(find.bySemanticsLabel('Play video'));
-    await _settle(tester);
+      await tester.tap(find.bySemanticsLabel('Play video'));
+      await _settle(tester);
 
-    expect(controller.playCount, 1);
-    expect(find.bySemanticsLabel('Play video'), findsNothing);
+      expect(controller.playCount, 1);
+      expect(find.bySemanticsLabel('Play video'), findsNothing);
 
-    await coordinator.suspend();
-    await tester.pumpWidget(
-      MaterialApp(
-        home: OwnedPlayVideo(
-          ownerId: 'play',
-          asset: asset,
-          coordinator: coordinator,
-          controllerFactory: (_) => controller,
-          semanticResumeEpoch: 1,
+      await coordinator.suspend();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: OwnedPlayVideo(
+            ownerId: 'play',
+            asset: asset,
+            coordinator: coordinator,
+            controllerFactory: (_) => controller,
+            semanticResumeEpoch: 1,
+          ),
         ),
-      ),
-    );
-    await _settle(tester);
+      );
+      await _settle(tester);
 
-    expect(controller.pauseCount, 1);
-    expect(controller.playCount, 2);
-  });
+      expect(controller.pauseCount, 1);
+      expect(controller.playCount, 2);
+    },
+  );
 
-  testWidgets('recoverable autoplay rejection keeps ownership and falls back to tap', (
-    tester,
-  ) async {
-    final coordinator = ActiveMediaCoordinator();
-    final controller = _CompatibilityVideoController(
-      playOutcomes: const <Object?>[
-        PlayVideoPlaybackRejected('browser blocked autoplay'),
-        null,
-      ],
-    );
-    final events = <PlayVideoPlaybackEvent>[];
+  testWidgets(
+    'recoverable autoplay rejection keeps ownership and falls back to tap',
+    (tester) async {
+      final coordinator = ActiveMediaCoordinator();
+      final controller = _CompatibilityVideoController(
+        playOutcomes: const <Object?>[
+          PlayVideoPlaybackRejected('browser blocked autoplay'),
+          null,
+        ],
+      );
+      final events = <PlayVideoPlaybackEvent>[];
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: OwnedPlayVideo(
-          ownerId: 'play',
-          asset: _asset(),
-          coordinator: coordinator,
-          controllerFactory: (_) => controller,
-          onPlaybackEvent: events.add,
+      await tester.pumpWidget(
+        MaterialApp(
+          home: OwnedPlayVideo(
+            ownerId: 'play',
+            asset: _asset(),
+            coordinator: coordinator,
+            controllerFactory: (_) => controller,
+            onPlaybackEvent: events.add,
+          ),
         ),
-      ),
-    );
-    await _settle(tester);
+      );
+      await _settle(tester);
 
-    expect(controller.initializeCount, 1);
-    expect(controller.playCount, 1);
-    expect(controller.releaseCount, 0);
-    expect(coordinator.owns('play', controller), isTrue);
-    expect(find.byType(PlayVideoUnavailable), findsNothing);
-    expect(find.bySemanticsLabel('Play video'), findsOneWidget);
-    expect(
-      events.map((event) => event.phase),
-      containsAll(<PlayVideoPlaybackPhase>[
-        PlayVideoPlaybackPhase.initialized,
-        PlayVideoPlaybackPhase.autoplayBlocked,
-        PlayVideoPlaybackPhase.firstFramePainted,
-      ]),
-    );
+      expect(controller.initializeCount, 1);
+      expect(controller.playCount, 1);
+      expect(controller.releaseCount, 0);
+      expect(coordinator.owns('play', controller), isTrue);
+      expect(find.byType(PlayVideoUnavailable), findsNothing);
+      expect(find.bySemanticsLabel('Play video'), findsOneWidget);
+      expect(
+        events.map((event) => event.phase),
+        containsAll(<PlayVideoPlaybackPhase>[
+          PlayVideoPlaybackPhase.initialized,
+          PlayVideoPlaybackPhase.autoplayBlocked,
+          PlayVideoPlaybackPhase.firstFramePainted,
+        ]),
+      );
 
-    await tester.tap(find.bySemanticsLabel('Play video'));
-    await _settle(tester);
+      await tester.tap(find.bySemanticsLabel('Play video'));
+      await _settle(tester);
 
-    expect(controller.playCount, 2);
-    expect(find.bySemanticsLabel('Play video'), findsNothing);
-    expect(
-      events.map((event) => event.phase),
-      contains(PlayVideoPlaybackPhase.userPlaybackStarted),
-    );
-  });
+      expect(controller.playCount, 2);
+      expect(find.bySemanticsLabel('Play video'), findsNothing);
+      expect(
+        events.map((event) => event.phase),
+        contains(PlayVideoPlaybackPhase.userPlaybackStarted),
+      );
+    },
+  );
 
   testWidgets('failed user playback remains owned and presents a retry path', (
     tester,
@@ -239,7 +239,9 @@ void main() {
     );
   });
 
-  testWidgets('telemetry observers cannot destabilize playback', (tester) async {
+  testWidgets('telemetry observers cannot destabilize playback', (
+    tester,
+  ) async {
     final coordinator = ActiveMediaCoordinator();
     final controller = _CompatibilityVideoController();
 

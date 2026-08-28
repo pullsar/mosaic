@@ -65,7 +65,9 @@ final class PlayVideoFormatMetadata {
         this.videoCodec == null &&
         this.videoProfile == null &&
         this.audioCodec == null) {
-      throw ArgumentError('Video format metadata must contain at least one value.');
+      throw ArgumentError(
+        'Video format metadata must contain at least one value.',
+      );
     }
   }
 

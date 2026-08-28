@@ -68,7 +68,9 @@ abstract final class PlayVideoAssetCodec {
         audioCodec: stringValue('audioCodec'),
       );
     } on ArgumentError catch (error) {
-      throw FormatException(error.message?.toString() ?? 'Invalid video format.');
+      throw FormatException(
+        error.message?.toString() ?? 'Invalid video format.',
+      );
     }
   }
 
