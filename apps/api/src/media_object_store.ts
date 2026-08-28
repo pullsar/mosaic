@@ -2,7 +2,6 @@ import {createReadStream} from 'node:fs';
 import {mkdir, open, stat, unlink} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {dirname, isAbsolute, join, relative, resolve, sep} from 'node:path';
-import {pipeline} from 'node:stream/promises';
 import {
   MediaOutputPublicationError,
   type MediaOutputPublisher,
@@ -131,14 +130,39 @@ export class LocalMediaObjectStore implements MediaObjectStore {
     }
 
     let completed = false;
+    const input = createReadStream(request.sourcePath);
+    const abort = (): void => {
+      input.destroy(abortError());
+    };
+    request.signal?.addEventListener('abort', abort, {once: true});
     try {
-      const input = createReadStream(request.sourcePath);
-      await pipeline(input, target.createWriteStream({autoClose: false}), {
-        ...(request.signal === undefined ? {} : {signal: request.signal}),
-      });
+      for await (const chunk of input) {
+        abortIfRequested(request.signal);
+        if (!Buffer.isBuffer(chunk)) {
+          throw new MediaOutputPublicationError('Media source stream returned a non-buffer chunk');
+        }
+        let offset = 0;
+        while (offset < chunk.length) {
+          abortIfRequested(request.signal);
+          const {bytesWritten} = await target.write(
+            chunk,
+            offset,
+            chunk.length - offset,
+            null,
+          );
+          if (bytesWritten <= 0) {
+            throw new MediaOutputPublicationError(
+              `Failed to make progress while writing ${request.storageKey}`,
+            );
+          }
+          offset += bytesWritten;
+        }
+      }
       await target.sync();
       completed = true;
     } finally {
+      request.signal?.removeEventListener('abort', abort);
+      input.destroy();
       await target.close();
       if (!completed) {
         await unlink(targetPath).catch(() => undefined);
