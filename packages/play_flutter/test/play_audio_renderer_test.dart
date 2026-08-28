@@ -138,6 +138,32 @@ void main() {
     expect(find.text('Replay'), findsOneWidget);
   });
 
+  testWidgets('Replay stops the prior voice and reuses the loaded handle', (
+    tester,
+  ) async {
+    final engine = _FakeAudioEngine();
+    final coordinator = ActiveMediaCoordinator();
+
+    await _pumpAudio(
+      tester,
+      ownerId: 'play_a',
+      asset: _asset('audio_a'),
+      engine: engine,
+      coordinator: coordinator,
+    );
+    await tester.tap(find.text('Hear'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Replay'));
+    await tester.pumpAndSettle();
+
+    expect(
+      engine.events,
+      ['load:audio_a', 'play:audio_a', 'stop:audio_a', 'play:audio_a'],
+    );
+    expect(coordinator.ownerId, 'play_a');
+    expect(coordinator.hasActiveMedia, isTrue);
+  });
+
   testWidgets('play failure releases ownership and fails closed', (tester) async {
     final engine = _FakeAudioEngine()..playError = StateError('play failed');
     final coordinator = ActiveMediaCoordinator();
@@ -159,6 +185,36 @@ void main() {
       ['load:audio_a', 'play:audio_a', 'stop:audio_a', 'release:audio_a'],
     );
     expect(coordinator.hasActiveMedia, isFalse);
+    expect(find.byType(PlayAudioUnavailable), findsOneWidget);
+    expect(observed.whereType<StateError>(), isNotEmpty);
+  });
+
+  testWidgets('Replay stop failure releases ownership and fails closed', (
+    tester,
+  ) async {
+    final engine = _FakeAudioEngine();
+    final coordinator = ActiveMediaCoordinator();
+    final observed = <Object>[];
+
+    await _pumpAudio(
+      tester,
+      ownerId: 'play_a',
+      asset: _asset('audio_a'),
+      engine: engine,
+      coordinator: coordinator,
+      onError: (asset, error, stackTrace) => observed.add(error),
+    );
+    await tester.tap(find.text('Hear'));
+    await tester.pumpAndSettle();
+
+    engine.stopError = StateError('stop failed');
+    await tester.tap(find.text('Replay'));
+    await tester.pumpAndSettle();
+
+    expect(engine.events.take(2), ['load:audio_a', 'play:audio_a']);
+    expect(engine.events.where((event) => event == 'stop:audio_a').length, 2);
+    expect(engine.events.last, 'release:audio_a');
+    expect(coordinator.hasActiveMedia, isTrue);
     expect(find.byType(PlayAudioUnavailable), findsOneWidget);
     expect(observed.whereType<StateError>(), isNotEmpty);
   });
