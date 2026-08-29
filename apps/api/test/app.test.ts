@@ -168,8 +168,15 @@ test('explicit CORS allowlist permits configured web origin only', async () => {
   });
   assert.equal(preflight.statusCode, 204);
   assert.equal(preflight.headers['access-control-allow-origin'], 'https://app.mosaic.example');
-  assert.equal(preflight.headers['access-control-allow-methods'], 'GET,POST,PUT,OPTIONS');
-  assert.equal(preflight.headers['access-control-allow-headers'], 'content-type,authorization');
+  assert.equal(preflight.headers['access-control-allow-methods'], 'GET,HEAD,POST,PUT,OPTIONS');
+  assert.equal(
+    preflight.headers['access-control-allow-headers'],
+    'content-type,authorization,range',
+  );
+  assert.equal(
+    preflight.headers['access-control-expose-headers'],
+    'accept-ranges,content-length,content-range',
+  );
   assert.equal(preflight.headers.vary, 'Origin');
   assert.equal(preflight.headers['access-control-allow-credentials'], undefined);
 
