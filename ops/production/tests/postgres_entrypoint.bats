@@ -333,7 +333,7 @@ exit 37
 EOF
   chmod 0755 "$TEST_ROOT/bin/postgres"
 
-  run docker run --rm \
+  run -37 docker run --rm \
     -e PATH=/test-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     -e PGDATA=/var/lib/postgresql/upstream-probe \
     -v "$SOURCE_CONFIG:$STAGED_CONFIG:ro" \
@@ -358,7 +358,7 @@ exit 37
 EOF
   chmod 0755 "$TEST_ROOT/upstream-entrypoint"
 
-  run docker run --rm \
+  run -37 docker run --rm \
     --entrypoint /usr/local/bin/docker-entrypoint-mixli.sh \
     -v "$SOURCE_CONFIG:$STAGED_CONFIG:ro" \
     -v "$TEST_ROOT/upstream-entrypoint:/usr/local/bin/docker-entrypoint.sh:ro" \
