@@ -83,7 +83,10 @@ ConsumerRuntime _runtime(
       final filtered = topics
           .where((topic) => topic['label']!.toLowerCase().contains(query))
           .toList(growable: false);
-      return http.Response(jsonEncode(<String, Object?>{'topics': filtered}), 200);
+      return http.Response(
+        jsonEncode(<String, Object?>{'topics': filtered}),
+        200,
+      );
     }
     if (request.url.path == '/v1/actors') {
       return http.Response('{}', 201);
@@ -169,7 +172,9 @@ void main() {
       expect(state.preferences.interestTopicIds, const ['science']);
       expect(state.preferences.learningTopicIds, isEmpty);
 
-      await tester.tap(find.byKey(const ValueKey<String>('interests-continue')));
+      await tester.tap(
+        find.byKey(const ValueKey<String>('interests-continue')),
+      );
       await tester.pumpAndSettle();
       expect(find.text('Want to learn more about?'), findsOneWidget);
 
@@ -184,7 +189,9 @@ void main() {
       expect(state.preferences.interestTopicIds, const ['science']);
       expect(state.preferences.learningTopicIds, const ['history']);
 
-      await tester.tap(find.byKey(const ValueKey<String>('interests-continue')));
+      await tester.tap(
+        find.byKey(const ValueKey<String>('interests-continue')),
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey<String>('learning-continue')));
       await tester.pumpAndSettle();
@@ -272,7 +279,9 @@ void main() {
     },
   );
 
-  testWidgets('completed onboarding launches the feed directly', (tester) async {
+  testWidgets('completed onboarding launches the feed directly', (
+    tester,
+  ) async {
     final state = _MemoryConsumerState(onboardingCompleted: true);
     final runtime = _runtime(state, preferenceStatus: 503);
     addTearDown(runtime.close);
@@ -303,32 +312,31 @@ void main() {
     expect(find.bySemanticsLabel('Science, selected'), findsOneWidget);
   });
 
-  testWidgets(
-    'pseudo RTL survives 390x844 expanded text with reduced motion',
-    (tester) async {
-      final state = _MemoryConsumerState();
-      final runtime = _runtime(state);
-      addTearDown(runtime.close);
+  testWidgets('pseudo RTL survives 390x844 expanded text with reduced motion', (
+    tester,
+  ) async {
+    final state = _MemoryConsumerState();
+    final runtime = _runtime(state);
+    addTearDown(runtime.close);
 
-      await tester.pumpWidget(
-        _app(
-          runtime: runtime,
-          onFinished: () {},
-          locale: const Locale('ar', 'XB'),
-          textScale: 1.6,
-          disableAnimations: true,
-        ),
-      );
-      await tester.pumpAndSettle();
+    await tester.pumpWidget(
+      _app(
+        runtime: runtime,
+        onFinished: () {},
+        locale: const Locale('ar', 'XB'),
+        textScale: 1.6,
+        disableAnimations: true,
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      final context = tester.element(find.byType(ConsumerOnboarding));
-      expect(Directionality.of(context), TextDirection.rtl);
-      expect(tester.takeException(), isNull);
+    final context = tester.element(find.byType(ConsumerOnboarding));
+    expect(Directionality.of(context), TextDirection.rtl);
+    expect(tester.takeException(), isNull);
 
-      await tester.tap(find.byKey(const ValueKey<String>('interests-continue')));
-      await tester.pumpAndSettle();
-      expect(Directionality.of(context), TextDirection.rtl);
-      expect(tester.takeException(), isNull);
-    },
-  );
+    await tester.tap(find.byKey(const ValueKey<String>('interests-continue')));
+    await tester.pumpAndSettle();
+    expect(Directionality.of(context), TextDirection.rtl);
+    expect(tester.takeException(), isNull);
+  });
 }
