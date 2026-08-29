@@ -44,11 +44,12 @@ setup() { setup_repo_root; }
 }
 
 @test "build account has no production Docker secret or data authority" {
+  account="${MIXLI_CI_BUILDER_USER:-mixli-build}"
   if [[ "$(id -u)" -eq 0 ]]; then
-    prefix=(runuser -u mixli-build --)
+    prefix=(runuser -u "$account" --)
   else
     prefix=()
-    [ "$(id -un)" = 'mixli-build' ]
+    [ "$(id -un)" = "$account" ]
   fi
   run "${prefix[@]}" env -u DOCKER_HOST -u XDG_RUNTIME_DIR /usr/bin/docker info
   [ "$status" -ne 0 ]
@@ -56,7 +57,7 @@ setup() { setup_repo_root; }
   [ "$status" -ne 0 ]
   run "${prefix[@]}" test -w /srv/mixli/data
   [ "$status" -ne 0 ]
-  ! id -nG mixli-build | grep -Eq '(^|[[:space:]])(docker|sudo)([[:space:]]|$)'
+  ! id -nG "$account" | grep -Eq '(^|[[:space:]])(docker|sudo)([[:space:]]|$)'
 }
 
 @test "checkout Docker tests use only the private rootless daemon" {

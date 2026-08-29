@@ -57,6 +57,7 @@ app_jwt() {
 
 installation_token() {
   curl --fail --silent --show-error --request POST \
+    --connect-timeout 10 --max-time 30 \
     --header "Authorization: Bearer $(app_jwt)" \
     --header 'Accept: application/vnd.github+json' \
     --header 'X-GitHub-Api-Version: 2022-11-28' \
@@ -69,6 +70,7 @@ api_call() {
   for attempt in 1 2 3 4 5; do
     token="$(installation_token)" || { sleep "$attempt"; continue; }
     if response="$(curl --fail --silent --show-error --request "$method" \
+      --connect-timeout 10 --max-time 30 \
       --header "Authorization: Bearer $token" \
       --header 'Accept: application/vnd.github+json' \
       --header 'X-GitHub-Api-Version: 2022-11-28' \
@@ -81,10 +83,18 @@ api_call() {
   return 75
 }
 
+audit_event() {
+  local delivery="$1"
+  printf '%s:%s:%s:%s:%s:%s\n' \
+    "$ACTION" "$PR" "$SHA" "$STATE" "$delivery" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    >>/srv/mixli/log/review-events.log
+}
+
 install -d -o root -g root -m 0750 "$(dirname "$STATE_ROOT")" "$STATE_ROOT" /srv/mixli/log
 exec 9>"$STATE_ROOT/status.lock"
 flock -w 30 9 || exit 75
 
+audit_event local
 body="$(payload)"
 if [[ "$ACTION" == create ]]; then
   response="$(api_call POST check-runs "$body")"
@@ -98,6 +108,4 @@ else
   api_call PATCH "check-runs/$check_id" "$body" >/dev/null
 fi
 
-printf '%s:%s:%s:%s:%s\n' \
-  "$ACTION" "$PR" "$SHA" "$STATE" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  >>/srv/mixli/log/review-events.log
+audit_event github

@@ -6,6 +6,7 @@ readonly CHECKOUT="${1-}"
 readonly SHA="${2-}"
 readonly TEST_MODE="${MIXLI_CI_TEST_MODE:-0}"
 readonly ENGINE_MODE="${MIXLI_CI_ENGINE_MODE:-release}"
+readonly BUILDER_USER="${MIXLI_CI_BUILDER_USER:-mixli-build}"
 readonly RETAIN_RELEASE_IMAGES_REQUESTED="${MIXLI_CI_RETAIN_RELEASE_IMAGES:-${MIXLI_CI_RETAIN_POSTGRES_IMAGE:-0}}"
 readonly SHORT_SHA="${SHA:0:12}"
 readonly FLUTTER_IMAGE="${MIXLI_FLUTTER_CI_IMAGE:-mixli-flutter-builder:3.44.7}"
@@ -61,11 +62,11 @@ die_usage() {
 }
 
 checkout_git() {
-  runuser -u mixli-build -- git -c safe.directory="$CHECKOUT" -C "$CHECKOUT" "$@"
+  runuser -u "$BUILDER_USER" -- git -c safe.directory="$CHECKOUT" -C "$CHECKOUT" "$@"
 }
 
 builder_exec() {
-  runuser -u mixli-build -- "$@"
+  runuser -u "$BUILDER_USER" -- "$@"
 }
 
 rootless_builder_exec() {
@@ -74,6 +75,8 @@ rootless_builder_exec() {
     XDG_RUNTIME_DIR="$rootless_runtime" \
     DOCKER_HOST="unix://$rootless_runtime/docker.sock" \
     MIXLI_ROOTLESS_DATA="$rootless_data" \
+    MIXLI_CI_BUILDER_USER="$BUILDER_USER" \
+    MIXLI_CI_ENGINE_MODE="$ENGINE_MODE" \
     "$@"
 }
 
@@ -94,7 +97,7 @@ load_rootless_candidate_images() {
   rootless_archive="$rootless_root/candidates.tar"
   docker save --output "$rootless_archive" \
     "$API_TEST_IMAGE" "$API_CI_IMAGE" "$FLUTTER_IMAGE" "$POSTGRES_CI_IMAGE"
-  chown mixli-build:mixli-build "$rootless_archive"
+  chown "$BUILDER_USER:$BUILDER_USER" "$rootless_archive"
   chmod 0600 "$rootless_archive"
   rootless_docker load --input "$rootless_archive" >/dev/null
 
@@ -113,12 +116,12 @@ start_rootless_docker() {
   rootless_runtime="$(mktemp -d "/run/mixli-rootless-ci.$SHORT_SHA.XXXXXX")"
   rootless_data="$rootless_root/data"
   rootless_home="$rootless_root/home"
-  install -d -o mixli-build -g mixli-build -m 0700 \
+  install -d -o "$BUILDER_USER" -g "$BUILDER_USER" -m 0700 \
     "$rootless_data" "$rootless_home" "$rootless_root/exec"
-  chown mixli-build:mixli-build "$rootless_root" "$rootless_runtime"
+  chown "$BUILDER_USER:$BUILDER_USER" "$rootless_root" "$rootless_runtime"
   chmod 0700 "$rootless_root" "$rootless_runtime"
 
-  setsid runuser -u mixli-build -- env \
+  setsid runuser -u "$BUILDER_USER" -- env \
     HOME="$rootless_home" \
     XDG_RUNTIME_DIR="$rootless_runtime" \
     DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK=true \
@@ -243,6 +246,15 @@ cleanup() {
 validate_inputs() {
   [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || die_usage
   [[ "$ENGINE_MODE" == 'release' || "$ENGINE_MODE" == 'review' ]] || die_usage
+  if [[ "$ENGINE_MODE" == review && "$BUILDER_USER" != mixli-review-build ]]; then
+    die_usage
+  fi
+  if [[ "$ENGINE_MODE" == release && "$BUILDER_USER" != mixli-build ]]; then
+    die_usage
+  fi
+  if [[ "$TEST_MODE" != '1' ]]; then
+    id "$BUILDER_USER" >/dev/null 2>&1 || die_usage
+  fi
   [[ "$RETAIN_RELEASE_IMAGES_REQUESTED" == '0' ||
     "$RETAIN_RELEASE_IMAGES_REQUESTED" == '1' ]] || die_usage
   if [[ "$ENGINE_MODE" == 'review' && "$RETAIN_RELEASE_IMAGES_REQUESTED" != '0' ]]; then
@@ -430,9 +442,11 @@ api_postgres_integration() {
 }
 
 flutter_workspace() {
-  local builder_uid builder_gid
-  builder_uid="$(id -u mixli-build)"
-  builder_gid="$(id -g mixli-build)"
+  local builder_uid builder_gid copy_owner
+  builder_uid="$(id -u "$BUILDER_USER")"
+  builder_gid="$(id -g "$BUILDER_USER")"
+  copy_owner="$builder_uid:$builder_gid"
+  [[ "$ENGINE_MODE" != review ]] || copy_owner=0:0
   flutter_volume="mixli-flutter-workspace-$SHORT_SHA"
   docker volume create "$flutter_volume" >/dev/null
   docker run --rm -v "$CHECKOUT:/source:ro" -v "$flutter_volume:/workspace" \
@@ -446,17 +460,21 @@ flutter_workspace() {
      (cd packages/play_schema && dart test)
      (cd packages/play_engine && dart test)
      (cd packages/analytics_contract && dart test)
+     (cd packages/event_delivery && dart test)
+     (cd packages/event_delivery && dart test --platform chrome test_web)
      (cd packages/local_state && dart test --reporter=expanded)
      (cd packages/play_flutter && flutter test)
      (cd packages/platform_contracts && dart test)
      (cd packages/platform_flutter && flutter test)
      (cd apps/mosaic_app && flutter test)
-     (cd apps/mosaic_app && flutter build web --release --pwa-strategy=none)'
-  install -d -o mixli-build -g mixli-build \
+     (cd apps/mosaic_app && flutter build web --release --pwa-strategy=none)
+     (cd apps/mosaic_app && flutter build apk --release)
+     test -f apps/mosaic_app/build/app/outputs/flutter-apk/app-release.apk'
+  install -d -o "$BUILDER_USER" -g "$BUILDER_USER" \
     "$CHECKOUT/apps/mosaic_app/build/web"
   docker run --rm -v "$flutter_volume:/source:ro" \
     -v "$CHECKOUT/apps/mosaic_app/build/web:/destination" alpine:3.22 sh -c \
-    "cp -a /source/apps/mosaic_app/build/web/. /destination/ && chown -R $builder_uid:$builder_gid /destination"
+    "cp -a /source/apps/mosaic_app/build/web/. /destination/ && chown -R $copy_owner /destination"
   docker volume rm --force "$flutter_volume" >/dev/null
   flutter_volume=''
 }

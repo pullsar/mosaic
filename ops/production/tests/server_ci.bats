@@ -25,9 +25,14 @@ teardown() {
 }
 
 run_ci() {
+  local engine builder
+  engine="${MIXLI_CI_TEST_ENGINE_MODE:-release}"
+  builder=mixli-build
+  [[ "$engine" != review ]] || builder=mixli-review-build
   PATH="$TEST_ROOT/bin:$PATH" \
     MIXLI_CI_TEST_MODE=1 \
-    MIXLI_CI_ENGINE_MODE="${MIXLI_CI_TEST_ENGINE_MODE:-release}" \
+    MIXLI_CI_ENGINE_MODE="$engine" \
+    MIXLI_CI_BUILDER_USER="$builder" \
     MIXLI_CI_TEST_FAIL_STAGE="${MIXLI_CI_TEST_FAIL_STAGE:-}" \
     MIXLI_CI_RETAIN_POSTGRES_IMAGE="${MIXLI_CI_RETAIN_POSTGRES_IMAGE:-0}" \
     MIXLI_CI_RETAIN_RELEASE_IMAGES="${MIXLI_CI_RETAIN_RELEASE_IMAGES:-}" \
@@ -148,7 +153,7 @@ production-builds" ]
 @test "Git trusts only the exact build checkout owned by the locked builder" {
   script="$REPO_ROOT/ops/production/bin/server-ci.sh"
   checkout_git="$(sed -n '/^checkout_git()/,/^}/p' "$script")"
-  [[ "$checkout_git" == *'runuser -u mixli-build -- git -c safe.directory="$CHECKOUT" -C "$CHECKOUT"'* ]]
+  [[ "$checkout_git" == *'runuser -u "$BUILDER_USER" -- git -c safe.directory="$CHECKOUT" -C "$CHECKOUT"'* ]]
   ! grep -Fq 'safe.directory=*' "$script"
 }
 
@@ -275,4 +280,11 @@ production-builds" ]
     production-builds; do
     grep -Fq "run_stage $stage" "$script"
   done
+}
+
+@test "review web artifacts map back to the isolated host owner" {
+  workspace="$(sed -n '/^flutter_workspace()/,/^}/p' \
+    "$REPO_ROOT/ops/production/bin/server-ci.sh")"
+  [[ "$workspace" == *'[[ "$ENGINE_MODE" != review ]] || copy_owner=0:0'* ]]
+  [[ "$workspace" == *'chown -R $copy_owner /destination'* ]]
 }

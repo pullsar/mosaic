@@ -51,14 +51,22 @@ setup() {
   grep -Fq -- '--property=RuntimeMaxSec=45min' "$REQUEST"
   grep -Fq -- '--property=TimeoutStopSec=2min' "$REQUEST"
   grep -Fq -- '--property=CPUQuota=600%' "$REQUEST"
-  grep -Fq -- '--property=MemoryMax=12G' "$REQUEST"
+  grep -Fq -- '--property=MemoryHigh=12G' "$REQUEST"
+  grep -Fq -- '--property=MemoryMax=16G' "$REQUEST"
+  grep -Fq -- '--property=TasksMax=4096' "$REQUEST"
   grep -Fq -- '--property=IOWeight=100' "$REQUEST"
   grep -Fq -- '--property=Nice=10' "$REQUEST"
+  grep -Fq -- '--property=NoNewPrivileges=yes' "$REQUEST"
+  grep -Fq -- '--property=PrivateTmp=yes' "$REQUEST"
+  grep -Fq -- '--property=ProtectHome=yes' "$REQUEST"
+  grep -Fq -- '--property=ProtectSystem=strict' "$REQUEST"
+  grep -Fq -- '--property="ReadWritePaths=$ROOT/review-builds $ROOT/state/reviews $ROOT/log $REPO"' "$REQUEST"
   grep -Fq '/opt/mixli/bin/review-ci.sh "$PR" "$SHA"' "$REQUEST"
 }
 
 @test "duplicate active PR and SHA requests are idempotent" {
   grep -Fq '"$previous_unit" == "$UNIT"' "$REQUEST"
+  grep -Fq '"$previous_sha" == "$SHA"' "$REQUEST"
   grep -Fq 'systemctl is-active --quiet "$UNIT"' "$REQUEST"
   grep -Fq 'printf '\''queued:%s\\n'\'' "$UNIT"' "$REQUEST"
   grep -Fq 'return 0' "$REQUEST"

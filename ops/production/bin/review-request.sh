@@ -27,16 +27,23 @@ verify_pr_ref() {
 }
 
 queue_review() {
-  local previous_unit=''
+  local previous_sha='' previous_unit=''
   install -d -o root -g root -m 0750 "$ROOT/state/reviews" "$REVIEW_STATE"
   if [[ -f "$REVIEW_STATE/unit" ]]; then
     previous_unit="$(<"$REVIEW_STATE/unit")"
   fi
+  if [[ -f "$REVIEW_STATE/latest-sha" ]]; then
+    previous_sha="$(<"$REVIEW_STATE/latest-sha")"
+  fi
+  if [[ "$previous_unit" == "$UNIT" && "$previous_sha" == "$SHA" ]] && \
+    systemctl is-active --quiet "$UNIT"; then
+    printf 'queued:%s\n' "$UNIT"
+    return 0
+  fi
   printf '%s\n' "$SHA" >"$REVIEW_STATE/latest-sha"
   printf '%s\n' "$UNIT" >"$REVIEW_STATE/unit"
   chmod 0640 "$REVIEW_STATE/latest-sha" "$REVIEW_STATE/unit"
-  if [[ -n "$previous_unit" && "$previous_unit" != "$UNIT" ]] && \
-    systemctl is-active --quiet "$previous_unit"; then
+  if [[ -n "$previous_unit" ]] && systemctl is-active --quiet "$previous_unit"; then
     systemctl stop "$previous_unit"
   fi
   /opt/mixli/bin/review-status.sh create "$PR" "$SHA" queued
@@ -45,10 +52,17 @@ queue_review() {
     --property=RuntimeMaxSec=45min \
     --property=TimeoutStopSec=2min \
     --property=CPUQuota=600% \
-    --property=MemoryMax=12G \
+    --property=MemoryHigh=12G \
+    --property=MemoryMax=16G \
+    --property=TasksMax=4096 \
     --property=IOWeight=100 \
     --property=Nice=10 \
     --property=KillMode=control-group \
+    --property=NoNewPrivileges=yes \
+    --property=PrivateTmp=yes \
+    --property=ProtectHome=yes \
+    --property=ProtectSystem=strict \
+    --property="ReadWritePaths=$ROOT/review-builds $ROOT/state/reviews $ROOT/log $REPO" \
     /opt/mixli/bin/review-ci.sh "$PR" "$SHA"; then
     /opt/mixli/bin/review-status.sh update "$PR" "$SHA" failure || true
     return 75

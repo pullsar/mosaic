@@ -50,4 +50,10 @@ setup() {
   [ "$(grep -Fc -- '--connect-timeout 10' "$STATUS")" -eq 2 ]
   [ "$(grep -Fc -- '--max-time 30' "$STATUS")" -eq 2 ]
   grep -Fq 'return 75' "$STATUS"
+
+  local_audit_line="$(grep -n 'audit_event local' "$STATUS" | cut -d: -f1)"
+  api_line="$(grep -n 'response="$(api_call POST' "$STATUS" | cut -d: -f1)"
+  [ -n "$local_audit_line" ]
+  [ -n "$api_line" ]
+  [ "$local_audit_line" -lt "$api_line" ]
 }

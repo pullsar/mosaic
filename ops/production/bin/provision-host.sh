@@ -114,8 +114,8 @@ install_packages() {
 }
 
 ensure_subordinate_ids() {
-  local file="$1" option="$2" start end
-  grep -Eq '^mixli-build:[0-9]+:65536$' "$file" && return 0
+  local account="$1" file="$2" option="$3" start end
+  grep -Eq "^${account}:[0-9]+:65536$" "$file" && return 0
   start="$(awk -F: '
     BEGIN { maximum = 99999 }
     NF == 3 && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9]+$/ {
@@ -125,7 +125,7 @@ ensure_subordinate_ids() {
     END { print maximum + 1 }
   ' "$file")"
   end=$((start + 65535))
-  usermod "$option" "$start-$end" mixli-build
+  usermod "$option" "$start-$end" "$account"
 }
 
 ensure_account() {
@@ -138,12 +138,18 @@ ensure_account() {
 
 configure_host() {
   ensure_account mixli-build /srv/mixli /usr/sbin/nologin
+  ensure_account mixli-review-build /srv/mixli/review-home /usr/sbin/nologin
   ensure_account mixli-deploy /var/lib/mixli-deploy /bin/bash
   ensure_account mixli-review /var/lib/mixli-review /bin/bash
-  ensure_subordinate_ids /etc/subuid --add-subuids
-  ensure_subordinate_ids /etc/subgid --add-subgids
+  ensure_subordinate_ids mixli-build /etc/subuid --add-subuids
+  ensure_subordinate_ids mixli-build /etc/subgid --add-subgids
+  ensure_subordinate_ids mixli-review-build /etc/subuid --add-subuids
+  ensure_subordinate_ids mixli-review-build /etc/subgid --add-subgids
   runuser -u mixli-build -- env HOME=/srv/mixli dockerd-rootless-setuptool.sh check
+  runuser -u mixli-review-build -- env HOME=/tmp dockerd-rootless-setuptool.sh check
   install_layout
+  install -d -o root -g root -m 0555 /srv/mixli/review-home
+  install -d -o root -g root -m 0711 /srv/mixli/review-builds
   install -d -o mixli-build -g mixli-build -m 0750 /srv/mixli/repository
   chown -R mixli-build:mixli-build /srv/mixli/builds /srv/mixli/repository
   chown -R 999:999 /srv/mixli/data/postgres /srv/mixli/backups/pgbackrest
