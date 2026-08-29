@@ -3,61 +3,51 @@ name: ci
 on:
   push:
     branches: ['**']
+  pull_request:
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  patch:
+  flutter:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
-          ref: ${{ github.ref_name }}
-      - name: Patch constrained consumer metadata surface
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path('packages/event_delivery/lib/src/indexed_db_event_store.dart')
-          text = path.read_text()
-
-          replacements = [
-              (
-                  "const _boundUserIdKey = 'bound_user_id';\nconst _databaseVersion = 1;",
-                  "const _boundUserIdKey = 'bound_user_id';\nconst _consumerMetadataPrefix = 'consumer.';\nconst _maxConsumerMetadataBytes = 256 * 1024;\nfinal RegExp _consumerMetadataKeyPattern = RegExp(r'^[a-z0-9][a-z0-9_.-]{0,79}\\$');\nconst _databaseVersion = 1;",
-              ),
-              (
-                  "  Future<String?> boundUserId() => _readMetadata(_boundUserIdKey);\n\n  @override\n  Future<void> enqueue(",
-                  "  Future<String?> boundUserId() => _readMetadata(_boundUserIdKey);\n\n  Future<String?> readConsumerMetadata(String key) async {\n    final storageKey = _consumerMetadataKey(key);\n    await _writeTail;\n    _ensureOpen();\n    return _readMetadata(storageKey);\n  }\n\n  Future<void> writeConsumerMetadata(String key, String value) {\n    final storageKey = _consumerMetadataKey(key);\n    if (utf8.encode(value).length > _maxConsumerMetadataBytes) {\n      throw ArgumentError.value(\n        value.length,\n        'value',\n        'consumer metadata must be at most $_maxConsumerMetadataBytes UTF-8 bytes',\n      );\n    }\n    return _serializeWrite(() async {\n      _ensureOpen();\n      await _writeMetadata(storageKey, value);\n    });\n  }\n\n  Future<void> deleteConsumerMetadata(String key) {\n    final storageKey = _consumerMetadataKey(key);\n    return _serializeWrite(() async {\n      _ensureOpen();\n      await _deleteMetadata(storageKey);\n    });\n  }\n\n  @override\n  Future<void> enqueue(",
-              ),
-              (
-                  "  Future<void> _writeMetadata(String key, String value) async {\n    final transaction = _database.transaction(_metadataStore.toJS, 'readwrite');\n    final completion = _transactionCompletion(transaction);\n    transaction.objectStore(_metadataStore).put(value.toJS, key.toJS);\n    await completion;\n  }\n\n  Future<void> _writeActorAccess(ActorAccessIdentity actorAccess) async {",
-                  "  Future<void> _writeMetadata(String key, String value) async {\n    final transaction = _database.transaction(_metadataStore.toJS, 'readwrite');\n    final completion = _transactionCompletion(transaction);\n    transaction.objectStore(_metadataStore).put(value.toJS, key.toJS);\n    await completion;\n  }\n\n  Future<void> _deleteMetadata(String key) async {\n    final transaction = _database.transaction(_metadataStore.toJS, 'readwrite');\n    final completion = _transactionCompletion(transaction);\n    transaction.objectStore(_metadataStore).delete(key.toJS);\n    await completion;\n  }\n\n  Future<void> _writeActorAccess(ActorAccessIdentity actorAccess) async {",
-              ),
-              (
-                  "}\n\nfinal class _WebEventRecord {",
-                  "}\n\nString _consumerMetadataKey(String key) {\n  final normalized = key.trim();\n  if (!_consumerMetadataKeyPattern.hasMatch(normalized)) {\n    throw ArgumentError.value(\n      key,\n      'key',\n      'must be 1 to 80 lowercase consumer-key characters',\n    );\n  }\n  return '$_consumerMetadataPrefix$normalized';\n}\n\nfinal class _WebEventRecord {",
-              ),
-          ]
-
-          for old, new in replacements:
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f'Expected exactly one patch anchor, found {count}: {old[:80]!r}')
-              text = text.replace(old, new, 1)
-
-          path.write_text(text)
-          PY
-          git diff --check
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add packages/event_delivery/lib/src/indexed_db_event_store.dart
-          git commit -m 'feat(m2): add isolated IndexedDB consumer metadata surface [skip ci]'
-          git push origin HEAD:${{ github.ref_name }}
+          flutter-version: '3.44.7'
+          cache: true
+      - name: Resolve locked workspace
+        run: flutter pub get --enforce-lockfile
+      - name: Verify formatting
+        run: dart format --output=none --set-exit-if-changed .
+      - name: Analyze
+        run: flutter analyze
+      - name: Test play_schema
+        working-directory: packages/play_schema
+        run: dart test
+      - name: Test play_engine
+        working-directory: packages/play_engine
+        run: dart test
+      - name: Test analytics_contract
+        working-directory: packages/analytics_contract
+        run: dart test
+      - name: Test local_state
+        working-directory: packages/local_state
+        run: dart test
+      - name: Test event_delivery
+        working-directory: packages/event_delivery
+        run: dart test
+      - name: Test play_flutter
+        working-directory: packages/play_flutter
+        run: flutter test
+      - name: Test app shell
+        working-directory: apps/mosaic_app
+        run: flutter test
