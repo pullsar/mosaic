@@ -13,11 +13,13 @@ cleanup_status=0
 
 builder_git() { runuser -u mixli-build -- git "$@"; }
 
+# shellcheck disable=SC2317 # Invoked indirectly by the TERM/INT trap.
 on_term() {
   conclusion=cancelled
   exit 143
 }
 
+# shellcheck disable=SC2317 # Invoked indirectly by the EXIT trap.
 cleanup() {
   local original="$1"
   trap - EXIT TERM INT
