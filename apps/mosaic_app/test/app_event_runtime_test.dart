@@ -48,18 +48,20 @@ final class _MemoryOutbox implements EventOutbox {
   Future<void> close() async => closed = true;
 }
 
+AppEventResources _resources(_MemoryOutbox outbox) => AppEventResources(
+  outbox: outbox,
+  actorId: 'actor_app',
+  actorAccessToken: 'A' * 43,
+  close: outbox.close,
+);
+
 void main() {
   test(
     'queue-only runtime still persists actor session and revision context',
     () async {
       final outbox = _MemoryOutbox();
-      final resources = AppEventResources(
-        outbox: outbox,
-        actorId: 'actor_app',
-        close: outbox.close,
-      );
       final runtime = AppEventRuntime.create(
-        resources: resources,
+        resources: _resources(outbox),
         playRevisionId: 'rev_app',
       );
 
@@ -75,6 +77,7 @@ void main() {
       expect(event.sessionId, runtime.sessionId);
       expect(event.playRevisionId, 'rev_app');
       expect(event.payload['browser'], 'safari');
+      expect(runtime.resources.actorAccess.accessToken, 'A' * 43);
 
       await runtime.close();
       expect(outbox.closed, isTrue);
@@ -87,11 +90,7 @@ void main() {
       final outbox = _MemoryOutbox();
       final errors = <String>[];
       final runtime = AppEventRuntime.create(
-        resources: AppEventResources(
-          outbox: outbox,
-          actorId: 'actor_app',
-          close: outbox.close,
-        ),
+        resources: _resources(outbox),
         playRevisionId: 'rev_app',
         apiBaseUrl: 'http://api.example.test/',
         onError: (error, stackTrace, {operation}) {
