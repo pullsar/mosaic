@@ -58,9 +58,9 @@ final class ConsumerRuntime {
     this.onError,
   }) : _clock = clock ?? DateTime.now;
 
-  static const int recentFeedMaxItems = 12;
+  static const int recentFeedMaxItems = ConsumerFeedCache.maxItems;
   static const int recentFeedMaxBytes = 256 * 1024;
-  static const Duration recentFeedMaxAge = Duration(days: 2);
+  static const Duration recentFeedMaxAge = ConsumerFeedCache.maxAge;
 
   final ConsumerApiClient api;
   final ConsumerLocalState localState;
@@ -201,8 +201,7 @@ final class ConsumerRuntime {
         capabilities: capabilities,
       );
       if (cached == null) return null;
-      final age = _clock().toUtc().difference(cached.updatedAt.toUtc());
-      if (age > recentFeedMaxAge) {
+      if (cached.isExpiredAt(_clock())) {
         await localState.clearRecentFeed();
         return null;
       }
