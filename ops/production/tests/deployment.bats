@@ -24,16 +24,22 @@ image_file() {
 }
 if [[ "$1" == 'compose' ]]; then
   env_file=''
+  compose_file=''
   previous=''
   for argument in "$@"; do
     if [[ "$previous" == '--env-file' ]]; then
       env_file="$argument"
+    elif [[ "$previous" == '-f' ]]; then
+      compose_file="$argument"
     fi
     previous="$argument"
   done
+  [[ -n "$compose_file" && -f "$compose_file" ]] || exit 44
   if [[ " $* " == *' up '* && " $* " == *' postgres '* ]]; then
     awk -F= '$1 == "MIXLI_POSTGRES_IMAGE" { print $2 }' "$env_file" \
       >"$POSTGRES_RUNTIME_STATE"
+  elif [[ " $* " == *' stop '* && " $* " == *' postgres '* ]]; then
+    printf '%s\n' 'stopped' >"$POSTGRES_RUNTIME_STATE"
   fi
 elif [[ "$1 $2" == 'image inspect' ]]; then
   ref="${@: -1}"
@@ -52,6 +58,12 @@ elif [[ "$1 $2" == 'image tag' ]]; then
   printf '%s\n' "$source" >"$(image_file "$target")"
 elif [[ "$1 $2" == 'image rm' ]]; then
   ref="${@: -1}"
+  if [[ "${MIXLI_TEST_REQUIRE_CI_LOCK_HELD:-0}" == '1' &&
+    "$ref" == mixli-postgres-ci:* ]]; then
+    if (exec 7>"$MIXLI_CI_LOCK_FILE"; flock -n 7); then
+      exit 45
+    fi
+  fi
   if [[ "$ref" == "${MIXLI_TEST_DOCKER_RM_FAIL_REF:-}" ]]; then
     attempts_file="$MIXLI_TEST_DOCKER_STATE/rm-fail-attempts"
     attempts=0
@@ -107,6 +119,7 @@ deploy() {
     MIXLI_TEST_DOCKER_RM_FAIL_REF="${MIXLI_TEST_DOCKER_RM_FAIL_REF:-}" \
     MIXLI_TEST_DOCKER_RM_FAIL_ATTEMPTS="${MIXLI_TEST_DOCKER_RM_FAIL_ATTEMPTS:-0}" \
     MIXLI_TEST_DOCKER_LOOKUP_FAIL_REF="${MIXLI_TEST_DOCKER_LOOKUP_FAIL_REF:-}" \
+    MIXLI_TEST_REQUIRE_CI_LOCK_HELD="${MIXLI_TEST_REQUIRE_CI_LOCK_HELD:-0}" \
     MIXLI_DRAIN_SECONDS=0 \
     "$REPO_ROOT/ops/production/bin/deployment.sh" "$@"
 }
@@ -155,6 +168,21 @@ deploy() {
   built_line="$(grep -n "^built:$SHA$" "$TEST_ROOT/log/deploy-events.log" | cut -d: -f1)"
   [ -n "$ci_line" ]
   [ "$ci_line" -lt "$built_line" ]
+}
+
+@test "shared CI lock remains held through retained tag promotion and removal" {
+  MIXLI_TEST_REQUIRE_CI_LOCK_HELD=1 run deploy "$SHA"
+  [ "$status" -eq 0 ]
+
+  main_body="$(sed -n '/^main()/,/^}/p' \
+    "$REPO_ROOT/ops/production/bin/deployment.sh")"
+  ci_line="$(grep -n '^  run_repository_ci$' <<<"$main_body" | cut -d: -f1)"
+  build_line="$(grep -n '^  build_release$' <<<"$main_body" | cut -d: -f1)"
+  promote_line="$(grep -n '^  promote_postgres_image$' <<<"$main_body" | cut -d: -f1)"
+  unlock_line="$(grep -n '^  release_ci_lock$' <<<"$main_body" | cut -d: -f1)"
+  [ "$ci_line" -lt "$build_line" ]
+  [ "$build_line" -lt "$promote_line" ]
+  [ "$promote_line" -lt "$unlock_line" ]
 }
 
 @test "server CI failure prevents build migration and switching" {
@@ -266,6 +294,25 @@ deploy() {
   [ ! -e "$TEST_ROOT/runtime/compose.yaml" ]
   grep -qx "MIXLI_API_BLUE_IMAGE=mixli-api:$OLD_SHA" "$TEST_ROOT/production.env"
   grep -qx "MIXLI_API_GREEN_IMAGE=mixli-api:$PREVIOUS_SHA" "$TEST_ROOT/production.env"
+}
+
+@test "first-deployment rollback stops PostgreSQL before removing candidate compose" {
+  rm -f "$TEST_ROOT/current" "$TEST_ROOT/runtime/api-upstream.conf" \
+    "$TEST_ROOT/runtime/compose.yaml" "$TEST_ROOT/state/current.json" \
+    "$TEST_ROOT/state/previous.json"
+  sed -i "s#^MIXLI_POSTGRES_IMAGE=.*#MIXLI_POSTGRES_IMAGE=mixli-postgres:bootstrap-required#" \
+    "$TEST_ROOT/production.env"
+  printf '%s\n' 'stopped' >"$POSTGRES_RUNTIME_STATE"
+
+  MIXLI_TEST_FAIL_STAGE=migration run deploy "$SHA"
+
+  [ "$status" -ne 0 ]
+  [ ! -e "$TEST_ROOT/runtime/compose.yaml" ]
+  [ "$(cat "$POSTGRES_RUNTIME_STATE")" = 'stopped' ]
+  grep -Fq 'stop postgres' "$COMMAND_LOG"
+  grep -qx "postgres-runtime-restored:$SHA" "$TEST_ROOT/log/deploy-events.log"
+  ! grep -qx "postgres-runtime-rollback-failed:$SHA" \
+    "$TEST_ROOT/log/deploy-events.log"
 }
 
 @test "first successful deployment makes both pools reboot-safe" {
