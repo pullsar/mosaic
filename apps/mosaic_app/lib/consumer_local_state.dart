@@ -161,6 +161,10 @@ abstract interface class ConsumerLocalState {
 
   Future<void> writePreferences(ConsumerPreferences preferences);
 
+  Future<bool> readOnboardingCompleted();
+
+  Future<void> writeOnboardingCompleted(bool completed);
+
   Future<ConsumerFeedResume?> readFeedResume();
 
   Future<void> writeFeedResume(ConsumerFeedResume state);
@@ -184,6 +188,12 @@ final class DisabledConsumerLocalState implements ConsumerLocalState {
 
   @override
   Future<void> writePreferences(ConsumerPreferences preferences) async {}
+
+  @override
+  Future<bool> readOnboardingCompleted() async => false;
+
+  @override
+  Future<void> writeOnboardingCompleted(bool completed) async {}
 
   @override
   Future<ConsumerFeedResume?> readFeedResume() async => null;
@@ -216,8 +226,9 @@ String _requiredString(String value, String field, int maxLength) {
 
 String? _optionalString(Object? value, String field, int maxLength) {
   if (value == null) return null;
-  if (value is! String)
+  if (value is! String) {
     throw FormatException('$field must be a string or null');
+  }
   return _requiredString(value, field, maxLength);
 }
 

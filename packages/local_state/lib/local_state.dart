@@ -9,6 +9,8 @@ import 'package:sqlite3/sqlite3.dart';
 
 final RegExp _actorAccessTokenPattern = RegExp(r'^[A-Za-z0-9_-]{43}$');
 
+const _consumerOnboardingCompletedKey = 'consumer.onboarding_completed.v1';
+
 enum InterestKind { interest, learning }
 
 final class LocalActorAccess {
@@ -290,6 +292,21 @@ final class MosaicLocalStore {
       )
       .map((row) => row['topic_id'] as String)
       .toSet();
+
+  bool get consumerOnboardingCompleted =>
+      _metadata(_consumerOnboardingCompletedKey) == '1';
+
+  void setConsumerOnboardingCompleted(bool completed) {
+    _transaction(() {
+      if (completed) {
+        _setMetadata(_consumerOnboardingCompletedKey, '1');
+      } else {
+        _db.execute('delete from metadata where key = ?', [
+          _consumerOnboardingCompletedKey,
+        ]);
+      }
+    });
+  }
 
   void saveFeedResume({
     String? requestId,

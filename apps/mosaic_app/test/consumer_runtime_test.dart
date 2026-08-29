@@ -79,9 +79,11 @@ final class _MemoryConsumerState implements ConsumerLocalState {
   ConsumerPreferences preferences = ConsumerPreferences();
   ConsumerFeedResume? resume;
   ConsumerFeedCache? recent;
+  var onboardingCompleted = false;
   var clearResumeCalls = 0;
   var clearRecentCalls = 0;
   var throwPreferenceWrite = false;
+  var throwOnboardingWrite = false;
 
   @override
   Future<ConsumerPreferences> readPreferences() async => preferences;
@@ -90,6 +92,15 @@ final class _MemoryConsumerState implements ConsumerLocalState {
   Future<void> writePreferences(ConsumerPreferences value) async {
     if (throwPreferenceWrite) throw StateError('local write failed');
     preferences = value;
+  }
+
+  @override
+  Future<bool> readOnboardingCompleted() async => onboardingCompleted;
+
+  @override
+  Future<void> writeOnboardingCompleted(bool completed) async {
+    if (throwOnboardingWrite) throw StateError('completion write failed');
+    onboardingCompleted = completed;
   }
 
   @override
@@ -163,6 +174,36 @@ void main() {
   );
 
   test(
+    'local-only preference persistence does not touch the network',
+    () async {
+      final local = _MemoryConsumerState();
+      var networkCalled = false;
+      final runtime = ConsumerRuntime(
+        api: _client(
+          MockClient((request) async {
+            networkCalled = true;
+            return http.Response('{}', 500);
+          }),
+        ),
+        localState: local,
+        capabilities: PlayCapabilityEnvelope.m1(),
+      );
+      final desired = ConsumerPreferences(
+        interestTopicIds: const ['science'],
+        learningTopicIds: const ['history'],
+      );
+
+      final persisted = await runtime.persistPreferencesLocally(desired);
+
+      expect(persisted, isTrue);
+      expect(networkCalled, isFalse);
+      expect(local.preferences.interestTopicIds, const ['science']);
+      expect(local.preferences.learningTopicIds, const ['history']);
+      runtime.close();
+    },
+  );
+
+  test(
     'failed local preference persistence prevents remote mutation',
     () async {
       final local = _MemoryConsumerState()..throwPreferenceWrite = true;
@@ -187,6 +228,23 @@ void main() {
       runtime.close();
     },
   );
+
+  test('onboarding completion remains an explicit local marker', () async {
+    final local = _MemoryConsumerState();
+    final runtime = ConsumerRuntime(
+      localState: local,
+      capabilities: PlayCapabilityEnvelope.m1(),
+    );
+
+    expect(await runtime.readOnboardingCompleted(), isFalse);
+    expect(await runtime.writeOnboardingCompleted(true), isTrue);
+    expect(await runtime.readOnboardingCompleted(), isTrue);
+
+    local.throwOnboardingWrite = true;
+    expect(await runtime.writeOnboardingCompleted(false), isFalse);
+    expect(await runtime.readOnboardingCompleted(), isTrue);
+    runtime.close();
+  });
 
   test('invalid cursor is cleared and retried fresh exactly once', () async {
     final local = _MemoryConsumerState();
@@ -230,8 +288,9 @@ void main() {
       final runtime = ConsumerRuntime(
         api: _client(
           MockClient((request) async {
-            if (request.url.path == '/v1/actors')
+            if (request.url.path == '/v1/actors') {
               return http.Response('{}', 201);
+            }
             return http.Response('{}', 503);
           }),
         ),
@@ -258,8 +317,9 @@ void main() {
       final runtime = ConsumerRuntime(
         api: _client(
           MockClient((request) async {
-            if (request.url.path == '/v1/actors')
+            if (request.url.path == '/v1/actors') {
               return http.Response('{}', 201);
+            }
             return http.Response('{}', 503);
           }),
         ),

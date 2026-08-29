@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:local_state/local_state.dart';
 import 'package:mosaic_app/consumer_api_client.dart';
@@ -39,6 +41,50 @@ void main() {
         'travel',
       ]);
 
+      store.close();
+    },
+  );
+
+  test(
+    'onboarding preferences and completion survive native database reopen',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'mosaic_onboarding_',
+      );
+      addTearDown(() async {
+        if (await directory.exists()) await directory.delete(recursive: true);
+      });
+      final path = '${directory.path}/mosaic.sqlite3';
+
+      var store = MosaicLocalStore.open(path);
+      var state = SqliteConsumerLocalState(store);
+      expect(await state.readOnboardingCompleted(), isFalse);
+
+      await state.writePreferences(
+        ConsumerPreferences(
+          interestTopicIds: const ['travel', 'science'],
+          learningTopicIds: const ['history'],
+        ),
+      );
+      await state.writeOnboardingCompleted(true);
+      store.close();
+
+      store = MosaicLocalStore.open(path);
+      state = SqliteConsumerLocalState(store);
+      final restored = await state.readPreferences();
+      expect(await state.readOnboardingCompleted(), isTrue);
+      expect(restored.interestTopicIds, const ['science', 'travel']);
+      expect(restored.learningTopicIds, const ['history']);
+
+      await state.writeOnboardingCompleted(false);
+      store.close();
+
+      store = MosaicLocalStore.open(path);
+      state = SqliteConsumerLocalState(store);
+      final reopened = await state.readPreferences();
+      expect(await state.readOnboardingCompleted(), isFalse);
+      expect(reopened.interestTopicIds, const ['science', 'travel']);
+      expect(reopened.learningTopicIds, const ['history']);
       store.close();
     },
   );

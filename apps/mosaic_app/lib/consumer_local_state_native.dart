@@ -28,6 +28,14 @@ final class SqliteConsumerLocalState implements ConsumerLocalState {
   }
 
   @override
+  Future<bool> readOnboardingCompleted() async =>
+      _store.consumerOnboardingCompleted;
+
+  @override
+  Future<void> writeOnboardingCompleted(bool completed) async =>
+      _store.setConsumerOnboardingCompleted(completed);
+
+  @override
   Future<ConsumerFeedResume?> readFeedResume() async {
     final state = _store.loadFeedResume();
     if (state == null) return null;
