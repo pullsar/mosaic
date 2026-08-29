@@ -56,7 +56,6 @@ setup() {
   grep -Fq -- '--property=TasksMax=4096' "$REQUEST"
   grep -Fq -- '--property=IOWeight=100' "$REQUEST"
   grep -Fq -- '--property=Nice=10' "$REQUEST"
-  grep -Fq -- '--property=NoNewPrivileges=yes' "$REQUEST"
   grep -Fq -- '--property=PrivateTmp=yes' "$REQUEST"
   grep -Fq -- '--property=ProtectHome=yes' "$REQUEST"
   grep -Fq -- '--property=ProtectSystem=strict' "$REQUEST"

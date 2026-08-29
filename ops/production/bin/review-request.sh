@@ -59,7 +59,6 @@ queue_review() {
     --property=IOWeight=100 \
     --property=Nice=10 \
     --property=KillMode=control-group \
-    --property=NoNewPrivileges=yes \
     --property=PrivateTmp=yes \
     --property=ProtectHome=yes \
     --property=ProtectSystem=strict \
