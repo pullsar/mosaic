@@ -59,6 +59,7 @@ setup() {
     test -x /opt/android-sdk/build-tools/36.0.0/aapt2
     test -x /opt/android-sdk/build-tools/37.0.0/aapt2
     test -x /opt/android-sdk/cmake/3.22.1/bin/cmake
+    /opt/android-sdk/cmake/3.22.1/bin/cmake --version
     test -d /opt/android-sdk/platforms/android-35
     test -d /opt/android-sdk/platforms/android-36
     test -d /opt/android-sdk/platforms/android-37.0
