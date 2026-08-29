@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mosaic_app/app_event_runtime.dart';
 import 'package:mosaic_app/event_runtime_resources.dart';
 
+const _actorToken = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+
 final class _MemoryOutbox implements EventOutbox {
   final queued = <QueuedEvent>[];
   final enqueued = Completer<void>();
@@ -51,7 +53,7 @@ final class _MemoryOutbox implements EventOutbox {
 AppEventResources _resources(_MemoryOutbox outbox) => AppEventResources(
   outbox: outbox,
   actorId: 'actor_app',
-  actorAccessToken: 'A' * 43,
+  actorAccessToken: _actorToken,
   close: outbox.close,
 );
 
@@ -77,7 +79,7 @@ void main() {
       expect(event.sessionId, runtime.sessionId);
       expect(event.playRevisionId, 'rev_app');
       expect(event.payload['browser'], 'safari');
-      expect(runtime.resources.actorAccess.accessToken, 'A' * 43);
+      expect(runtime.resources.actorAccess.accessToken, _actorToken);
 
       await runtime.close();
       expect(outbox.closed, isTrue);
