@@ -48,6 +48,7 @@ rootless_runtime=''
 rootless_data=''
 rootless_home=''
 rootless_launcher_pid=''
+rootless_archive=''
 retain_release_images=0
 
 die_usage() {
@@ -76,6 +77,24 @@ rootless_docker() {
   rootless_builder_exec docker "$@"
 }
 
+load_rootless_candidate_images() {
+  local image rootful_id rootless_id
+  rootless_archive="$rootless_root/candidates.tar"
+  docker save --output "$rootless_archive" \
+    "$API_TEST_IMAGE" "$API_CI_IMAGE" "$FLUTTER_IMAGE" "$POSTGRES_CI_IMAGE"
+  chown mixli-build:mixli-build "$rootless_archive"
+  chmod 0600 "$rootless_archive"
+  rootless_docker load --input "$rootless_archive" >/dev/null
+
+  for image in "$API_TEST_IMAGE" "$API_CI_IMAGE" "$FLUTTER_IMAGE" "$POSTGRES_CI_IMAGE"; do
+    rootful_id="$(docker image inspect --format '{{.Id}}' "$image")"
+    rootless_id="$(rootless_docker image inspect --format '{{.Id}}' "$image")"
+    [[ "$rootful_id" == "$rootless_id" ]]
+  done
+  rm -f -- "$rootless_archive"
+  rootless_archive=''
+}
+
 start_rootless_docker() {
   local attempt
   rootless_root="$(mktemp -d "$ROOTLESS_STORAGE_PARENT/.rootless-ci-$SHORT_SHA.XXXXXX")"
@@ -94,6 +113,7 @@ start_rootless_docker() {
     dockerd-rootless.sh \
       --data-root "$rootless_data" \
       --exec-root "$rootless_root/exec" \
+      --exec-opt native.cgroupdriver=cgroupfs \
       --pidfile "$rootless_root/docker.pid" \
       >"$rootless_root/docker.log" 2>&1 &
   rootless_launcher_pid=$!
@@ -137,6 +157,7 @@ stop_rootless_docker() {
   rootless_data=''
   rootless_home=''
   rootless_launcher_pid=''
+  rootless_archive=''
   return "$status"
 }
 
@@ -260,14 +281,7 @@ infrastructure_contracts() {
     -t "$POSTGRES_CI_IMAGE" "$CHECKOUT/ops/production/postgres"
 
   start_rootless_docker
-  rootless_docker build --target ci -f "$CHECKOUT/apps/api/Dockerfile" \
-    -t "$API_TEST_IMAGE" "$CHECKOUT"
-  rootless_docker build -f "$CHECKOUT/apps/api/Dockerfile" \
-    -t "$API_CI_IMAGE" "$CHECKOUT"
-  rootless_docker build -f "$CHECKOUT/ops/production/flutter/Dockerfile" \
-    -t "$FLUTTER_IMAGE" "$CHECKOUT"
-  rootless_docker build -f "$CHECKOUT/ops/production/postgres/Dockerfile" \
-    -t "$POSTGRES_CI_IMAGE" "$CHECKOUT/ops/production/postgres"
+  load_rootless_candidate_images
   rootless_docker build -f "$CHECKOUT/ops/production/rootless-bats.Dockerfile" \
     -t "$ROOTLESS_BATS_IMAGE" "$CHECKOUT"
 
