@@ -6,6 +6,11 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:test/test.dart';
 
+final _actorAccess = ActorAccessIdentity(
+  actorId: 'actor_1',
+  accessToken: 'A' * 43,
+);
+
 MosaicEventEnvelope _event({
   String actorId = 'actor_1',
   String eventId = 'evt_1',
@@ -20,12 +25,14 @@ MosaicEventEnvelope _event({
 
 void main() {
   test(
-    'registers one actor then accepts inserted and duplicate events',
+    'registers one actor with proof then accepts inserted and duplicate events',
     () async {
       final requests = <http.Request>[];
       var eventCalls = 0;
       final client = MockClient((request) async {
         requests.add(request);
+        expect(request.headers['authorization'], 'Bearer ${'A' * 43}');
+        expect(request.headers['content-type'], 'application/json');
         if (request.url.path == '/v1/actors') {
           expect(jsonDecode(request.body), {'actorId': 'actor_1'});
           return http.Response('{"actorId":"actor_1"}', 201);
@@ -42,6 +49,7 @@ void main() {
       });
       final transport = HttpEventTransport(
         baseUri: Uri.parse('https://api.example.test/'),
+        actorAccess: _actorAccess,
         client: client,
       );
 
@@ -74,6 +82,7 @@ void main() {
     });
     final transport = HttpEventTransport(
       baseUri: Uri.parse('https://api.example.test/'),
+      actorAccess: _actorAccess,
       client: client,
     );
 
@@ -94,6 +103,7 @@ void main() {
       });
       final transport = HttpEventTransport(
         baseUri: Uri.parse('https://api.example.test/root/'),
+        actorAccess: _actorAccess,
         client: client,
       );
 
@@ -108,14 +118,35 @@ void main() {
     },
   );
 
+  test('rejects event identity mismatch without network I/O', () async {
+    var requested = false;
+    final transport = HttpEventTransport(
+      baseUri: Uri.parse('https://api.example.test/'),
+      actorAccess: _actorAccess,
+      client: MockClient((_) async {
+        requested = true;
+        return http.Response('{}', 201);
+      }),
+    );
+
+    final result = await transport.deliver(_event(actorId: 'actor_other'));
+
+    expect(result.disposition, EventDeliveryDisposition.rejected);
+    expect(requested, isFalse);
+  });
+
   test('requires HTTPS except explicit localhost development', () {
     expect(
-      () => HttpEventTransport(baseUri: Uri.parse('http://example.test/')),
+      () => HttpEventTransport(
+        baseUri: Uri.parse('http://example.test/'),
+        actorAccess: _actorAccess,
+      ),
       throwsArgumentError,
     );
     expect(
       () => HttpEventTransport(
         baseUri: Uri.parse('http://localhost:3000/'),
+        actorAccess: _actorAccess,
         allowInsecureLocalhost: true,
       ),
       returnsNormally,
@@ -123,14 +154,30 @@ void main() {
     expect(
       () => HttpEventTransport(
         baseUri: Uri.parse('https://api.example.test/?token=bad'),
+        actorAccess: _actorAccess,
       ),
       throwsArgumentError,
     );
   });
 
+  test('actor access tokens are strict and secure generator matches wire shape', () {
+    final token = secureActorAccessToken();
+    expect(token, hasLength(43));
+    expect(RegExp(r'^[A-Za-z0-9_-]{43}$').hasMatch(token), isTrue);
+    expect(
+      actorAuthorizationHeaders(token, json: true),
+      {
+        'authorization': 'Bearer $token',
+        'content-type': 'application/json',
+      },
+    );
+    expect(() => ActorAccessIdentity(actorId: 'a', accessToken: 'weak'), throwsArgumentError);
+  });
+
   test('closed transport degrades to retryable failure', () async {
     final transport = HttpEventTransport(
       baseUri: Uri.parse('https://api.example.test/'),
+      actorAccess: _actorAccess,
       client: MockClient((_) async => http.Response('{}', 201)),
     );
     await transport.close();
