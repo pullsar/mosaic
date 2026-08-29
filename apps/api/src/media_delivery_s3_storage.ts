@@ -138,7 +138,7 @@ export class S3MediaDeliveryObjectReader implements MediaDeliveryObjectReader {
     }
     assertContentRange(response.headers, key, range);
     requiredMimeType(response.headers, key);
-    return Readable.fromWeb(response.body as ReadableStream<Uint8Array>);
+    return webBodyToNodeReadable(response.body);
   }
 
   private signedHeaders(
@@ -176,6 +176,23 @@ export class S3MediaDeliveryObjectReader implements MediaDeliveryObjectReader {
     const timeout = AbortSignal.timeout(this.requestTimeoutMs);
     return signal === undefined ? timeout : AbortSignal.any([signal, timeout]);
   }
+}
+
+function webBodyToNodeReadable(body: ReadableStream<Uint8Array>): Readable {
+  const reader = body.getReader();
+  return Readable.from(
+    (async function* () {
+      try {
+        while (true) {
+          const {done, value} = await reader.read();
+          if (done) return;
+          if (value.byteLength > 0) yield Buffer.from(value);
+        }
+      } finally {
+        await reader.cancel().catch(() => undefined);
+      }
+    })(),
+  );
 }
 
 function normalizeEndpoint(value: string | URL): URL {
