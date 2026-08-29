@@ -7,10 +7,38 @@ import 'package:platform_flutter/platform_flutter.dart';
 import 'package:play_flutter/play_flutter.dart';
 import 'package:play_schema/play_schema.dart';
 
-void main() => runApp(const ProviderScope(child: MosaicApp()));
+import 'app_event_runtime.dart';
+import 'event_runtime_resources_factory.dart';
+
+const _apiBaseUrl = String.fromEnvironment('MOSAIC_API_BASE_URL');
+const _allowInsecureLocalApi = bool.fromEnvironment(
+  'MOSAIC_ALLOW_INSECURE_LOCAL_API',
+);
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final resources = await openAppEventResources(
+    onError: (error, stackTrace) => _reportEventRuntimeError(
+      error,
+      stackTrace,
+      operation: 'event_storage_open',
+    ),
+  );
+  final eventRuntime = AppEventRuntime.create(
+    resources: resources,
+    playRevisionId: _demoPlay.revisionId,
+    apiBaseUrl: _apiBaseUrl,
+    allowInsecureLocalhost: _allowInsecureLocalApi,
+    onError: _reportEventRuntimeError,
+  );
+  eventRuntime.requestDrain();
+  runApp(ProviderScope(child: MosaicApp(eventRuntime: eventRuntime)));
+}
 
 final class MosaicApp extends StatefulWidget {
-  const MosaicApp({super.key});
+  const MosaicApp({this.eventRuntime, super.key});
+
+  final AppEventRuntime? eventRuntime;
 
   @override
   State<MosaicApp> createState() => _MosaicAppState();
@@ -19,6 +47,7 @@ final class MosaicApp extends StatefulWidget {
 final class _MosaicAppState extends State<MosaicApp> {
   final ActiveMediaCoordinator _mediaCoordinator = ActiveMediaCoordinator();
   final SoLoudAudioEngine _audioEngine = SoLoudAudioEngine();
+  late final AppEventRuntime _eventRuntime;
   late final FlutterLifecycleBridge _lifecycle;
   late final PlayCanvasAssetResolver _canvasResolver;
   var _semanticResumeEpoch = 0;
@@ -26,6 +55,10 @@ final class _MosaicAppState extends State<MosaicApp> {
   @override
   void initState() {
     super.initState();
+    _eventRuntime =
+        widget.eventRuntime ??
+        AppEventRuntime.disabled(playRevisionId: _demoPlay.revisionId);
+    _eventRuntime.requestDrain();
     _canvasResolver = MapPlayCanvasAssetResolver({_demoCanvas.id: _demoCanvas});
     _lifecycle = FlutterLifecycleBridge(
       mediaCoordinator: _mediaCoordinator,
@@ -35,6 +68,7 @@ final class _MosaicAppState extends State<MosaicApp> {
   }
 
   void _resumeSemanticMedia() {
+    _eventRuntime.requestDrain();
     if (!mounted) return;
     setState(() => _semanticResumeEpoch += 1);
   }
@@ -42,11 +76,11 @@ final class _MosaicAppState extends State<MosaicApp> {
   @override
   void dispose() {
     _lifecycle.dispose();
-    unawaited(_disposeMedia());
+    unawaited(_disposeResources());
     super.dispose();
   }
 
-  Future<void> _disposeMedia() async {
+  Future<void> _disposeResources() async {
     try {
       await _mediaCoordinator.releaseAll();
     } catch (error, stackTrace) {
@@ -57,6 +91,16 @@ final class _MosaicAppState extends State<MosaicApp> {
       await _audioEngine.dispose();
     } catch (error, stackTrace) {
       _reportPlatformError(error, stackTrace);
+    }
+
+    try {
+      await _eventRuntime.close();
+    } catch (error, stackTrace) {
+      _reportEventRuntimeError(
+        error,
+        stackTrace,
+        operation: 'event_runtime_close',
+      );
     }
   }
 
@@ -73,6 +117,10 @@ final class _MosaicAppState extends State<MosaicApp> {
 
   @override
   Widget build(BuildContext context) {
+    final videoDiagnostics = PlayVideoDiagnosticObserver(
+      telemetry: _eventRuntime.telemetry,
+      runtimeDiagnostics: const FlutterRuntimeDiagnostics(),
+    );
     final media = PlayMediaLayerBuilder(
       ownerId: playMediaOwnerId(_demoPlay),
       visualResolver: MapPlayVisualAssetResolver(const {}),
@@ -83,6 +131,7 @@ final class _MosaicAppState extends State<MosaicApp> {
       mediaCoordinator: _mediaCoordinator,
       videoControllerFactory: VideoPlayerPlayController.new,
       semanticResumeEpoch: _semanticResumeEpoch,
+      onVideoPlaybackEvent: videoDiagnostics.call,
     );
 
     return MaterialApp(
@@ -112,6 +161,21 @@ final class _MosaicAppState extends State<MosaicApp> {
       home: PlaySurface(play: _demoPlay, mediaBuilder: media.call),
     );
   }
+}
+
+void _reportEventRuntimeError(
+  Object error,
+  StackTrace stackTrace, {
+  String? operation,
+}) {
+  FlutterError.reportError(
+    FlutterErrorDetails(
+      exception: error,
+      stack: stackTrace,
+      library: 'mosaic_app.events',
+      context: ErrorDescription(operation ?? 'while processing event telemetry'),
+    ),
+  );
 }
 
 final class _ReservedSettingsPage extends StatelessWidget {
