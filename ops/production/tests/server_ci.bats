@@ -310,3 +310,9 @@ production-builds" ]
   [[ "$start" == *'printf '\''{}\n'\'' | builder_exec tee "$rootless_home/.docker/config.json"'* ]]
   [[ "$start" == *'builder_exec chmod 0600 "$rootless_home/.docker/config.json"'* ]]
 }
+
+@test "API tests serialize the shared migration database" {
+  grep -Fq \
+    '"test": "node --import tsx --test --test-concurrency=1 test/**/*.test.ts"' \
+    "$REPO_ROOT/apps/api/package.json"
+}
