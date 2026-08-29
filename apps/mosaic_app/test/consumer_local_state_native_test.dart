@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:local_state/local_state.dart';
 import 'package:mosaic_app/consumer_api_client.dart';
@@ -42,4 +44,31 @@ void main() {
       store.close();
     },
   );
+
+  test('onboarding completion survives native database reopen', () async {
+    final directory = await Directory.systemTemp.createTemp('mosaic_onboarding_');
+    addTearDown(() async {
+      if (await directory.exists()) await directory.delete(recursive: true);
+    });
+    final path = '${directory.path}/mosaic.sqlite3';
+
+    var store = MosaicLocalStore.open(path);
+    var state = SqliteConsumerLocalState(store);
+    expect(await state.readOnboardingCompleted(), isFalse);
+
+    await state.writeOnboardingCompleted(true);
+    store.close();
+
+    store = MosaicLocalStore.open(path);
+    state = SqliteConsumerLocalState(store);
+    expect(await state.readOnboardingCompleted(), isTrue);
+
+    await state.writeOnboardingCompleted(false);
+    store.close();
+
+    store = MosaicLocalStore.open(path);
+    state = SqliteConsumerLocalState(store);
+    expect(await state.readOnboardingCompleted(), isFalse);
+    store.close();
+  });
 }
