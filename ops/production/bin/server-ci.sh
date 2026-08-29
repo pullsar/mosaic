@@ -138,7 +138,9 @@ isolated_nginx_contract() {
     --add-host api-blue-1:127.0.0.1 \
     --add-host api-blue-2:127.0.0.1 \
     --add-host grafana:127.0.0.1 \
-    --tmpfs /var/cache/nginx --tmpfs /var/run --tmpfs /tmp \
+    --tmpfs /var/cache/nginx:rw,noexec,nosuid,nodev,mode=1777 \
+    --tmpfs /var/run:rw,noexec,nosuid,nodev,mode=1777 \
+    --tmpfs /tmp:rw,noexec,nosuid,nodev,mode=1777 \
     -v "$nginx_verify_root/config:/etc/nginx/mixli:ro" \
     -v "$nginx_verify_root/runtime:/etc/nginx/runtime:ro" \
     -v "$nginx_verify_root/tls:/etc/nginx/tls:ro" \
