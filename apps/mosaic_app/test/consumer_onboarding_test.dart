@@ -70,6 +70,7 @@ final class _MemoryConsumerState implements ConsumerLocalState {
 ConsumerRuntime _runtime(
   _MemoryConsumerState state, {
   int preferenceStatus = 204,
+  VoidCallback? onPreferencePut,
 }) {
   final client = MockClient((request) async {
     if (request.url.path == '/v1/topics') {
@@ -89,6 +90,7 @@ ConsumerRuntime _runtime(
     }
     if (request.url.path ==
         '/v1/actors/actor_onboarding/preferences') {
+      onPreferencePut?.call();
       return http.Response('', preferenceStatus);
     }
     return http.Response('{}', 404);
@@ -111,6 +113,8 @@ Widget _app({
   double textScale = 1,
   bool disableAnimations = false,
   bool gate = false,
+  Duration preferenceSyncDebounce = Duration.zero,
+  Duration topicSearchDebounce = Duration.zero,
 }) {
   final onboarding = gate
       ? ConsumerOnboardingGate(
@@ -120,8 +124,8 @@ Widget _app({
       : ConsumerOnboarding(
           runtime: runtime,
           onFinished: onFinished,
-          preferenceSyncDebounce: Duration.zero,
-          topicSearchDebounce: Duration.zero,
+          preferenceSyncDebounce: preferenceSyncDebounce,
+          topicSearchDebounce: topicSearchDebounce,
         );
   return MaterialApp(
     locale: locale,
@@ -191,6 +195,47 @@ void main() {
       expect(state.preferences.interestTopicIds, const ['science']);
       expect(state.preferences.learningTopicIds, const ['history']);
       expect(state.preferenceWrites, greaterThanOrEqualTo(2));
+    },
+  );
+
+  testWidgets(
+    'rapid topic taps persist locally but collapse to one remote replacement',
+    (tester) async {
+      final state = _MemoryConsumerState();
+      var preferencePuts = 0;
+      final runtime = _runtime(
+        state,
+        onPreferencePut: () => preferencePuts += 1,
+      );
+      addTearDown(runtime.close);
+
+      await tester.pumpWidget(
+        _app(
+          runtime: runtime,
+          onFinished: () {},
+          preferenceSyncDebounce: const Duration(milliseconds: 250),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      for (final id in const ['science', 'history', 'travel']) {
+        await tester.tap(find.byKey(ValueKey<String>('topic-$id')));
+        await tester.pump();
+      }
+
+      expect(state.preferenceWrites, 3);
+      expect(state.preferences.interestTopicIds.toSet(), {
+        'science',
+        'history',
+        'travel',
+      });
+      expect(preferencePuts, 0);
+
+      await tester.pump(const Duration(milliseconds: 249));
+      expect(preferencePuts, 0);
+      await tester.pump(const Duration(milliseconds: 2));
+      await tester.pump();
+      expect(preferencePuts, 1);
     },
   );
 
