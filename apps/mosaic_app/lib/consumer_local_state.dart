@@ -85,11 +85,25 @@ final class ConsumerFeedCache {
     required List<ConsumerFeedItem> items,
     required this.updatedAt,
   }) : requestId = _requiredString(requestId, 'requestId', 200),
-       items = List<ConsumerFeedItem>.unmodifiable(items);
+       items = List<ConsumerFeedItem>.unmodifiable(items) {
+    if (items.length > maxItems) {
+      throw ArgumentError.value(
+        items.length,
+        'items',
+        'must contain at most $maxItems items',
+      );
+    }
+  }
+
+  static const int maxItems = 12;
+  static const Duration maxAge = Duration(days: 2);
 
   final String requestId;
   final List<ConsumerFeedItem> items;
   final DateTime updatedAt;
+
+  bool isExpiredAt(DateTime now) =>
+      now.toUtc().difference(updatedAt.toUtc()) > maxAge;
 
   Map<String, Object?> toJson() => <String, Object?>{
     'requestId': requestId,
@@ -117,7 +131,7 @@ final class ConsumerFeedCache {
       throw const FormatException('requestId must be a string');
     }
     final rawItems = json['items'];
-    if (rawItems is! List || rawItems.length > 20) {
+    if (rawItems is! List || rawItems.length > maxItems) {
       throw const FormatException('cached feed items are invalid');
     }
     final updatedAtRaw = json['updatedAt'];
