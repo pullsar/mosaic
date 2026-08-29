@@ -27,8 +27,7 @@ die_usage() {
 }
 
 checkout_git() {
-  runuser -u mixli-build -- \
-    git -c safe.directory="$CHECKOUT" -C "$CHECKOUT" "$@"
+  runuser -u mixli-build -- git -c safe.directory="$CHECKOUT" -C "$CHECKOUT" "$@"
 }
 
 cleanup() {
