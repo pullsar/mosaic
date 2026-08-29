@@ -10,8 +10,15 @@ import {
   UnknownTopicError,
 } from '../src/consumer_repository.js';
 import type {FeedCandidate} from '../src/consumer_ranking.js';
-import type {EventInput, MosaicRepository} from '../src/repository.js';
+import type {
+  ActorAccessRegistration,
+  EventInput,
+  MosaicRepository,
+} from '../src/repository.js';
 
+const actorToken = 'A'.repeat(43);
+const otherToken = 'B'.repeat(43);
+const actorAuthorization = {authorization: `Bearer ${actorToken}`};
 const capabilities = {
   schemaVersions: [1],
   presentationTypes: ['text'],
@@ -21,8 +28,27 @@ const capabilities = {
 };
 
 class CoreRepository implements MosaicRepository {
+  actors = new Set<string>();
+  credentials = new Map<string, string>();
+
   async ping(): Promise<void> {}
-  async createActor(): Promise<void> {}
+  async createActor(actorId: string): Promise<void> {
+    this.actors.add(actorId);
+  }
+  async registerActorAccess(
+    actorId: string,
+    credentialDigest: string,
+  ): Promise<ActorAccessRegistration> {
+    const existing = this.credentials.get(actorId);
+    if (existing !== undefined) return existing === credentialDigest ? 'existing' : 'credential_conflict';
+    if (this.actors.has(actorId)) return 'legacy_actor_requires_rotation';
+    this.actors.add(actorId);
+    this.credentials.set(actorId, credentialDigest);
+    return 'created';
+  }
+  async verifyActorAccess(actorId: string, credentialDigest: string): Promise<boolean> {
+    return this.credentials.get(actorId) === credentialDigest;
+  }
   async bindActorToUser(): Promise<void> {}
   async getPlayRevision(): Promise<unknown | null> {
     return null;
@@ -143,21 +169,46 @@ class ConsumerMemoryRepository implements ConsumerRepository {
   }
 }
 
-test('anonymous topic preferences and feed are exposed through validated API routes', async () => {
+test('anonymous topic preferences and feed require the current actor credential', async () => {
+  const coreRepository = new CoreRepository();
   const consumerRepository = new ConsumerMemoryRepository();
   const app = buildApp({
-    repository: new CoreRepository(),
+    repository: coreRepository,
     consumerRepository,
     logLevel: 'silent',
   });
+
+  const register = await app.inject({
+    method: 'POST',
+    url: '/v1/actors',
+    headers: actorAuthorization,
+    payload: {actorId: 'actor_a'},
+  });
+  assert.equal(register.statusCode, 201);
 
   const topics = await app.inject({method: 'GET', url: '/v1/topics?q=trav&limit=10'});
   assert.equal(topics.statusCode, 200);
   assert.deepEqual(topics.json(), {topics: [{id: 'travel', label: 'Travel'}]});
 
+  const unauthenticatedReplace = await app.inject({
+    method: 'PUT',
+    url: '/v1/actors/actor_a/preferences',
+    payload: {interestTopicIds: ['travel'], learningTopicIds: ['piano']},
+  });
+  assert.equal(unauthenticatedReplace.statusCode, 401);
+
+  const spoofedReplace = await app.inject({
+    method: 'PUT',
+    url: '/v1/actors/actor_a/preferences',
+    headers: {authorization: `Bearer ${otherToken}`},
+    payload: {interestTopicIds: ['travel'], learningTopicIds: ['piano']},
+  });
+  assert.equal(spoofedReplace.statusCode, 403);
+
   const replace = await app.inject({
     method: 'PUT',
     url: '/v1/actors/actor_a/preferences',
+    headers: actorAuthorization,
     payload: {interestTopicIds: ['travel'], learningTopicIds: ['piano']},
   });
   assert.equal(replace.statusCode, 204);
@@ -165,6 +216,7 @@ test('anonymous topic preferences and feed are exposed through validated API rou
   const preferences = await app.inject({
     method: 'GET',
     url: '/v1/actors/actor_a/preferences',
+    headers: actorAuthorization,
   });
   assert.equal(preferences.statusCode, 200);
   assert.deepEqual(preferences.json(), {
@@ -175,6 +227,7 @@ test('anonymous topic preferences and feed are exposed through validated API rou
   const unknown = await app.inject({
     method: 'PUT',
     url: '/v1/actors/actor_a/preferences',
+    headers: actorAuthorization,
     payload: {interestTopicIds: ['missing'], learningTopicIds: []},
   });
   assert.equal(unknown.statusCode, 400);
@@ -183,6 +236,7 @@ test('anonymous topic preferences and feed are exposed through validated API rou
   const feed = await app.inject({
     method: 'POST',
     url: '/v1/feed',
+    headers: actorAuthorization,
     payload: {actorId: 'actor_a', capabilities, limit: 8},
   });
   assert.equal(feed.statusCode, 200);
@@ -191,9 +245,18 @@ test('anonymous topic preferences and feed are exposed through validated API rou
     'play_travel',
   ]);
 
+  const spoofedFeed = await app.inject({
+    method: 'POST',
+    url: '/v1/feed',
+    headers: {authorization: `Bearer ${otherToken}`},
+    payload: {actorId: 'actor_a', capabilities, limit: 8},
+  });
+  assert.equal(spoofedFeed.statusCode, 403);
+
   const invalidCapabilities = await app.inject({
     method: 'POST',
     url: '/v1/feed',
+    headers: actorAuthorization,
     payload: {
       actorId: 'actor_a',
       capabilities: {...capabilities, schemaVersions: [0]},
@@ -205,6 +268,7 @@ test('anonymous topic preferences and feed are exposed through validated API rou
   const invalidCursor = await app.inject({
     method: 'POST',
     url: '/v1/feed',
+    headers: actorAuthorization,
     payload: {actorId: 'actor_a', capabilities, cursor: 'not-a-cursor'},
   });
   assert.equal(invalidCursor.statusCode, 400);
