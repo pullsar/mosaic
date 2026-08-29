@@ -3,90 +3,51 @@ name: ci
 on:
   push:
     branches: ['**']
+  pull_request:
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  finalize:
+  flutter:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.ref_name }}
       - name: Flutter
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           flutter-version: '3.44.7'
           cache: true
-      - name: Finalize persistence patch and exact Dart formatting
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          indexed = Path('packages/event_delivery/lib/src/indexed_db_event_store.dart')
-          text = indexed.read_text()
-          old = "RegExp(r'^[a-z0-9][a-z0-9_.-]{0,79}\\$')"
-          new = "RegExp(r'^[a-z0-9][a-z0-9_.-]{0,79}$')"
-          if text.count(old) != 1:
-              raise SystemExit('consumer metadata regex anchor not found exactly once')
-          indexed.write_text(text.replace(old, new, 1))
-
-          fixes = {
-              Path('packages/event_delivery/test_web/indexed_db_consumer_metadata_web_test.dart'): (
-                  "'x' * (256 * 1024 + 1)",
-                  "List<String>.filled(256 * 1024 + 1, 'x').join()",
-              ),
-              Path('packages/local_state/test/consumer_recovery_v2_test.dart'): (
-                  "'x' * (100 * 1024)",
-                  "List<String>.filled(100 * 1024, 'x').join()",
-              ),
-          }
-          for path, (before, after) in fixes.items():
-              value = path.read_text()
-              if value.count(before) != 1:
-                  raise SystemExit(f'test fix anchor missing in {path}')
-              path.write_text(value.replace(before, after, 1))
-          PY
-          dart format \
-            apps/mosaic_app/lib/consumer_local_state.dart \
-            apps/mosaic_app/lib/consumer_local_state_native.dart \
-            apps/mosaic_app/lib/consumer_local_state_web.dart \
-            apps/mosaic_app/lib/event_runtime_resources.dart \
-            apps/mosaic_app/lib/event_runtime_resources_native.dart \
-            apps/mosaic_app/lib/event_runtime_resources_web.dart \
-            apps/mosaic_app/test/app_event_runtime_test.dart \
-            apps/mosaic_app/test/consumer_local_state_native_test.dart \
-            apps/mosaic_app/test/consumer_recent_feed_native_test.dart \
-            packages/event_delivery/lib/src/indexed_db_event_store.dart \
-            packages/event_delivery/lib/src/indexed_db_event_store_stub.dart \
-            packages/event_delivery/test_web/indexed_db_consumer_metadata_web_test.dart \
-            packages/local_state/lib/local_state.dart \
-            packages/local_state/test/consumer_recovery_v2_test.dart
-          git diff --check
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add \
-            apps/mosaic_app/lib/consumer_local_state.dart \
-            apps/mosaic_app/lib/consumer_local_state_native.dart \
-            apps/mosaic_app/lib/consumer_local_state_web.dart \
-            apps/mosaic_app/lib/event_runtime_resources.dart \
-            apps/mosaic_app/lib/event_runtime_resources_native.dart \
-            apps/mosaic_app/lib/event_runtime_resources_web.dart \
-            apps/mosaic_app/test/app_event_runtime_test.dart \
-            apps/mosaic_app/test/consumer_local_state_native_test.dart \
-            apps/mosaic_app/test/consumer_recent_feed_native_test.dart \
-            packages/event_delivery/lib/src/indexed_db_event_store.dart \
-            packages/event_delivery/lib/src/indexed_db_event_store_stub.dart \
-            packages/event_delivery/test_web/indexed_db_consumer_metadata_web_test.dart \
-            packages/local_state/lib/local_state.dart \
-            packages/local_state/test/consumer_recovery_v2_test.dart
-          git diff --cached --quiet && exit 0
-          git commit -m 'style: finalize consumer persistence tranche [skip ci]'
-          git push origin HEAD:${{ github.ref_name }}
+      - name: Resolve locked workspace
+        run: flutter pub get --enforce-lockfile
+      - name: Verify formatting
+        run: dart format --output=none --set-exit-if-changed .
+      - name: Analyze
+        run: flutter analyze
+      - name: Test play_schema
+        working-directory: packages/play_schema
+        run: dart test
+      - name: Test play_engine
+        working-directory: packages/play_engine
+        run: dart test
+      - name: Test analytics_contract
+        working-directory: packages/analytics_contract
+        run: dart test
+      - name: Test local_state
+        working-directory: packages/local_state
+        run: dart test
+      - name: Test event_delivery
+        working-directory: packages/event_delivery
+        run: dart test
+      - name: Test play_flutter
+        working-directory: packages/play_flutter
+        run: flutter test
+      - name: Test app shell
+        working-directory: apps/mosaic_app
+        run: flutter test
