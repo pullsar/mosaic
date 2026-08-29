@@ -6,6 +6,7 @@ import {
   rankFeedCandidates,
   type ConsumerRankingConfig,
   type FeedCandidate,
+  type FeedSourceBucket,
   type RankedFeedCandidate,
 } from './consumer_ranking.js';
 
@@ -19,7 +20,7 @@ const MAX_CURSOR_LENGTH = 512;
 export interface FeedPageItem {
   playId: string;
   revisionId: string;
-  sourceBucket: string;
+  sourceBucket: FeedSourceBucket;
   document: unknown;
 }
 
