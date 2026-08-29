@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+incoming_umask="$(umask)"
+readonly incoming_umask
 umask 077
 
 readonly STAGED_CONFIG=/run/mixli-secrets/pgbackrest.conf
@@ -24,6 +26,18 @@ trap cleanup EXIT
 if [[ "$(id -u)" != '0' ]]; then
   fail 'wrapper must run as root'
 fi
+
+repo2_s3_required=0
+if [[ "${MIXLI_PGBACKREST_REQUIRE_REPO2_S3+set}" == 'set' ]]; then
+  case "$MIXLI_PGBACKREST_REQUIRE_REPO2_S3" in
+    0) ;;
+    1) repo2_s3_required=1 ;;
+    *)
+      fail 'MIXLI_PGBACKREST_REQUIRE_REPO2_S3 must be unset, 0, or 1'
+      ;;
+  esac
+fi
+readonly repo2_s3_required
 
 if [[ ! -e "$STAGED_CONFIG" ]]; then
   fail 'staged pgBackRest configuration is missing'
@@ -70,7 +84,7 @@ if [[ "$runtime_metadata" != "$postgres_uid:$postgres_gid:600" ]]; then
 fi
 
 validation_status=0
-awk -v strict="${MIXLI_PGBACKREST_REQUIRE_REPO2_S3:-0}" '
+awk -v strict="$repo2_s3_required" '
   function trim(value) {
     sub(/^[[:space:]]+/, "", value)
     sub(/[[:space:]]+$/, "", value)
@@ -157,4 +171,5 @@ mv -fT -- "$temporary_config" "$RUNTIME_CONFIG" 2>/dev/null ||
   fail 'runtime pgBackRest configuration could not be installed atomically'
 temporary_config=''
 
+umask "$incoming_umask"
 exec /usr/local/bin/docker-entrypoint.sh "$@"
