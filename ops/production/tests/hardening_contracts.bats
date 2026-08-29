@@ -4,10 +4,15 @@ load test_helper
 
 setup() { setup_repo_root; }
 
-@test "production SSH CI is push-main only" {
-  workflow="$REPO_ROOT/.github/workflows/server-ci.yml"
-  grep -Fq 'branches: [main]' "$workflow"
-  ! grep -Eq 'workflow_dispatch:|branches-ignore:|pull_request:' "$workflow"
+@test "GitHub CI separates trusted review dispatch from push-main deployment" {
+  review="$REPO_ROOT/.github/workflows/review-dispatch.yml"
+  deploy="$REPO_ROOT/.github/workflows/deploy-production.yml"
+  grep -Fq 'pull_request_target:' "$review"
+  ! grep -Eq 'actions/checkout|flutter-action|npm (ci|test)|flutter (test|build)' "$review"
+  ! grep -Fq 'MIXLI_DEPLOY_' "$review"
+  grep -Fq 'branches: [main]' "$deploy"
+  ! grep -Eq 'workflow_dispatch:|branches-ignore:|pull_request:' "$deploy"
+  [ ! -e "$REPO_ROOT/.github/workflows/server-ci.yml" ]
 }
 
 @test "server CI requests accept only protected main ancestry" {
