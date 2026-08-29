@@ -56,3 +56,10 @@ setup() {
   grep -Fq -- '--property=Nice=10' "$REQUEST"
   grep -Fq '/opt/mixli/bin/review-ci.sh "$PR" "$SHA"' "$REQUEST"
 }
+
+@test "duplicate active PR and SHA requests are idempotent" {
+  grep -Fq '"$previous_unit" == "$UNIT"' "$REQUEST"
+  grep -Fq 'systemctl is-active --quiet "$UNIT"' "$REQUEST"
+  grep -Fq 'printf '\''queued:%s\\n'\'' "$UNIT"' "$REQUEST"
+  grep -Fq 'return 0' "$REQUEST"
+}
