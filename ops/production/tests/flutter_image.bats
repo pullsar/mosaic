@@ -43,6 +43,7 @@ setup() {
   grep -Fq 'CHROME_EXECUTABLE=/usr/local/bin/chromium-ci' "$DOCKERFILE"
   grep -Fq -- '--no-sandbox' "$DOCKERFILE"
   grep -Fq 'platforms/android-37.0' "$DOCKERFILE"
+  grep -Fq 'build-tools/36.0.0' "$DOCKERFILE"
   grep -Fq 'build-tools/37.0.0' "$DOCKERFILE"
   grep -Fq 'ndk/28.2.13676358' "$DOCKERFILE"
 
@@ -52,6 +53,7 @@ setup() {
     "$CHROME_EXECUTABLE" --version
     test -x "$CHROME_EXECUTABLE"
     test -x /opt/android-sdk/platform-tools/adb
+    test -x /opt/android-sdk/build-tools/36.0.0/aapt2
     test -x /opt/android-sdk/build-tools/37.0.0/aapt2
     test -d /opt/android-sdk/platforms/android-37.0
     test -d /opt/android-sdk/ndk/28.2.13676358
