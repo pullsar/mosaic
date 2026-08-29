@@ -19,6 +19,7 @@ export interface FeedDecisionInput {
   requestId: string;
   actorId: string;
   rankingConfigVersion: string;
+  capabilityFingerprint: string;
   fallback: boolean;
   ranked: readonly RankedFeedCandidate[];
 }
@@ -54,6 +55,7 @@ export interface ConsumerRepository {
   readFeedDecisionPage(
     requestId: string,
     actorId: string,
+    capabilityFingerprint: string,
     offset: number,
     limit: number,
   ): Promise<StoredFeedDecisionPage | null>;
@@ -201,14 +203,27 @@ export class PostgresConsumerRepository implements ConsumerRepository {
     const requestId = requiredText(input.requestId, 'requestId');
     const actorId = requiredText(input.actorId, 'actorId');
     const configVersion = requiredText(input.rankingConfigVersion, 'rankingConfigVersion');
+    const capabilityFingerprint = requiredText(
+      input.capabilityFingerprint,
+      'capabilityFingerprint',
+    );
     const client = await this.pool.connect();
     try {
       await client.query('begin');
+      await client.query('delete from feed_decisions where expires_at <= now()');
       await client.query(
         `insert into feed_decisions (
-           request_id, actor_id, ranking_config_version, fallback, candidate_count
-         ) values ($1, $2, $3, $4, $5)`,
-        [requestId, actorId, configVersion, input.fallback, input.ranked.length],
+           request_id, actor_id, ranking_config_version, capability_fingerprint,
+           fallback, candidate_count
+         ) values ($1, $2, $3, $4, $5, $6)`,
+        [
+          requestId,
+          actorId,
+          configVersion,
+          capabilityFingerprint,
+          input.fallback,
+          input.ranked.length,
+        ],
       );
       for (const [position, candidate] of input.ranked.entries()) {
         await client.query(
@@ -239,11 +254,13 @@ export class PostgresConsumerRepository implements ConsumerRepository {
   async readFeedDecisionPage(
     requestId: string,
     actorId: string,
+    capabilityFingerprint: string,
     offset: number,
     limit: number,
   ): Promise<StoredFeedDecisionPage | null> {
     const normalizedRequestId = requiredText(requestId, 'requestId');
     const normalizedActorId = requiredText(actorId, 'actorId');
+    const normalizedFingerprint = requiredText(capabilityFingerprint, 'capabilityFingerprint');
     const boundedOffset = boundedInteger(offset, 0, Number.MAX_SAFE_INTEGER, 'offset');
     const boundedLimit = boundedInteger(limit, 1, MAX_PAGE_SIZE, 'limit');
     const decision = await this.pool.query<{
@@ -253,8 +270,11 @@ export class PostgresConsumerRepository implements ConsumerRepository {
     }>(
       `select ranking_config_version, fallback, candidate_count
          from feed_decisions
-        where request_id = $1 and actor_id = $2`,
-      [normalizedRequestId, normalizedActorId],
+        where request_id = $1
+          and actor_id = $2
+          and capability_fingerprint = $3
+          and expires_at > now()`,
+      [normalizedRequestId, normalizedActorId, normalizedFingerprint],
     );
     const row = decision.rows[0];
     if (!row) return null;
