@@ -22,9 +22,15 @@ image_file() {
 }
 if [[ "$1 $2" == 'image inspect' ]]; then
   ref="${@: -1}"
+  [[ "$ref" != "${MIXLI_TEST_DOCKER_LOOKUP_FAIL_REF:-}" ]] || exit 43
   file="$(image_file "$ref")"
   [[ -f "$file" ]] || exit 1
   cat "$file"
+elif [[ "$1 $2" == 'image ls' ]]; then
+  ref="${@: -1}"
+  [[ "$ref" != "${MIXLI_TEST_DOCKER_LOOKUP_FAIL_REF:-}" ]] || exit 43
+  file="$(image_file "$ref")"
+  [[ ! -f "$file" ]] || cat "$file"
 elif [[ "$1 $2" == 'image tag' ]]; then
   source="$3"
   target="$4"
@@ -82,6 +88,7 @@ deploy() {
     MIXLI_TEST_FAIL_STAGE="${MIXLI_TEST_FAIL_STAGE:-}" \
     MIXLI_TEST_DOCKER_RM_FAIL_REF="${MIXLI_TEST_DOCKER_RM_FAIL_REF:-}" \
     MIXLI_TEST_DOCKER_RM_FAIL_ATTEMPTS="${MIXLI_TEST_DOCKER_RM_FAIL_ATTEMPTS:-0}" \
+    MIXLI_TEST_DOCKER_LOOKUP_FAIL_REF="${MIXLI_TEST_DOCKER_LOOKUP_FAIL_REF:-}" \
     MIXLI_DRAIN_SECONDS=0 \
     "$REPO_ROOT/ops/production/bin/deployment.sh" "$@"
 }
@@ -286,12 +293,28 @@ deploy() {
   image_cleanup="$(sed -n '/^remove_release_image_tag()/,/^}/p' "$script")"
   [[ "$prune" == *'remove_release_image_tag "mixli-api:$sha"'* ]]
   [[ "$prune" == *'remove_release_image_tag "mixli-postgres:$sha"'* ]]
-  [[ "$image_cleanup" == *'docker image inspect "$image"'* ]]
+  [[ "$image_cleanup" == *'docker image ls --quiet --no-trunc "$image"'* ]]
   [[ "$image_cleanup" == *'docker image rm --force "$image"'* ]]
 
   image_line="$(grep -n 'remove_release_image_tag "mixli-postgres:$sha"' <<<"$prune" | cut -d: -f1)"
   directory_line="$(grep -n 'rm -rf -- "$dir"' <<<"$prune" | cut -d: -f1)"
   [ "$image_line" -lt "$directory_line" ]
+}
+
+@test "operational image lookup failure preserves the release for prune retry" {
+  local n old prune_sha
+  for n in 3 4 5 6 7 8 9; do
+    old="$(printf '%040d' "$n")"
+    mkdir -p "$TEST_ROOT/releases/$old/web"
+    touch -d "2026-08-$((10 + n))" "$TEST_ROOT/releases/$old"
+  done
+  prune_sha="$(printf '%040d' 4)"
+
+  MIXLI_TEST_DOCKER_LOOKUP_FAIL_REF="mixli-api:$prune_sha" run deploy "$SHA"
+
+  [ "$status" -eq 43 ]
+  [ -d "$TEST_ROOT/releases/$prune_sha" ]
+  grep -Fxq "image ls --quiet --no-trunc mixli-api:$prune_sha" "$COMMAND_LOG"
 }
 
 @test "failed prune keeps its release discoverable and retry tolerates an absent exact tag" {
