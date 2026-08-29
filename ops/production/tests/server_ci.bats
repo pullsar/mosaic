@@ -27,7 +27,7 @@ teardown() {
 run_ci() {
   PATH="$TEST_ROOT/bin:$PATH" \
     MIXLI_CI_TEST_MODE=1 \
-    MIXLI_CI_ENGINE_MODE="${MIXLI_CI_ENGINE_MODE:-release}" \
+    MIXLI_CI_ENGINE_MODE="${MIXLI_CI_TEST_ENGINE_MODE:-release}" \
     MIXLI_CI_TEST_FAIL_STAGE="${MIXLI_CI_TEST_FAIL_STAGE:-}" \
     MIXLI_CI_RETAIN_POSTGRES_IMAGE="${MIXLI_CI_RETAIN_POSTGRES_IMAGE:-0}" \
     MIXLI_CI_RETAIN_RELEASE_IMAGES="${MIXLI_CI_RETAIN_RELEASE_IMAGES:-}" \
@@ -241,17 +241,24 @@ production-builds" ]
 }
 
 @test "accepts only release or review engine modes" {
-  MIXLI_CI_ENGINE_MODE=invalid run run_ci "$CHECKOUT" "$SHA"
+  MIXLI_CI_TEST_ENGINE_MODE=invalid run run_ci "$CHECKOUT" "$SHA"
   [ "$status" -eq 64 ]
 
-  MIXLI_CI_ENGINE_MODE=review run run_ci "$CHECKOUT" "$SHA"
+  MIXLI_CI_TEST_ENGINE_MODE=review run run_ci "$CHECKOUT" "$SHA"
   [ "$status" -eq 0 ]
 }
 
 @test "review mode rejects release image retention" {
-  MIXLI_CI_ENGINE_MODE=review MIXLI_CI_RETAIN_RELEASE_IMAGES=1 \
+  MIXLI_CI_TEST_ENGINE_MODE=review MIXLI_CI_RETAIN_RELEASE_IMAGES=1 \
     run run_ci "$CHECKOUT" "$SHA"
   [ "$status" -eq 64 ]
+}
+
+@test "checkout-controlled host Bats run from the exact checkout directory" {
+  infrastructure="$(sed -n '/^infrastructure_contracts()/,/^}/p' \
+    "$REPO_ROOT/ops/production/bin/server-ci.sh")"
+  [[ "$infrastructure" == *'cd "$CHECKOUT"'* ]]
+  [[ "$infrastructure" == *'rootless_builder_exec bats "${ROOTLESS_HOST_BATS[@]}"'* ]]
 }
 
 @test "review mode retains every release validation stage" {
