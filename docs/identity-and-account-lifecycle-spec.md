@@ -1,8 +1,8 @@
-# Mosaic — Identity & Account Lifecycle Specification
+# Mixli — Identity & Account Lifecycle Specification
 
 ## 1. Purpose
 
-Mosaic should provide value before asking for registration.
+Mixli should provide value before asking for registration.
 
 Identity starts anonymous and becomes durable only when the user needs sync, creation, or social continuity.
 
@@ -151,4 +151,4 @@ Avoid coupling Play/runtime code to auth-provider SDKs.
 
 ## 13. Success test
 
-A first-time recipient should be able to open and enjoy Mosaic immediately, while a returning registered user receives durable personalization without losing or duplicating their earlier anonymous behavior.
+A first-time recipient should be able to open and enjoy Mixli immediately, while a returning registered user receives durable personalization without losing or duplicating their earlier anonymous behavior.

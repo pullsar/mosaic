@@ -1,6 +1,6 @@
-# Mosaic — Product Specification
+# Mixli — Product Specification
 
-> **Working name:** Mosaic  
+> **Product:** Mixli  
 > **Positioning:** The feed you play.  
 > **Core promise:** A personalized feed of tiny things to guess, choose, solve, play, watch, and discover—based on what you like and what you want to learn.
 
@@ -8,11 +8,11 @@
 
 People already open short-form feeds when they are bored, curious, tired, waiting, or looking for entertainment.
 
-Mosaic does not ask them to replace that habit with a routine, course, or productivity ritual. It keeps low-friction feed interaction and changes the atomic unit from passive content to a small playable experience.
+Mixli does not ask them to replace that habit with a routine, course, or productivity ritual. It keeps low-friction feed interaction and changes the atomic unit from passive content to a small playable experience.
 
 **TikTok:** watch → swipe  
 **Pinterest:** browse → save → swipe  
-**Mosaic:** play → react → swipe
+**Mixli:** play → react → swipe
 
 The product succeeds if users can open it with no plan and immediately find something worth doing.
 
@@ -53,7 +53,7 @@ Secondary jobs:
 
 ## 4. Target experience
 
-The user opens Mosaic and lands directly in the feed.
+The user opens Mixli and lands directly in the feed.
 
 ### Travel clip
 
@@ -165,7 +165,7 @@ Then the feed starts immediately. No third questionnaire.
 
 ## 6. Personalization model
 
-Mosaic learns three distinct things.
+Mixli learns three distinct things.
 
 ### A. Interest graph
 
@@ -388,7 +388,7 @@ Optional: prayer, scripture, sacred art, religious history, reflection. No faith
 
 ## 12. Content safety
 
-Mosaic never offers adult, erotic, or sexually explicit content. There is no future adult-content mode.
+Mixli never offers adult, erotic, or sexually explicit content. There is no future adult-content mode.
 
 Allowed aesthetic content includes art, fashion, architecture, people, landscapes, design, culture, and nature. All content follows broad mainstream consumer-app safety standards.
 
@@ -450,7 +450,7 @@ No dashboard, feed/category maze, or course browser in v1.
 
 The consumer feed is copyable. The creator system must be much harder to copy.
 
-Mosaic should become the easiest place to create a tiny interactive experience.
+Mixli should become the easiest place to create a tiny interactive experience.
 
 The creator moat consists of:
 
@@ -561,7 +561,7 @@ Remix
 Remix
 ```
 
-Mosaic records original creator, template creator, derivative creator, reuse count, and performance. This makes format invention valuable.
+Mixli records original creator, template creator, derivative creator, reuse count, and performance. This makes format invention valuable.
 
 ## 20. Creator flywheel
 
@@ -589,7 +589,7 @@ The goal is to make creating an interactive Play feel as natural as using a shor
 
 Do not ask new users what they can teach during onboarding.
 
-Contribution appears after Mosaic has evidence of knowledge or interest.
+Contribution appears after Mixli has evidence of knowledge or interest.
 
 Example:
 
@@ -599,7 +599,7 @@ Prompt:
 
 > **What do people often get wrong about phishing?**
 
-The user contributes the insight. Mosaic helps turn it into a Play. The creator approves before publication.
+The user contributes the insight. Mixli helps turn it into a Play. The creator approves before publication.
 
 This creates two long-term graphs—**I WANT TO KNOW** and **I CAN CONTRIBUTE**—without burdening the initial experience.
 
@@ -722,7 +722,7 @@ Prefer **Which sounds warmer?** over explanatory setup copy. Prefer **Play it ba
 
 ## 30. Audio behavior
 
-Audio never starts loudly by surprise. Default: **Tap to hear**. If the user consistently enables sound, Mosaic may preserve the preference.
+Audio never starts loudly by surprise. Default: **Tap to hear**. If the user consistently enables sound, Mixli may preserve the preference.
 
 ## 31. Initial inventory
 
@@ -768,7 +768,7 @@ response
 transition
 ```
 
-Normal Plays run inside Mosaic's runtime. Creators do not ship arbitrary code.
+Normal Plays run inside Mixli's runtime. Creators do not ship arbitrary code.
 
 ## 34. Core services
 

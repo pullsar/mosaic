@@ -1,6 +1,6 @@
 # Client event delivery
 
-Mosaic uses one client event path for interaction analytics and operational playback diagnostics:
+Mixli uses one client event path for interaction analytics and operational playback diagnostics:
 
 ```text
 Telemetry

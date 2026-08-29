@@ -1,8 +1,8 @@
-# Mosaic — Local Persistence & Recovery
+# Mixli — Local Persistence & Recovery
 
 ## Purpose
 
-Mosaic treats process death, suspension and intermittent connectivity as normal mobile conditions.
+Mixli treats process death, suspension and intermittent connectivity as normal mobile conditions.
 
 Persist **semantic state**, not UI/native resources.
 
@@ -88,7 +88,7 @@ If SQLite reports an unreadable/corrupt database during opening/migration:
 
 The quarantine exists for debugging/manual recovery and should not be uploaded automatically.
 
-A database created by a newer unsupported Mosaic schema is a different condition from corruption and must not be silently treated as ordinary data loss.
+A database created by a newer unsupported Mixli schema is a different condition from corruption and must not be silently treated as ordinary data loss.
 
 ## Schema evolution
 
