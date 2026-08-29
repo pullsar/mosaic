@@ -67,6 +67,13 @@ setup_file() {
   [ "$status" -eq 0 ]
 }
 
+@test "Docker daemon restart cannot publish Nginx before the firewall unit" {
+  run jq -e '.services.nginx.restart == "no"' <<<"$CONFIG_JSON"
+  [ "$status" -eq 0 ]
+  grep -Fq 'Requires=docker.service mixli-cloudflare-ips.service' \
+    ops/production/systemd/mixli-stack.service
+}
+
 @test "bootstrap PostgreSQL image cannot collide with CI or a mutable production tag" {
   run jq -e '
     .services.postgres.image == "mixli-postgres:bootstrap-required"
