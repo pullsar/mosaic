@@ -5,6 +5,7 @@ import {
   defaultConsumerRankingConfig,
   rankFeedCandidates,
   type ConsumerRankingConfig,
+  type FeedCandidate,
   type RankedFeedCandidate,
 } from './consumer_ranking.js';
 
@@ -42,6 +43,7 @@ export interface ConsumerFeedServiceOptions {
   windowSize?: number;
   candidateLimit?: number;
   requestIdFactory?: () => string;
+  onRankingError?: (error: unknown) => void;
 }
 
 export class InvalidFeedCursorError extends Error {
@@ -56,6 +58,7 @@ export class ConsumerFeedService {
   private readonly windowSize: number;
   private readonly candidateLimit: number;
   private readonly requestIdFactory: () => string;
+  private readonly onRankingError?: (error: unknown) => void;
 
   constructor(
     private readonly repository: ConsumerRepository,
@@ -75,6 +78,7 @@ export class ConsumerFeedService {
       'candidateLimit',
     );
     this.requestIdFactory = options.requestIdFactory ?? randomUUID;
+    this.onRankingError = options.onRankingError;
   }
 
   async getFeed(input: FeedRequest): Promise<FeedPage> {
@@ -100,9 +104,22 @@ export class ConsumerFeedService {
     const compatible = candidates.filter(
       (candidate) => checkPlayCompatibility(candidate.document, input.capabilities).compatible,
     );
-    const ranked = rankFeedCandidates(compatible, preferences, this.rankingConfig);
+
+    let rankingFallback = false;
+    let ranked: RankedFeedCandidate[];
+    try {
+      ranked = rankFeedCandidates(compatible, preferences, this.rankingConfig);
+    } catch (error) {
+      rankingFallback = true;
+      this.reportRankingError(error);
+      ranked = curatedFallbackCandidates(compatible);
+    }
+
     const window = selectFeedWindow(ranked, this.windowSize);
-    const fallback = window.length === 0 || window.every((item) => item.sourceBucket !== 'known');
+    const fallback =
+      rankingFallback ||
+      window.length === 0 ||
+      window.every((item) => item.sourceBucket !== 'known');
     const requestId = requiredText(this.requestIdFactory(), 'requestId');
 
     await this.repository.persistFeedDecision({
@@ -122,6 +139,14 @@ export class ConsumerFeedService {
     );
     if (!stored) throw new Error('Persisted feed decision could not be reloaded.');
     return pageFromStored(stored, 0, pageSize);
+  }
+
+  private reportRankingError(error: unknown): void {
+    try {
+      this.onRankingError?.(error);
+    } catch {
+      // Observability must not become another feed failure mode.
+    }
   }
 }
 
@@ -148,6 +173,23 @@ export function selectFeedWindow(
   const wildcard = ranked.find((item) => item.sourceBucket === 'wildcard');
   if (!wildcard) return selected;
   return [...selected.slice(0, -1), wildcard];
+}
+
+function curatedFallbackCandidates(candidates: readonly FeedCandidate[]): RankedFeedCandidate[] {
+  return [...candidates]
+    .sort((left, right) => {
+      const curated = left.curatedOrder - right.curatedOrder;
+      if (curated !== 0) return curated;
+      const play = left.playId.localeCompare(right.playId);
+      return play !== 0 ? play : left.revisionId.localeCompare(right.revisionId);
+    })
+    .map((candidate, index) => ({
+      ...candidate,
+      rank: index + 1,
+      sourceBucket: 'curated_fallback',
+      score: 0,
+      featureContributions: Object.freeze({}),
+    }));
 }
 
 function pageFromStored(
