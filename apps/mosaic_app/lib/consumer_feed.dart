@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:math' as math;
 
 import 'package:analytics_contract/analytics_contract.dart';
@@ -79,10 +80,12 @@ final class _FeedEntry {
 }
 
 final class _ConsumerFeedState extends State<ConsumerFeed> {
-  late final PageController _pageController;
+  static const int _analyticsHistoryWindows = 4;
+
+  PageController _pageController = PageController();
   final List<_FeedEntry> _entries = <_FeedEntry>[];
-  final Set<String> _impressed = <String>{};
-  final Set<String> _started = <String>{};
+  final LinkedHashSet<String> _impressed = LinkedHashSet<String>();
+  final LinkedHashSet<String> _started = LinkedHashSet<String>();
   Future<void> _persistTail = Future<void>.value();
 
   int _currentIndex = 0;
@@ -93,12 +96,10 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
   bool _booting = true;
   bool _fetching = false;
   bool _directManipulationActive = false;
-  int? _suppressedPageCallback;
 
   @override
   void initState() {
     super.initState();
-    _pageController = PageController();
     unawaited(_bootstrap());
   }
 
@@ -124,8 +125,8 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
             ? resume?.cursor
             : null;
         _booting = false;
+        _replacePageController(restoredIndex);
       });
-      _jumpAfterBuild(restoredIndex);
       _emitInitialVisibleAfterBuild();
       _scheduleWarmWindow();
     }
@@ -176,7 +177,6 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
     if (!mounted || requestEpoch != _loadEpoch) return;
 
     final page = result.page;
-    var shouldJumpToZero = false;
     var shouldEmitInitial = false;
     setState(() {
       _fetching = false;
@@ -215,7 +215,7 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
           _currentIndex = 0;
           _activeDecisionRequestId = page.requestId;
           _nextCursor = nextCursor;
-          shouldJumpToZero = true;
+          _replacePageController(0);
         } else {
           _activeDecisionRequestId = page.requestId;
           _nextCursor = nextCursor;
@@ -236,7 +236,6 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
       _trimRetainedWindow();
     });
 
-    if (shouldJumpToZero) _jumpAfterBuild(0);
     if (shouldEmitInitial) _emitInitialVisibleAfterBuild();
     _queuePersistence();
     _scheduleWarmWindow();
@@ -254,10 +253,6 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
   }
 
   void _onPageChanged(int index) {
-    if (_suppressedPageCallback == index) {
-      _suppressedPageCallback = null;
-      return;
-    }
     if (index < 0 || index >= _entries.length) return;
     final previous = _entries[_currentIndex];
     final next = _entries[index];
@@ -285,7 +280,7 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
     if (dropBefore > 0) {
       _entries.removeRange(0, dropBefore);
       _currentIndex -= dropBefore;
-      _jumpAfterBuild(_currentIndex);
+      _replacePageController(_currentIndex);
     }
 
     final remainingExcess = _entries.length - widget.maxRetainedItems;
@@ -294,19 +289,11 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
     }
   }
 
-  void _jumpAfterBuild(int page) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_pageController.hasClients) return;
-      final bounded = math.max(0, math.min(page, _entries.length - 1));
-      if ((_pageController.page?.round() ?? 0) == bounded) return;
-      _suppressedPageCallback = bounded;
-      _pageController.jumpToPage(bounded);
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_suppressedPageCallback == bounded) {
-          _suppressedPageCallback = null;
-        }
-      });
-    });
+  void _replacePageController(int page) {
+    final bounded = math.max(0, math.min(page, _entries.length - 1));
+    final previous = _pageController;
+    _pageController = PageController(initialPage: bounded);
+    WidgetsBinding.instance.addPostFrameCallback((_) => previous.dispose());
   }
 
   void _maybeFetchAhead() {
@@ -398,7 +385,7 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
       'position': position,
       'sourceBucket': entry.item.sourceBucket.wireName,
     };
-    if (_impressed.add(entry.analyticsIdentity)) {
+    if (_rememberAnalyticsIdentity(_impressed, entry.analyticsIdentity)) {
       sink(
         MosaicEventName.playImpression,
         feedRequestId: entry.requestId,
@@ -412,7 +399,7 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
       playRevisionId: entry.item.revisionId,
       payload: payload,
     );
-    if (_started.add(entry.analyticsIdentity)) {
+    if (_rememberAnalyticsIdentity(_started, entry.analyticsIdentity)) {
       sink(
         MosaicEventName.playStarted,
         feedRequestId: entry.requestId,
@@ -420,6 +407,18 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
         payload: payload,
       );
     }
+  }
+
+  bool _rememberAnalyticsIdentity(
+    LinkedHashSet<String> identities,
+    String identity,
+  ) {
+    if (!identities.add(identity)) return false;
+    final limit = widget.maxRetainedItems * _analyticsHistoryWindows;
+    while (identities.length > limit) {
+      identities.remove(identities.first);
+    }
+    return true;
   }
 
   void _emitDismissed(_FeedEntry entry) {
