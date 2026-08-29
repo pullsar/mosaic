@@ -299,7 +299,6 @@ void main() {
     tester,
   ) async {
     final semantics = tester.ensureSemantics();
-    addTearDown(semantics.dispose);
     final state = _MemoryConsumerState();
     final runtime = _runtime(state);
     addTearDown(runtime.close);
@@ -310,6 +309,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.bySemanticsLabel('Science, selected'), findsOneWidget);
+    semantics.dispose();
   });
 
   testWidgets('pseudo RTL survives 390x844 expanded text with reduced motion', (
