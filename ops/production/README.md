@@ -12,14 +12,15 @@ command-line arguments.
 | Purpose | Path or identity |
 | --- | --- |
 | Administrator | `mixli` (key-only SSH, sudo) |
-| Restricted trigger | `mixli-deploy` (forced command only) |
+| Production trigger | `mixli-deploy` (forced deploy/CI command only) |
+| Review trigger | `mixli-review` (forced PR-review command only) |
 | Build owner | `mixli-build` (locked, no login) |
 | Git mirror | `/srv/mixli/repository` |
 | Immutable checkouts | `/srv/mixli/builds/<sha>` |
 | Releases and state | `/srv/mixli/releases`, `/srv/mixli/state` |
 | Runtime configuration | `/etc/mixli` and `/srv/mixli/runtime` |
 | Installed operators | `/opt/mixli/bin` |
-| Deployment/CI events | `/srv/mixli/log/deploy-events.log`, `/srv/mixli/log/ci-events.log` |
+| Deployment/CI events | `/srv/mixli/log/deploy-events.log`, `/srv/mixli/log/ci-events.log`, `/srv/mixli/log/review-events.log` |
 | Textfile metrics | `/srv/mixli/metrics` |
 
 Administrator SSH uses the dedicated key and pinned host-key file. From Windows,
@@ -46,11 +47,14 @@ secrets.
    `nft list table inet mixli_cloudflare`.
 4. Open a new administrator SSH session before closing the bootstrap session.
    Prove root/password login is rejected.
-5. Install the restricted public key in
+5. Install the production restricted public key in
    `/var/lib/mixli-deploy/.ssh/authorized_keys` with
    `restrict,command="/opt/mixli/bin/deploy-dispatch"`. An arbitrary command
    must exit 64; `ci <exact-sha>` may only enqueue a server job.
-6. Do not enable `mixli-stack.service` until every file below exists and
+6. Install the separate review public key as described under
+   [Pull-request review activation](#pull-request-review-activation). It must
+   not reuse the production deployment identity.
+7. Do not enable `mixli-stack.service` until every file below exists and
    Cloudflare DNS, strict TLS, and the origin certificate are ready.
 
 Expected evidence is a default-deny host input chain, Cloudflare-only Docker
@@ -133,16 +137,65 @@ an unauthenticated `ops.mixli.app` request.
 
 ## CI and deployment
 
-Every branch/PR CI request is only a short SSH enqueue. The server fetches remote
-heads and PR refs, validates reachability, and runs `server-ci.sh` inside an
-exact detached checkout. Follow it with:
+Pull-request validation and protected-main deployment are separate authority
+lanes. A trusted `pull_request_target` workflow checks out and builds nothing;
+it sends only the PR number and exact head SHA through the review-only forced
+SSH identity. The server fetches only that numbered PR ref, proves exact SHA
+equality, and runs the full matrix against a private rootless Docker daemon.
+The sole automatic `main` workflow sends `deploy <sha>` through the independent
+production identity; deployment already includes the release CI gate. iOS
+simulator validation runs only manually or when a release is published.
+
+Follow a review with:
 
 ```bash
-sudo tail -f /srv/mixli/log/ci-events.log
-sudo journalctl -u 'mixli-ci-<first-12-sha>.service' -f
+sudo systemctl list-units --all 'mixli-review-*'
+sudo journalctl -u 'mixli-review-<pr>-<first-12-sha>.service' -f
+sudo tail -f /srv/mixli/log/review-events.log
 ```
 
-A successful event is `ci-passed:<40-character-sha>:<UTC timestamp>`.
+A successful review ends with a `mixli-server-review` Check Run on the exact PR
+head SHA. A newer SHA for the same PR synchronously cancels the older unit;
+production deployment synchronously preempts all reviews before it queues.
+
+### Pull-request review activation
+
+Create a GitHub App with repository permissions **Metadata: Read-only** and
+**Checks: Read and write**, no other permissions, and install it only on
+`pullsar/mosaic`. Transfer its identifiers and generated private key through a
+no-echo operator channel; never place them in the checkout or GitHub Actions:
+
+```bash
+install -d -o root -g root -m 0750 /etc/mixli/github
+install -o root -g root -m 0644 app-id /etc/mixli/github/app-id
+install -o root -g root -m 0644 installation-id /etc/mixli/github/installation-id
+install -o root -g root -m 0600 private-key.pem /etc/mixli/github/private-key.pem
+```
+
+Install a dedicated public key in
+`/var/lib/mixli-review/.ssh/authorized_keys` as one line, replacing only the
+public-key placeholder:
+
+```text
+command="/opt/mixli/bin/review-dispatch",no-agent-forwarding,no-port-forwarding,no-pty,no-user-rc,no-X11-forwarding ssh-ed25519 <review-public-key>
+```
+
+The repository secrets `MIXLI_REVIEW_SSH_KEY` and
+`MIXLI_REVIEW_KNOWN_HOST` must be separate from
+`MIXLI_DEPLOY_SSH_KEY` and `MIXLI_DEPLOY_KNOWN_HOST`. Branch protection must
+require the `mixli-server-review` check before merge and retain all protected
+`main` restrictions. Before enabling the workflow, prove an arbitrary review
+SSH command exits 64 and that the review account has no Docker socket, build
+account, deployment, or general sudo authority.
+
+To roll back the review lane, disable `.github/workflows/review-dispatch.yml`,
+remove only the review authorized-key line, run
+`systemctl stop 'mixli-review-*'`, verify no review unit, checkout, PR ref,
+rootless daemon, socket, image, network, or volume remains, and retain the
+protected-main deployment workflow and identity unchanged.
+
+Legacy direct server CI events, when explicitly invoked by an operator, remain
+in `/srv/mixli/log/ci-events.log`. They are not an automatic GitHub workflow.
 
 For a manual production deployment, deploy only the exact SHA visible on
 `origin/main`:

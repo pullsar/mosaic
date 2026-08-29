@@ -32,6 +32,8 @@ install_layout() {
   done
   install -d -m 0755 "$(target /srv/mixli/releases)"
   install -d -m 0750 "$(target /etc/mixli/secrets)"
+  install -d -o root -g root -m 0750 "$(target /etc/mixli/github)"
+  install -d -o root -g root -m 0750 "$(target /srv/mixli/state/reviews)"
   install -d -o 65534 -g 65534 -m 0750 "$(target /srv/mixli/metrics)"
   install -d -o root -g 65534 -m 0750 "$(target /etc/mixli/prometheus)"
 
@@ -137,6 +139,7 @@ ensure_account() {
 configure_host() {
   ensure_account mixli-build /srv/mixli /usr/sbin/nologin
   ensure_account mixli-deploy /var/lib/mixli-deploy /bin/bash
+  ensure_account mixli-review /var/lib/mixli-review /bin/bash
   ensure_subordinate_ids /etc/subuid --add-subuids
   ensure_subordinate_ids /etc/subgid --add-subgids
   runuser -u mixli-build -- env HOME=/srv/mixli dockerd-rootless-setuptool.sh check
@@ -188,6 +191,12 @@ configure_host() {
     >/etc/sudoers.d/91-mixli-deploy
   chmod 0440 /etc/sudoers.d/91-mixli-deploy
   visudo -cf /etc/sudoers.d/91-mixli-deploy
+
+  printf '%s\n' \
+    'mixli-review ALL=(root) NOPASSWD: /opt/mixli/bin/review-request.sh *' \
+    >/etc/sudoers.d/92-mixli-review
+  chmod 0440 /etc/sudoers.d/92-mixli-review
+  visudo -cf /etc/sudoers.d/92-mixli-review
 
   nft -f /etc/nftables.conf
   systemctl enable --now nftables fail2ban unattended-upgrades docker
