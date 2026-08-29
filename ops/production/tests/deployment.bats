@@ -30,7 +30,18 @@ elif [[ "$1 $2" == 'image tag' ]]; then
   target="$4"
   printf '%s\n' "$source" >"$(image_file "$target")"
 elif [[ "$1 $2" == 'image rm' ]]; then
-  rm -f -- "$(image_file "$3")"
+  ref="${@: -1}"
+  if [[ "$ref" == "${MIXLI_TEST_DOCKER_RM_FAIL_REF:-}" ]]; then
+    attempts_file="$MIXLI_TEST_DOCKER_STATE/rm-fail-attempts"
+    attempts=0
+    [[ ! -f "$attempts_file" ]] || attempts="$(cat "$attempts_file")"
+    attempts=$((attempts + 1))
+    printf '%s\n' "$attempts" >"$attempts_file"
+    if [[ "$attempts" -le "${MIXLI_TEST_DOCKER_RM_FAIL_ATTEMPTS:-0}" ]]; then
+      exit 42
+    fi
+  fi
+  rm -f -- "$(image_file "$ref")"
 fi
 SH
   chmod +x "$TEST_ROOT/bin/docker"
@@ -69,6 +80,8 @@ deploy() {
     MIXLI_ENV_FILE="$TEST_ROOT/production.env" \
     MIXLI_TEST_SHA_ALLOWED="${MIXLI_TEST_SHA_ALLOWED:-1}" \
     MIXLI_TEST_FAIL_STAGE="${MIXLI_TEST_FAIL_STAGE:-}" \
+    MIXLI_TEST_DOCKER_RM_FAIL_REF="${MIXLI_TEST_DOCKER_RM_FAIL_REF:-}" \
+    MIXLI_TEST_DOCKER_RM_FAIL_ATTEMPTS="${MIXLI_TEST_DOCKER_RM_FAIL_ATTEMPTS:-0}" \
     MIXLI_DRAIN_SECONDS=0 \
     "$REPO_ROOT/ops/production/bin/deployment.sh" "$@"
 }
@@ -122,6 +135,10 @@ deploy() {
   [ "$status" -ne 0 ]
   [ "$(cat "$TEST_ROOT/runtime/api-upstream.conf")" = 'old-upstream' ]
   [ "$(readlink "$TEST_ROOT/current")" = "$TEST_ROOT/releases/$OLD_SHA" ]
+  [ ! -e "$TEST_ROOT/releases/$SHA" ]
+  [ ! -e "$TEST_ROOT/images/mixli-postgres__$SHA" ]
+  [ ! -e "$TEST_ROOT/images/mixli-postgres-ci__$SHA" ]
+  grep -Fxq "image rm --force mixli-postgres-ci:$SHA" "$COMMAND_LOG"
 }
 
 @test "migration failure never switches API or web" {
@@ -222,7 +239,7 @@ deploy() {
   [ "$status" -eq 0 ]
 
   grep -Fxq "image tag sha256:ci-postgres-image mixli-postgres:$SHA" "$COMMAND_LOG"
-  grep -Fxq "image rm mixli-postgres-ci:$SHA" "$COMMAND_LOG"
+  grep -Fxq "image rm --force mixli-postgres-ci:$SHA" "$COMMAND_LOG"
   grep -qx "MIXLI_POSTGRES_IMAGE=mixli-postgres:$SHA" "$TEST_ROOT/production.env"
   [ "$(cat "$TEST_ROOT/images/mixli-postgres__$SHA")" = 'sha256:ci-postgres-image' ]
   [ ! -e "$TEST_ROOT/images/mixli-postgres-ci__$SHA" ]
@@ -246,15 +263,64 @@ deploy() {
   [ "$status" -ne 0 ]
   [ "$(cat "$TEST_ROOT/images/mixli-postgres__$SHA")" = \
     'sha256:conflicting-postgres-image' ]
+  [ -d "$TEST_ROOT/releases/$SHA" ]
   grep -qx "MIXLI_POSTGRES_IMAGE=mixli-postgres:$OLD_SHA" "$TEST_ROOT/production.env"
   [ ! -e "$TEST_ROOT/images/mixli-postgres-ci__$SHA" ]
+  grep -Fxq "image rm --force mixli-postgres-ci:$SHA" "$COMMAND_LOG"
 }
 
-@test "release pruning removes old PostgreSQL SHA images with old API images" {
+@test "post-promotion CI-tag cleanup failure is retried and fails the deployment" {
+  MIXLI_TEST_DOCKER_RM_FAIL_REF="mixli-postgres-ci:$SHA" \
+    MIXLI_TEST_DOCKER_RM_FAIL_ATTEMPTS=2 run deploy "$SHA"
+
+  [ "$status" -ne 0 ]
+  [ -e "$TEST_ROOT/images/mixli-postgres-ci__$SHA" ]
+  [ "$(grep -Fc "image rm --force mixli-postgres-ci:$SHA" "$COMMAND_LOG")" -eq 2 ]
+  grep -qx "postgres-ci-cleanup-failed:$SHA" "$TEST_ROOT/log/deploy-events.log"
+  grep -qx "MIXLI_POSTGRES_IMAGE=mixli-postgres:$OLD_SHA" "$TEST_ROOT/production.env"
+}
+
+@test "release pruning removes exact image tags before deleting a discoverable release" {
   script="$REPO_ROOT/ops/production/bin/deployment.sh"
   prune="$(sed -n '/^prune_releases()/,/^}/p' "$script")"
-  [[ "$prune" == *'docker image rm "mixli-api:$sha"'* ]]
-  [[ "$prune" == *'docker image rm "mixli-postgres:$sha"'* ]]
+  image_cleanup="$(sed -n '/^remove_release_image_tag()/,/^}/p' "$script")"
+  [[ "$prune" == *'remove_release_image_tag "mixli-api:$sha"'* ]]
+  [[ "$prune" == *'remove_release_image_tag "mixli-postgres:$sha"'* ]]
+  [[ "$image_cleanup" == *'docker image inspect "$image"'* ]]
+  [[ "$image_cleanup" == *'docker image rm --force "$image"'* ]]
+
+  image_line="$(grep -n 'remove_release_image_tag "mixli-postgres:$sha"' <<<"$prune" | cut -d: -f1)"
+  directory_line="$(grep -n 'rm -rf -- "$dir"' <<<"$prune" | cut -d: -f1)"
+  [ "$image_line" -lt "$directory_line" ]
+}
+
+@test "failed prune keeps its release discoverable and retry tolerates an absent exact tag" {
+  local n old prune_sha
+  for n in 3 4 5 6 7 8 9; do
+    old="$(printf '%040d' "$n")"
+    mkdir -p "$TEST_ROOT/releases/$old/web"
+    touch -d "2026-08-$((10 + n))" "$TEST_ROOT/releases/$old"
+  done
+  prune_sha="$(printf '%040d' 4)"
+  printf '%s\n' 'sha256:old-api-image' \
+    >"$TEST_ROOT/images/mixli-api__$prune_sha"
+  printf '%s\n' 'sha256:old-postgres-image' \
+    >"$TEST_ROOT/images/mixli-postgres__$prune_sha"
+
+  MIXLI_TEST_DOCKER_RM_FAIL_REF="mixli-postgres:$prune_sha" \
+    MIXLI_TEST_DOCKER_RM_FAIL_ATTEMPTS=1 run deploy "$SHA"
+  [ "$status" -ne 0 ]
+  [ -d "$TEST_ROOT/releases/$prune_sha" ]
+  [ ! -e "$TEST_ROOT/images/mixli-api__$prune_sha" ]
+  [ -e "$TEST_ROOT/images/mixli-postgres__$prune_sha" ]
+
+  printf '%s\n' 'sha256:ci-postgres-image' \
+    >"$TEST_ROOT/images/mixli-postgres-ci__$SHA"
+  MIXLI_TEST_DOCKER_RM_FAIL_REF='' \
+    MIXLI_TEST_DOCKER_RM_FAIL_ATTEMPTS=0 run deploy "$SHA"
+  [ "$status" -eq 0 ]
+  [ ! -e "$TEST_ROOT/releases/$prune_sha" ]
+  [ ! -e "$TEST_ROOT/images/mixli-postgres__$prune_sha" ]
 }
 
 @test "retention keeps current and previous while bounding other releases" {

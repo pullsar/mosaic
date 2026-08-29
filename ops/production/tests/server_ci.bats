@@ -12,6 +12,9 @@ setup() {
   cat >"$TEST_ROOT/bin/docker" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$COMMAND_LOG"
+if [[ "$1 $2" == 'image rm' && "${@: -1}" == "${MIXLI_TEST_DOCKER_RM_FAIL_REF:-}" ]]; then
+  exit 42
+fi
 SH
   chmod +x "$TEST_ROOT/bin/docker"
   export COMMAND_LOG
@@ -26,6 +29,7 @@ run_ci() {
     MIXLI_CI_TEST_MODE=1 \
     MIXLI_CI_TEST_FAIL_STAGE="${MIXLI_CI_TEST_FAIL_STAGE:-}" \
     MIXLI_CI_RETAIN_POSTGRES_IMAGE="${MIXLI_CI_RETAIN_POSTGRES_IMAGE:-0}" \
+    MIXLI_TEST_DOCKER_RM_FAIL_REF="${MIXLI_TEST_DOCKER_RM_FAIL_REF:-}" \
     "$REPO_ROOT/ops/production/bin/server-ci.sh" "$@"
 }
 
@@ -115,7 +119,8 @@ production-builds" ]
 
 @test "Git trusts only the exact build checkout owned by the locked builder" {
   script="$REPO_ROOT/ops/production/bin/server-ci.sh"
-  grep -Fq 'git -c safe.directory="$CHECKOUT" -C "$CHECKOUT"' "$script"
+  checkout_git="$(sed -n '/^checkout_git()/,/^}/p' "$script")"
+  [[ "$checkout_git" == *'runuser -u mixli-build -- git -c safe.directory="$CHECKOUT" -C "$CHECKOUT"'* ]]
   ! grep -Fq 'safe.directory=*' "$script"
 }
 
@@ -123,7 +128,7 @@ production-builds" ]
   run run_ci "$CHECKOUT" "$SHA"
   [ "$status" -eq 0 ]
 
-  grep -Fxq "image rm mixli-postgres-ci:$SHA" "$COMMAND_LOG"
+  grep -Fxq "image rm --force mixli-postgres-ci:$SHA" "$COMMAND_LOG"
   ! grep -Fq 'mixli-postgres:18.3' \
     "$REPO_ROOT/ops/production/bin/server-ci.sh"
   grep -Fq 'POSTGRES_CI_IMAGE="mixli-postgres-ci:$SHA"' \
@@ -134,9 +139,12 @@ production-builds" ]
 
 @test "failed CI removes its exact-SHA PostgreSQL CI tag even when retention was requested" {
   MIXLI_CI_TEST_FAIL_STAGE=infrastructure-contracts \
-    MIXLI_CI_RETAIN_POSTGRES_IMAGE=1 run run_ci "$CHECKOUT" "$SHA"
-  [ "$status" -ne 0 ]
-  grep -Fxq "image rm mixli-postgres-ci:$SHA" "$COMMAND_LOG"
+    MIXLI_CI_RETAIN_POSTGRES_IMAGE=1 \
+    MIXLI_TEST_DOCKER_RM_FAIL_REF="mixli-postgres-ci:$SHA" \
+    run run_ci "$CHECKOUT" "$SHA"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Failed to remove exact CI image tag mixli-postgres-ci:$SHA."* ]]
+  grep -Fxq "image rm --force mixli-postgres-ci:$SHA" "$COMMAND_LOG"
 }
 
 @test "authorized deployment retention applies only after every CI stage passes" {
@@ -146,4 +154,13 @@ production-builds" ]
 
   grep -Fq 'MIXLI_CI_RETAIN_POSTGRES_IMAGE=1' \
     "$REPO_ROOT/ops/production/bin/deployment.sh"
+}
+
+@test "ordinary successful CI fails when its exact PostgreSQL CI tag cannot be removed" {
+  MIXLI_TEST_DOCKER_RM_FAIL_REF="mixli-postgres-ci:$SHA" \
+    run run_ci "$CHECKOUT" "$SHA"
+
+  [ "$status" -eq 42 ]
+  [[ "$output" == *"Failed to remove exact CI image tag mixli-postgres-ci:$SHA."* ]]
+  grep -Fxq "image rm --force mixli-postgres-ci:$SHA" "$COMMAND_LOG"
 }
