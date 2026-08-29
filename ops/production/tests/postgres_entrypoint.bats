@@ -14,6 +14,8 @@ setup() {
 }
 
 teardown() {
+  docker run --rm -v "$TEST_ROOT:/fixture" alpine:3.22 \
+    sh -ceu 'rm -rf /fixture/*' >/dev/null 2>&1 || true
   rm -rf "$TEST_ROOT"
 }
 

@@ -36,7 +36,7 @@ setup() { setup_repo_root; }
     prefix=()
     [ "$(id -un)" = 'mixli-build' ]
   fi
-  run "${prefix[@]}" /usr/bin/docker info
+  run "${prefix[@]}" env -u DOCKER_HOST -u XDG_RUNTIME_DIR /usr/bin/docker info
   [ "$status" -ne 0 ]
   run "${prefix[@]}" test -r /etc/mixli/secrets
   [ "$status" -ne 0 ]

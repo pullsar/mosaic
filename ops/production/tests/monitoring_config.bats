@@ -1,7 +1,16 @@
 #!/usr/bin/env bats
 
 setup_file() {
-  CONFIG_JSON="$(docker compose --env-file ops/production/env/production.env.example -f ops/production/compose.yaml config --format json)"
+  local synthetic_api_env="$BATS_FILE_TMPDIR/api.env"
+  local synthetic_exporter_env="$BATS_FILE_TMPDIR/postgres-exporter.env"
+  : >"$synthetic_api_env"
+  : >"$synthetic_exporter_env"
+  CONFIG_JSON="$(
+    MIXLI_API_ENV_FILE="$synthetic_api_env" \
+      MIXLI_POSTGRES_EXPORTER_ENV_FILE="$synthetic_exporter_env" \
+      docker compose --env-file ops/production/env/production.env.example \
+        -f ops/production/compose.yaml config --format json
+  )"
   export CONFIG_JSON
 }
 
