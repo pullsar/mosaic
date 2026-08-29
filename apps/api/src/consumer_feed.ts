@@ -58,7 +58,7 @@ export class ConsumerFeedService {
   private readonly windowSize: number;
   private readonly candidateLimit: number;
   private readonly requestIdFactory: () => string;
-  private readonly onRankingError?: (error: unknown) => void;
+  private readonly onRankingError: ((error: unknown) => void) | undefined;
 
   constructor(
     private readonly repository: ConsumerRepository,
@@ -183,13 +183,15 @@ function curatedFallbackCandidates(candidates: readonly FeedCandidate[]): Ranked
       const play = left.playId.localeCompare(right.playId);
       return play !== 0 ? play : left.revisionId.localeCompare(right.revisionId);
     })
-    .map((candidate, index) => ({
-      ...candidate,
-      rank: index + 1,
-      sourceBucket: 'curated_fallback',
-      score: 0,
-      featureContributions: Object.freeze({}),
-    }));
+    .map(
+      (candidate, index): RankedFeedCandidate => ({
+        ...candidate,
+        rank: index + 1,
+        sourceBucket: 'curated_fallback',
+        score: 0,
+        featureContributions: Object.freeze({}),
+      }),
+    );
 }
 
 function pageFromStored(
