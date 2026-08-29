@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:platform_contracts/platform_contracts.dart';
 import 'package:platform_flutter/platform_flutter.dart';
@@ -8,7 +9,11 @@ import 'package:play_flutter/play_flutter.dart';
 import 'package:play_schema/play_schema.dart';
 
 import 'app_event_runtime.dart';
+import 'consumer_api_client.dart';
+import 'consumer_onboarding.dart';
+import 'consumer_runtime.dart';
 import 'event_runtime_resources_factory.dart';
+import 'onboarding_localizations.dart';
 
 const _apiBaseUrl = String.fromEnvironment('MOSAIC_API_BASE_URL');
 const _allowInsecureLocalApi = bool.fromEnvironment(
@@ -47,6 +52,7 @@ final class _MosaicAppState extends State<MosaicApp> {
   final ActiveMediaCoordinator _mediaCoordinator = ActiveMediaCoordinator();
   final SoLoudAudioEngine _audioEngine = SoLoudAudioEngine();
   late final AppEventRuntime _eventRuntime;
+  late final ConsumerRuntime _consumerRuntime;
   late final Telemetry _demoPlayTelemetry;
   late final FlutterLifecycleBridge _lifecycle;
   late final PlayCanvasAssetResolver _canvasResolver;
@@ -56,6 +62,12 @@ final class _MosaicAppState extends State<MosaicApp> {
   void initState() {
     super.initState();
     _eventRuntime = widget.eventRuntime ?? AppEventRuntime.disabled();
+    _consumerRuntime = ConsumerRuntime(
+      api: _createConsumerApi(_eventRuntime),
+      localState: _eventRuntime.resources.consumerLocalState,
+      capabilities: PlayCapabilityEnvelope.m1(),
+      onError: _reportEventRuntimeError,
+    );
     _demoPlayTelemetry = _eventRuntime.telemetryForPlay(
       feedRequestId: 'demo_feed_request',
       playRevisionId: _demoPlay.revisionId,
@@ -78,6 +90,7 @@ final class _MosaicAppState extends State<MosaicApp> {
   @override
   void dispose() {
     _lifecycle.dispose();
+    _consumerRuntime.close();
     unawaited(_disposeResources());
     super.dispose();
   }
@@ -140,17 +153,32 @@ final class _MosaicAppState extends State<MosaicApp> {
       title: 'Mosaic',
       debugShowCheckedModeBanner: false,
       themeMode: ThemeMode.system,
+      supportedLocales: MosaicOnboardingStrings.supportedLocales,
+      localizationsDelegates: const <LocalizationsDelegate<Object>>[
+        MosaicOnboardingStrings.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       darkTheme: ThemeData(
         brightness: Brightness.dark,
         scaffoldBackgroundColor: MosaicVisualTokens.surface,
         colorScheme: const ColorScheme.dark(
+          primary: MosaicVisualTokens.foreground,
+          onPrimary: MosaicVisualTokens.surface,
           surface: MosaicVisualTokens.surface,
           onSurface: MosaicVisualTokens.foreground,
         ),
       ),
       theme: ThemeData(
         brightness: Brightness.light,
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF262626)),
+        scaffoldBackgroundColor: const Color(0xFFFAFAF8),
+        colorScheme: const ColorScheme.light(
+          primary: Color(0xFF171717),
+          onPrimary: Color(0xFFFFFFFF),
+          surface: Color(0xFFFAFAF8),
+          onSurface: Color(0xFF171717),
+        ),
       ),
       routes: {
         MosaicSettingsRoute.privacy: (_) =>
@@ -160,8 +188,30 @@ final class _MosaicAppState extends State<MosaicApp> {
         MosaicSettingsRoute.deleteAccount: (_) =>
             const _ReservedSettingsPage('Delete account'),
       },
-      home: PlaySurface(play: _demoPlay, mediaBuilder: media.call),
+      home: ConsumerOnboardingGate(
+        runtime: _consumerRuntime,
+        child: PlaySurface(play: _demoPlay, mediaBuilder: media.call),
+      ),
     );
+  }
+}
+
+ConsumerApiClient? _createConsumerApi(AppEventRuntime eventRuntime) {
+  final configuredApi = _apiBaseUrl.trim();
+  if (configuredApi.isEmpty) return null;
+  try {
+    return ConsumerApiClient(
+      baseUri: Uri.parse(configuredApi),
+      actorAccess: eventRuntime.resources.actorAccess,
+      allowInsecureLocalhost: _allowInsecureLocalApi,
+    );
+  } on Object catch (error, stackTrace) {
+    _reportEventRuntimeError(
+      error,
+      stackTrace,
+      operation: 'consumer_transport_config',
+    );
+    return null;
   }
 }
 
