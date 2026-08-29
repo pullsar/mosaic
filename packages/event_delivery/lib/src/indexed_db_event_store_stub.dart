@@ -33,7 +33,8 @@ final class IndexedDbEventStore implements EventOutbox, ActorIdentityStore {
 
   Future<String?> readConsumerMetadata(String key) => _unsupported();
 
-  Future<void> writeConsumerMetadata(String key, String value) => _unsupported();
+  Future<void> writeConsumerMetadata(String key, String value) =>
+      _unsupported();
 
   Future<void> deleteConsumerMetadata(String key) => _unsupported();
 

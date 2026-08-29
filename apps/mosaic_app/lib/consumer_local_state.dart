@@ -202,7 +202,8 @@ String _requiredString(String value, String field, int maxLength) {
 
 String? _optionalString(Object? value, String field, int maxLength) {
   if (value == null) return null;
-  if (value is! String) throw FormatException('$field must be a string or null');
+  if (value is! String)
+    throw FormatException('$field must be a string or null');
   return _requiredString(value, field, maxLength);
 }
 

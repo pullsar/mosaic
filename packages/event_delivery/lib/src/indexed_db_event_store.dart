@@ -15,7 +15,9 @@ const _actorAccessTokenKey = 'actor_access_token';
 const _boundUserIdKey = 'bound_user_id';
 const _consumerMetadataPrefix = 'consumer.';
 const _maxConsumerMetadataBytes = 256 * 1024;
-final RegExp _consumerMetadataKeyPattern = RegExp(r'^[a-z0-9][a-z0-9_.-]{0,79}\$');
+final RegExp _consumerMetadataKeyPattern = RegExp(
+  r'^[a-z0-9][a-z0-9_.-]{0,79}$',
+);
 const _databaseVersion = 1;
 
 /// Browser-persistent event outbox and actor identity backed by IndexedDB.

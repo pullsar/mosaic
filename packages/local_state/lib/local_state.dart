@@ -335,13 +335,11 @@ final class MosaicLocalStore {
   }
 
   FeedResumeState? loadFeedResume() {
-    final rows = _db.select(
-      '''
+    final rows = _db.select('''
       select request_id, cursor, visible_revision_id, visible_position,
              window_json, updated_at
         from feed_resume where singleton = 1
-      ''',
-    );
+      ''');
     if (rows.isEmpty) return null;
     final row = rows.first;
     return FeedResumeState(
@@ -374,11 +372,11 @@ final class MosaicLocalStore {
       if (bounded.length >= defaultRecentFeedCacheMaxItems) break;
       final decoded = jsonDecode(jsonEncode(rawItem));
       if (decoded is! Map) {
-        throw const FormatException('Recent feed cache item must be an object.');
+        throw const FormatException(
+          'Recent feed cache item must be an object.',
+        );
       }
-      final item = decoded.map(
-        (key, value) => MapEntry(key.toString(), value),
-      );
+      final item = decoded.map((key, value) => MapEntry(key.toString(), value));
       final candidate = jsonEncode(<Object?>[...bounded, item]);
       if (utf8.encode(candidate).length > defaultRecentFeedCacheMaxBytes) break;
       bounded.add(item);
@@ -410,12 +408,10 @@ final class MosaicLocalStore {
   }
 
   RecentFeedCacheState? loadRecentFeedCache({DateTime? now}) {
-    final rows = _db.select(
-      '''
+    final rows = _db.select('''
       select request_id, items_json, updated_at
         from recent_feed_cache where singleton = 1
-      ''',
-    );
+      ''');
     if (rows.isEmpty) return null;
     final row = rows.first;
     try {
@@ -429,14 +425,14 @@ final class MosaicLocalStore {
       if (decoded is! List || decoded.length > defaultRecentFeedCacheMaxItems) {
         throw const FormatException('Recent feed cache payload is invalid.');
       }
-      final items = decoded.map((value) {
-        if (value is! Map) {
-          throw const FormatException('Recent feed cache item is invalid.');
-        }
-        return value.map(
-          (key, nested) => MapEntry(key.toString(), nested),
-        );
-      }).toList(growable: false);
+      final items = decoded
+          .map((value) {
+            if (value is! Map) {
+              throw const FormatException('Recent feed cache item is invalid.');
+            }
+            return value.map((key, nested) => MapEntry(key.toString(), nested));
+          })
+          .toList(growable: false);
       return RecentFeedCacheState(
         requestId: row['request_id'] as String,
         items: items,

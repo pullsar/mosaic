@@ -73,14 +73,11 @@ final class SqliteConsumerLocalState implements ConsumerLocalState {
     final state = _store.loadRecentFeedCache();
     if (state == null) return null;
     try {
-      return ConsumerFeedCache.fromJson(
-        <String, Object?>{
-          'requestId': state.requestId,
-          'items': state.items,
-          'updatedAt': state.updatedAt.toUtc().toIso8601String(),
-        },
-        capabilities: capabilities,
-      );
+      return ConsumerFeedCache.fromJson(<String, Object?>{
+        'requestId': state.requestId,
+        'items': state.items,
+        'updatedAt': state.updatedAt.toUtc().toIso8601String(),
+      }, capabilities: capabilities);
     } on Object {
       _store.clearRecentFeedCache();
       return null;

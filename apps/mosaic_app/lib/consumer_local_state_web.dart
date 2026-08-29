@@ -31,11 +31,8 @@ final class IndexedDbConsumerLocalState implements ConsumerLocalState {
   }
 
   @override
-  Future<void> writePreferences(ConsumerPreferences preferences) =>
-      _store.writeConsumerMetadata(
-        _preferencesKey,
-        jsonEncode(preferences.toJson()),
-      );
+  Future<void> writePreferences(ConsumerPreferences preferences) => _store
+      .writeConsumerMetadata(_preferencesKey, jsonEncode(preferences.toJson()));
 
   @override
   Future<ConsumerFeedResume?> readFeedResume() async {
@@ -58,7 +55,8 @@ final class IndexedDbConsumerLocalState implements ConsumerLocalState {
       _store.writeConsumerMetadata(_feedResumeKey, jsonEncode(state.toJson()));
 
   @override
-  Future<void> clearFeedResume() => _store.deleteConsumerMetadata(_feedResumeKey);
+  Future<void> clearFeedResume() =>
+      _store.deleteConsumerMetadata(_feedResumeKey);
 
   @override
   Future<ConsumerFeedCache?> readRecentFeed({
@@ -83,5 +81,6 @@ final class IndexedDbConsumerLocalState implements ConsumerLocalState {
       _store.writeConsumerMetadata(_recentFeedKey, jsonEncode(state.toJson()));
 
   @override
-  Future<void> clearRecentFeed() => _store.deleteConsumerMetadata(_recentFeedKey);
+  Future<void> clearRecentFeed() =>
+      _store.deleteConsumerMetadata(_recentFeedKey);
 }

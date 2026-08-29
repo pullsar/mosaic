@@ -19,25 +19,27 @@ MosaicEventEnvelope _event() => MosaicEventEnvelope(
 );
 
 void main() {
-  test('v1 local consumer data migrates to v2 without identity or outbox loss', () {
-    final temp = Directory.systemTemp.createTempSync('mosaic-consumer-v1-');
-    final path = '${temp.path}/mosaic.db';
-    try {
-      final raw = sqlite3.open(path);
-      raw.execute('''
+  test(
+    'v1 local consumer data migrates to v2 without identity or outbox loss',
+    () {
+      final temp = Directory.systemTemp.createTempSync('mosaic-consumer-v1-');
+      final path = '${temp.path}/mosaic.db';
+      try {
+        final raw = sqlite3.open(path);
+        raw.execute('''
         create table metadata (
           key text primary key,
           value text not null
         )
       ''');
-      raw.execute('''
+        raw.execute('''
         create table topic_preferences (
           kind text not null,
           topic_id text not null,
           primary key (kind, topic_id)
         )
       ''');
-      raw.execute('''
+        raw.execute('''
         create table feed_resume (
           singleton integer primary key check(singleton = 1),
           cursor text,
@@ -45,7 +47,7 @@ void main() {
           updated_at text not null
         )
       ''');
-      raw.execute('''
+        raw.execute('''
         create table event_outbox (
           event_id text primary key,
           event_json text not null,
@@ -56,79 +58,80 @@ void main() {
           created_at text not null
         )
       ''');
-      raw.execute('insert into metadata (key, value) values (?, ?)', [
-        'actor_id',
-        'actor_v1',
-      ]);
-      raw.execute('insert into metadata (key, value) values (?, ?)', [
-        'actor_access_token',
-        _actorToken,
-      ]);
-      raw.execute(
-        'insert into topic_preferences (kind, topic_id) values (?, ?)',
-        ['interest', 'science'],
-      );
-      raw.execute(
-        '''
+        raw.execute('insert into metadata (key, value) values (?, ?)', [
+          'actor_id',
+          'actor_v1',
+        ]);
+        raw.execute('insert into metadata (key, value) values (?, ?)', [
+          'actor_access_token',
+          _actorToken,
+        ]);
+        raw.execute(
+          'insert into topic_preferences (kind, topic_id) values (?, ?)',
+          ['interest', 'science'],
+        );
+        raw.execute(
+          '''
         insert into feed_resume (singleton, cursor, window_json, updated_at)
         values (1, ?, ?, ?)
         ''',
-        [
-          'cursor_v1',
-          jsonEncode(<String>['rev_old']),
-          DateTime.utc(2026, 8, 28, 12).toIso8601String(),
-        ],
-      );
-      final encodedEvent = jsonEncode(_event().toJson());
-      raw.execute(
-        '''
+          [
+            'cursor_v1',
+            jsonEncode(<String>['rev_old']),
+            DateTime.utc(2026, 8, 28, 12).toIso8601String(),
+          ],
+        );
+        final encodedEvent = jsonEncode(_event().toJson());
+        raw.execute(
+          '''
         insert into event_outbox (
           event_id, event_json, byte_size, priority, attempt_count, created_at
         ) values (?, ?, ?, ?, 0, ?)
         ''',
-        [
-          'evt_v1',
-          encodedEvent,
-          Uint8List.fromList(utf8.encode(encodedEvent)).length,
-          OutboxPriority.analytics.value,
-          DateTime.utc(2026, 8, 28, 12).toIso8601String(),
-        ],
-      );
-      raw.execute('pragma user_version = 1');
-      raw.close();
+          [
+            'evt_v1',
+            encodedEvent,
+            Uint8List.fromList(utf8.encode(encodedEvent)).length,
+            OutboxPriority.analytics.value,
+            DateTime.utc(2026, 8, 28, 12).toIso8601String(),
+          ],
+        );
+        raw.execute('pragma user_version = 1');
+        raw.close();
 
-      final store = MosaicLocalStore.open(path);
-      expect(store.userVersion, 2);
-      final actor = store.getOrCreateActorAccess();
-      expect(actor.actorId, 'actor_v1');
-      expect(actor.accessToken, _actorToken);
-      expect(store.interests(InterestKind.interest), {'science'});
-      expect(store.dueEvents().single.eventId, 'evt_v1');
+        final store = MosaicLocalStore.open(path);
+        expect(store.userVersion, 2);
+        final actor = store.getOrCreateActorAccess();
+        expect(actor.actorId, 'actor_v1');
+        expect(actor.accessToken, _actorToken);
+        expect(store.interests(InterestKind.interest), {'science'});
+        expect(store.dueEvents().single.eventId, 'evt_v1');
 
-      final oldResume = store.loadFeedResume();
-      expect(oldResume?.cursor, 'cursor_v1');
-      expect(oldResume?.windowRevisionIds, const ['rev_old']);
-      expect(oldResume?.requestId, isNull);
-      expect(oldResume?.visibleRevisionId, isNull);
-      expect(oldResume?.visiblePosition, isNull);
+        final oldResume = store.loadFeedResume();
+        expect(oldResume?.cursor, 'cursor_v1');
+        expect(oldResume?.windowRevisionIds, const ['rev_old']);
+        expect(oldResume?.requestId, isNull);
+        expect(oldResume?.visibleRevisionId, isNull);
+        expect(oldResume?.visiblePosition, isNull);
 
-      store.saveFeedResume(
-        requestId: 'feed_v2',
-        cursor: 'cursor_v2',
-        visibleRevisionId: 'rev_visible',
-        visiblePosition: 3,
-        windowRevisionIds: const ['rev_visible', 'rev_next'],
-        updatedAt: DateTime.utc(2026, 8, 29, 12),
-      );
-      final enriched = store.loadFeedResume();
-      expect(enriched?.requestId, 'feed_v2');
-      expect(enriched?.visibleRevisionId, 'rev_visible');
-      expect(enriched?.visiblePosition, 3);
-      store.close();
-    } finally {
-      temp.deleteSync(recursive: true);
-    }
-  });
+        store.saveFeedResume(
+          requestId: 'feed_v2',
+          cursor: 'cursor_v2',
+          visibleRevisionId: 'rev_visible',
+          visiblePosition: 3,
+          windowRevisionIds: const ['rev_visible', 'rev_next'],
+          updatedAt: DateTime.utc(2026, 8, 29, 12),
+        );
+        final enriched = store.loadFeedResume();
+        expect(enriched?.requestId, 'feed_v2');
+        expect(enriched?.visibleRevisionId, 'rev_visible');
+        expect(enriched?.visiblePosition, 3);
+        store.close();
+      } finally {
+        temp.deleteSync(recursive: true);
+      }
+    },
+  );
 
   test('recent feed cache is hard-bounded and expires stale recovery data', () {
     final store = MosaicLocalStore.openInMemory();
@@ -146,7 +149,7 @@ void main() {
       hasLength(MosaicLocalStore.defaultRecentFeedCacheMaxItems),
     );
 
-    final large = 'x' * (100 * 1024);
+    final large = List<String>.filled(100 * 1024, 'x').join();
     store.saveRecentFeedCache(
       requestId: 'feed_bytes',
       items: List<Map<String, Object?>>.generate(
