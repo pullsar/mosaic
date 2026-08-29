@@ -185,3 +185,29 @@ run_ip_refresh() {
 
   [[ "$cleanup" == *'"$active_replaced" == 0'* ]]
 }
+
+@test "provisioning installs isolated review identity and state boundaries" {
+  root="$TEST_ROOT/root"
+  mkdir -p "$root"
+  env MIXLI_PROVISION_TEST_MODE=1 MIXLI_PROVISION_ROOT="$root" \
+    "$REPO_ROOT/ops/production/bin/provision-host.sh"
+
+  [ -x "$root/opt/mixli/bin/review-dispatch" ]
+  [ -x "$root/opt/mixli/bin/review-request.sh" ]
+  [ -x "$root/opt/mixli/bin/review-status.sh" ]
+  [ -x "$root/opt/mixli/bin/review-ci.sh" ]
+  [ "$(stat -c '%u:%g:%a' "$root/etc/mixli/github")" = '0:0:750' ]
+  [ "$(stat -c '%u:%g:%a' "$root/srv/mixli/state/reviews")" = '0:0:750' ]
+}
+
+@test "review sudo rule grants only the fixed request entrypoint" {
+  script="$REPO_ROOT/ops/production/bin/provision-host.sh"
+  grep -Fq 'mixli-review ALL=(root) NOPASSWD: /opt/mixli/bin/review-request.sh *' "$script"
+  ! grep -Eq 'mixli-review.*(deployment|ci-request|/bin/bash|ALL$)' "$script"
+}
+
+@test "GitHub App private key is never sourced from repository examples" {
+  script="$REPO_ROOT/ops/production/bin/provision-host.sh"
+  ! grep -Eq 'private-key\.pem.*(cp|install).*SOURCE_ROOT' "$script"
+  grep -Fq '/etc/mixli/github' "$script"
+}
