@@ -4,6 +4,7 @@ import type {FeedCandidate, FeedSourceBucket, RankedFeedCandidate} from './consu
 const MAX_PREFERENCE_TOPICS = 64;
 const MAX_CANDIDATES = 500;
 const MAX_PAGE_SIZE = 50;
+const EXPIRED_DECISION_CLEANUP_BATCH = 100;
 
 export interface TopicSummary {
   id: string;
@@ -208,8 +209,16 @@ export class PostgresConsumerRepository implements ConsumerRepository {
       await client.query('begin');
       await ensureActor(client, actorId);
       await client.query(
-        'delete from feed_decisions where actor_id = $1 and expires_at <= now()',
-        [actorId],
+        `delete from feed_decisions
+          where request_id in (
+            select request_id
+              from feed_decisions
+             where expires_at <= now()
+             order by expires_at, request_id
+             limit $1
+             for update skip locked
+          )`,
+        [EXPIRED_DECISION_CLEANUP_BATCH],
       );
       await client.query(
         `insert into feed_decisions (
