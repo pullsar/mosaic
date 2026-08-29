@@ -437,8 +437,10 @@ final class MosaicLocalStore {
       final candidate = _db.select(
         '''
         select event_id from event_outbox
-        where priority < ?
-        order by priority asc, created_at asc
+        order by
+          case when priority < ? then 0 else 1 end asc,
+          priority asc,
+          created_at asc
         limit 1
         ''',
         [OutboxPriority.critical.value],
@@ -517,12 +519,19 @@ final class MosaicLocalStore {
             created_at text not null
           )
         ''');
-        _db.execute('''
-          create index event_outbox_due_idx
-          on event_outbox(priority desc, next_attempt_at, created_at)
-        ''');
         _db.execute('pragma user_version = $schemaVersion');
       });
+    }
+  }
+
+  void _transaction(void Function() body) {
+    _db.execute('begin immediate');
+    try {
+      body();
+      _db.execute('commit');
+    } catch (_) {
+      _db.execute('rollback');
+      rethrow;
     }
   }
 
@@ -541,39 +550,10 @@ final class MosaicLocalStore {
     );
   }
 
-  void _transaction(void Function() body) {
-    _db.execute('begin immediate');
-    try {
-      body();
-      _db.execute('commit');
-    } on Object {
-      _db.execute('rollback');
-      rethrow;
-    }
-  }
-
-  PendingEvent _pendingEventFromRow(Row row) {
-    final priorityValue = row['priority'] as int;
-    return PendingEvent(
-      eventId: row['event_id'] as String,
-      event: (jsonDecode(row['event_json'] as String) as Map)
-          .cast<String, Object?>(),
-      priority: OutboxPriority.values.firstWhere(
-        (value) => value.value == priorityValue,
-        orElse: () => OutboxPriority.normal,
-      ),
-      attemptCount: row['attempt_count'] as int,
-      createdAt: DateTime.parse(row['created_at'] as String),
-      nextAttemptAt: row['next_attempt_at'] == null
-          ? null
-          : DateTime.parse(row['next_attempt_at'] as String),
-    );
-  }
-
-  static void _validateFeedWindowLimit(int limit) {
-    if (limit <= 0) {
+  static void _validateFeedWindowLimit(int value) {
+    if (value <= 0) {
       throw ArgumentError.value(
-        limit,
+        value,
         'maxFeedWindowRevisionIds',
         'must be greater than zero',
       );
@@ -581,22 +561,36 @@ final class MosaicLocalStore {
   }
 
   static void _quarantineCorruptDatabase(String path) {
-    if (path == ':memory:') return;
-    final suffix = DateTime.now().toUtc().microsecondsSinceEpoch;
-    for (final sidecar in const ['', '-wal', '-shm']) {
-      final file = File('$path$sidecar');
-      if (!file.existsSync()) continue;
-      try {
-        file.renameSync('$path.corrupt.$suffix$sidecar');
-      } on FileSystemException {
-        try {
-          file.deleteSync();
-        } on FileSystemException {
-          // Let the subsequent open report the unrecoverable filesystem error.
-        }
+    final file = File(path);
+    if (!file.existsSync()) return;
+    final stamp = DateTime.now().toUtc().millisecondsSinceEpoch;
+    file.renameSync('$path.corrupt.$stamp');
+    for (final suffix in ['-wal', '-shm']) {
+      final sidecar = File('$path$suffix');
+      if (sidecar.existsSync()) {
+        sidecar.renameSync('$path.corrupt.$stamp$suffix');
       }
     }
   }
+}
+
+PendingEvent _pendingEventFromRow(Row row) {
+  final priorityValue = row['priority'] as int;
+  final priority = OutboxPriority.values.firstWhere(
+    (candidate) => candidate.value == priorityValue,
+    orElse: () => OutboxPriority.analytics,
+  );
+  return PendingEvent(
+    eventId: row['event_id'] as String,
+    event: (jsonDecode(row['event_json'] as String) as Map)
+        .cast<String, Object?>(),
+    priority: priority,
+    attemptCount: row['attempt_count'] as int,
+    createdAt: DateTime.parse(row['created_at'] as String),
+    nextAttemptAt: row['next_attempt_at'] == null
+        ? null
+        : DateTime.parse(row['next_attempt_at'] as String),
+  );
 }
 
 String _randomUuidV4() {
@@ -604,9 +598,10 @@ String _randomUuidV4() {
   final bytes = List<int>.generate(16, (_) => random.nextInt(256));
   bytes[6] = (bytes[6] & 0x0f) | 0x40;
   bytes[8] = (bytes[8] & 0x3f) | 0x80;
-  final hex = bytes
-      .map((value) => value.toRadixString(16).padLeft(2, '0'))
-      .join();
-  return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
-      '${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
+  String pair(int index) => bytes[index].toRadixString(16).padLeft(2, '0');
+  return '${pair(0)}${pair(1)}${pair(2)}${pair(3)}-'
+      '${pair(4)}${pair(5)}-'
+      '${pair(6)}${pair(7)}-'
+      '${pair(8)}${pair(9)}-'
+      '${pair(10)}${pair(11)}${pair(12)}${pair(13)}${pair(14)}${pair(15)}';
 }

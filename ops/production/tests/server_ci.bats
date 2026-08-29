@@ -107,10 +107,13 @@ production-builds" ]
     '"$FLUTTER_IMAGE" bash -c' \
     'dart format --output=none --set-exit-if-changed .' \
     'flutter analyze' \
+    'packages/event_delivery && dart test' \
+    'dart test --platform chrome test_web' \
     'packages/local_state' \
     'packages/play_flutter' \
     'packages/platform_flutter' \
     'flutter build web --release --pwa-strategy=none' \
+    'flutter build apk --release' \
     'apps/api/Dockerfile'; do
     grep -Fq -- "$required" "$script"
   done

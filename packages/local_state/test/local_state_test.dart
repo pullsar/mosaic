@@ -172,21 +172,25 @@ void main() {
   });
 
   test(
-    'critical pending mutation is never evicted solely to meet spool cap',
+    'critical pending mutations are last-resort hard-cap eviction candidates',
     () {
       final store = MosaicLocalStore.openInMemory(
         policy: const OutboxPolicy(maxCount: 1, maxBytes: 100000),
       );
+      final now = DateTime.utc(2026, 8, 27, 20);
       store.enqueueEvent(
         _event('critical_a'),
         priority: OutboxPriority.critical,
+        createdAt: now,
       );
       store.enqueueEvent(
         _event('critical_b'),
         priority: OutboxPriority.critical,
+        createdAt: now.add(const Duration(seconds: 1)),
       );
 
-      expect(store.outboxCount, 2);
+      expect(store.outboxCount, 1);
+      expect(store.dueEvents(limit: 10).single.eventId, 'critical_b');
       store.close();
     },
   );

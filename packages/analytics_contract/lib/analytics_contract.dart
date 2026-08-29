@@ -25,6 +25,61 @@ final class MosaicEventEnvelope {
     this.payload = const {},
   });
 
+  factory MosaicEventEnvelope.fromJson(Map<String, Object?> json) {
+    String requiredText(String key) {
+      final value = json[key];
+      if (value is! String || value.trim().isEmpty) {
+        throw FormatException('$key must be a non-empty string.');
+      }
+      return value;
+    }
+
+    String? optionalText(String key) {
+      final value = json[key];
+      if (value == null) return null;
+      if (value is! String || value.trim().isEmpty) {
+        throw FormatException('$key must be null or a non-empty string.');
+      }
+      return value;
+    }
+
+    final version = json['version'];
+    if (version is! int || version < 1) {
+      throw const FormatException('version must be a positive integer.');
+    }
+
+    final occurredAtRaw = requiredText('occurredAt');
+    final occurredAt = DateTime.tryParse(occurredAtRaw);
+    if (occurredAt == null) {
+      throw const FormatException('occurredAt must be an ISO-8601 timestamp.');
+    }
+
+    final payloadRaw = json['payload'];
+    if (payloadRaw is! Map) {
+      throw const FormatException('payload must be an object.');
+    }
+    final payload = <String, Object?>{};
+    for (final entry in payloadRaw.entries) {
+      final key = entry.key;
+      if (key is! String) {
+        throw const FormatException('payload keys must be strings.');
+      }
+      payload[key] = entry.value;
+    }
+
+    return MosaicEventEnvelope(
+      eventId: requiredText('eventId'),
+      event: requiredText('event'),
+      version: version,
+      occurredAt: occurredAt.toUtc(),
+      actorId: requiredText('actorId'),
+      sessionId: requiredText('sessionId'),
+      feedRequestId: optionalText('feedRequestId'),
+      playRevisionId: optionalText('playRevisionId'),
+      payload: Map<String, Object?>.unmodifiable(payload),
+    );
+  }
+
   /// Stable client-generated identity used for idempotent replay.
   final String eventId;
   final String event;
