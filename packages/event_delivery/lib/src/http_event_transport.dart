@@ -9,6 +9,7 @@ import 'event_delivery_core.dart';
 final class HttpEventTransport implements EventTransport {
   HttpEventTransport({
     required Uri baseUri,
+    required ActorAccessIdentity actorAccess,
     http.Client? client,
     this.requestTimeout = const Duration(seconds: 10),
     bool allowInsecureLocalhost = false,
@@ -16,6 +17,7 @@ final class HttpEventTransport implements EventTransport {
          baseUri,
          allowInsecureLocalhost: allowInsecureLocalhost,
        ),
+       _actorAccess = actorAccess,
        _client = client ?? http.Client(),
        _ownsClient = client == null {
     if (requestTimeout <= Duration.zero) {
@@ -28,10 +30,11 @@ final class HttpEventTransport implements EventTransport {
   }
 
   final Uri _baseUri;
+  final ActorAccessIdentity _actorAccess;
   final http.Client _client;
   final bool _ownsClient;
   final Duration requestTimeout;
-  final Set<String> _registeredActors = <String>{};
+  var _registered = false;
   var _closed = false;
 
   Uri get endpoint => _baseUri.resolve('v1/events');
@@ -44,8 +47,11 @@ final class HttpEventTransport implements EventTransport {
         EventDeliveryDisposition.retryableFailure,
       );
     }
+    if (event.actorId != _actorAccess.actorId) {
+      return const EventDeliveryResult(EventDeliveryDisposition.rejected);
+    }
 
-    final actorResult = await _ensureActor(event.actorId);
+    final actorResult = await _ensureActor();
     if (actorResult.disposition != EventDeliveryDisposition.accepted) {
       return actorResult;
     }
@@ -57,18 +63,18 @@ final class HttpEventTransport implements EventTransport {
     );
   }
 
-  Future<EventDeliveryResult> _ensureActor(String actorId) async {
-    if (_registeredActors.contains(actorId)) {
+  Future<EventDeliveryResult> _ensureActor() async {
+    if (_registered) {
       return const EventDeliveryResult(EventDeliveryDisposition.accepted);
     }
 
     final result = await _postJson(
       actorEndpoint,
-      <String, Object?>{'actorId': actorId},
-      acceptedStatusCodes: const {200, 201, 204},
+      <String, Object?>{'actorId': _actorAccess.actorId},
+      acceptedStatusCodes: const {200, 201},
     );
     if (result.disposition == EventDeliveryDisposition.accepted) {
-      _registeredActors.add(actorId);
+      _registered = true;
     }
     return result;
   }
@@ -82,7 +88,10 @@ final class HttpEventTransport implements EventTransport {
       final response = await _client
           .post(
             uri,
-            headers: const {'content-type': 'application/json'},
+            headers: actorAuthorizationHeaders(
+              _actorAccess.accessToken,
+              json: true,
+            ),
             body: jsonEncode(body),
           )
           .timeout(requestTimeout);
@@ -114,7 +123,7 @@ final class HttpEventTransport implements EventTransport {
   Future<void> close() async {
     if (_closed) return;
     _closed = true;
-    _registeredActors.clear();
+    _registered = false;
     if (_ownsClient) _client.close();
   }
 }

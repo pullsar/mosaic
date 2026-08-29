@@ -1,3 +1,4 @@
+import {timingSafeEqual} from 'node:crypto';
 import {Pool} from 'pg';
 
 export interface EventInput {
@@ -12,9 +13,17 @@ export interface EventInput {
   payload: Record<string, unknown>;
 }
 
+export type ActorAccessRegistration =
+  | 'created'
+  | 'existing'
+  | 'legacy_actor_requires_rotation'
+  | 'credential_conflict';
+
 export interface MosaicRepository {
   ping(): Promise<void>;
   createActor(actorId: string): Promise<void>;
+  registerActorAccess(actorId: string, credentialDigest: string): Promise<ActorAccessRegistration>;
+  verifyActorAccess(actorId: string, credentialDigest: string): Promise<boolean>;
   bindActorToUser(actorId: string, userId: string): Promise<void>;
   getPlayRevision(playId: string, revisionId: string): Promise<unknown | null>;
   insertEvent(event: EventInput): Promise<'inserted' | 'duplicate'>;
@@ -33,6 +42,63 @@ export class PostgresRepository implements MosaicRepository {
        on conflict (id) do nothing`,
       [actorId],
     );
+  }
+
+  async registerActorAccess(
+    actorId: string,
+    credentialDigest: string,
+  ): Promise<ActorAccessRegistration> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      const insertedActor = await client.query<{id: string}>(
+        `insert into actors (id) values ($1)
+         on conflict (id) do nothing
+         returning id`,
+        [actorId],
+      );
+      await client.query('select id from actors where id = $1 for update', [actorId]);
+      const credential = await client.query<{credential_digest: string}>(
+        `select credential_digest
+           from actor_access_credentials
+          where actor_id = $1`,
+        [actorId],
+      );
+      const existingDigest = credential.rows[0]?.credential_digest;
+      if (existingDigest === undefined) {
+        if (insertedActor.rowCount !== 1) {
+          await client.query('rollback');
+          return 'legacy_actor_requires_rotation';
+        }
+        await client.query(
+          `insert into actor_access_credentials (actor_id, credential_digest)
+           values ($1, $2)`,
+          [actorId, credentialDigest],
+        );
+        await client.query('commit');
+        return 'created';
+      }
+
+      const matches = constantTimeDigestEquals(existingDigest, credentialDigest);
+      await client.query('commit');
+      return matches ? 'existing' : 'credential_conflict';
+    } catch (error) {
+      await client.query('rollback');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async verifyActorAccess(actorId: string, credentialDigest: string): Promise<boolean> {
+    const result = await this.pool.query<{credential_digest: string}>(
+      `select credential_digest
+         from actor_access_credentials
+        where actor_id = $1`,
+      [actorId],
+    );
+    const existingDigest = result.rows[0]?.credential_digest;
+    return existingDigest !== undefined && constantTimeDigestEquals(existingDigest, credentialDigest);
   }
 
   async bindActorToUser(actorId: string, userId: string): Promise<void> {
@@ -90,4 +156,9 @@ export class PostgresRepository implements MosaicRepository {
     );
     return result.rowCount === 1 ? 'inserted' : 'duplicate';
   }
+}
+
+function constantTimeDigestEquals(left: string, right: string): boolean {
+  if (!/^[0-9a-f]{64}$/.test(left) || !/^[0-9a-f]{64}$/.test(right)) return false;
+  return timingSafeEqual(Buffer.from(left, 'hex'), Buffer.from(right, 'hex'));
 }

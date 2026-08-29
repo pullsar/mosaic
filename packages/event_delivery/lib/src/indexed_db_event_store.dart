@@ -11,6 +11,7 @@ import 'event_delivery_core.dart';
 const _eventsStore = 'events';
 const _metadataStore = 'metadata';
 const _actorIdKey = 'actor_id';
+const _actorAccessTokenKey = 'actor_access_token';
 const _boundUserIdKey = 'bound_user_id';
 const _databaseVersion = 1;
 
@@ -92,14 +93,30 @@ final class IndexedDbEventStore implements EventOutbox, ActorIdentityStore {
   }
 
   @override
-  Future<String> getOrCreateActorId() => _serializeWrite(() async {
-    _ensureOpen();
-    final existing = await _readMetadata(_actorIdKey);
-    if (existing != null && existing.isNotEmpty) return existing;
-    final actorId = secureUuidV4();
-    await _writeMetadata(_actorIdKey, actorId);
-    return actorId;
-  });
+  Future<String> getOrCreateActorId() async =>
+      (await getOrCreateActorAccess()).actorId;
+
+  Future<ActorAccessIdentity> getOrCreateActorAccess() =>
+      _serializeWrite(() async {
+        _ensureOpen();
+        final existingActorId = await _readMetadata(_actorIdKey);
+        final existingToken = await _readMetadata(_actorAccessTokenKey);
+        if (existingActorId != null &&
+            existingActorId.isNotEmpty &&
+            _isValidActorAccessToken(existingToken)) {
+          return ActorAccessIdentity(
+            actorId: existingActorId,
+            accessToken: existingToken!,
+          );
+        }
+
+        final actorAccess = ActorAccessIdentity(
+          actorId: secureUuidV4(),
+          accessToken: secureActorAccessToken(),
+        );
+        await _writeActorAccess(actorAccess);
+        return actorAccess;
+      });
 
   @override
   Future<void> bindActorToUser(String actorId, String userId) =>
@@ -229,6 +246,19 @@ final class IndexedDbEventStore implements EventOutbox, ActorIdentityStore {
     final transaction = _database.transaction(_metadataStore.toJS, 'readwrite');
     final completion = _transactionCompletion(transaction);
     transaction.objectStore(_metadataStore).put(value.toJS, key.toJS);
+    await completion;
+  }
+
+  Future<void> _writeActorAccess(ActorAccessIdentity actorAccess) async {
+    final transaction = _database.transaction(_metadataStore.toJS, 'readwrite');
+    final completion = _transactionCompletion(transaction);
+    final metadata = transaction.objectStore(_metadataStore);
+    metadata.put(actorAccess.actorId.toJS, _actorIdKey.toJS);
+    metadata.put(actorAccess.accessToken.toJS, _actorAccessTokenKey.toJS);
+    // A rotated anonymous actor must never inherit a local account binding from
+    // the previous actor. Keep identity replacement and binding invalidation in
+    // one transaction so a crash cannot expose a mixed identity state.
+    metadata.delete(_boundUserIdKey.toJS);
     await completion;
   }
 
@@ -509,3 +539,6 @@ void _validatePolicy(EventOutboxPolicy policy) {
     );
   }
 }
+
+bool _isValidActorAccessToken(String? value) =>
+    value != null && RegExp(r'^[A-Za-z0-9_-]{43}$').hasMatch(value);

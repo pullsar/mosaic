@@ -14,11 +14,16 @@ Future<AppEventResources> openPlatformEventResources() async {
   final outbox = SqliteEventOutbox(store);
 
   try {
-    final actorId = store.getOrCreateActorId();
+    final localAccess = store.getOrCreateActorAccess();
+    final actorAccess = ActorAccessIdentity(
+      actorId: localAccess.actorId,
+      accessToken: localAccess.accessToken,
+    );
     var closed = false;
     return AppEventResources(
       outbox: outbox,
-      actorId: actorId,
+      actorId: actorAccess.actorId,
+      actorAccessToken: actorAccess.accessToken,
       close: () async {
         if (closed) return;
         closed = true;

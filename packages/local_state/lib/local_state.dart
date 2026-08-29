@@ -7,7 +7,16 @@ import 'dart:math';
 import 'package:analytics_contract/analytics_contract.dart';
 import 'package:sqlite3/sqlite3.dart';
 
+final RegExp _actorAccessTokenPattern = RegExp(r'^[A-Za-z0-9_-]{43}$');
+
 enum InterestKind { interest, learning }
+
+final class LocalActorAccess {
+  const LocalActorAccess({required this.actorId, required this.accessToken});
+
+  final String actorId;
+  final String accessToken;
+}
 
 enum OutboxPriority {
   analytics(0),
@@ -110,6 +119,7 @@ final class UnsupportedLocalSchemaException implements Exception {
 }
 
 typedef ActorIdFactory = String Function();
+typedef ActorAccessTokenFactory = String Function();
 
 final class MosaicLocalStore {
   MosaicLocalStore._(
@@ -117,7 +127,9 @@ final class MosaicLocalStore {
     required this.policy,
     required this.maxFeedWindowRevisionIds,
     required ActorIdFactory actorIdFactory,
-  }) : _actorIdFactory = actorIdFactory;
+    required ActorAccessTokenFactory actorAccessTokenFactory,
+  }) : _actorIdFactory = actorIdFactory,
+       _actorAccessTokenFactory = actorAccessTokenFactory;
 
   static const int schemaVersion = 1;
   static const int defaultMaxFeedWindowRevisionIds = 64;
@@ -126,12 +138,14 @@ final class MosaicLocalStore {
   final OutboxPolicy policy;
   final int maxFeedWindowRevisionIds;
   final ActorIdFactory _actorIdFactory;
+  final ActorAccessTokenFactory _actorAccessTokenFactory;
 
   static MosaicLocalStore open(
     String path, {
     OutboxPolicy policy = const OutboxPolicy(),
     int maxFeedWindowRevisionIds = defaultMaxFeedWindowRevisionIds,
     ActorIdFactory actorIdFactory = _randomUuidV4,
+    ActorAccessTokenFactory actorAccessTokenFactory = _randomActorAccessToken,
   }) {
     _validateFeedWindowLimit(maxFeedWindowRevisionIds);
     Database? candidate;
@@ -142,6 +156,7 @@ final class MosaicLocalStore {
         policy: policy,
         maxFeedWindowRevisionIds: maxFeedWindowRevisionIds,
         actorIdFactory: actorIdFactory,
+        actorAccessTokenFactory: actorAccessTokenFactory,
       );
       store._verifyIntegrity();
       store._migrate();
@@ -158,6 +173,7 @@ final class MosaicLocalStore {
         policy: policy,
         maxFeedWindowRevisionIds: maxFeedWindowRevisionIds,
         actorIdFactory: actorIdFactory,
+        actorAccessTokenFactory: actorAccessTokenFactory,
       );
       store._migrate();
       return store;
@@ -168,6 +184,7 @@ final class MosaicLocalStore {
     OutboxPolicy policy = const OutboxPolicy(),
     int maxFeedWindowRevisionIds = defaultMaxFeedWindowRevisionIds,
     ActorIdFactory actorIdFactory = _randomUuidV4,
+    ActorAccessTokenFactory actorAccessTokenFactory = _randomActorAccessToken,
   }) {
     _validateFeedWindowLimit(maxFeedWindowRevisionIds);
     final store = MosaicLocalStore._(
@@ -175,6 +192,7 @@ final class MosaicLocalStore {
       policy: policy,
       maxFeedWindowRevisionIds: maxFeedWindowRevisionIds,
       actorIdFactory: actorIdFactory,
+      actorAccessTokenFactory: actorAccessTokenFactory,
     );
     store._migrate();
     return store;
@@ -187,12 +205,39 @@ final class MosaicLocalStore {
     return rows.first.values.first as int;
   }
 
-  String getOrCreateActorId() {
-    final existing = _metadata('actor_id');
-    if (existing != null && existing.isNotEmpty) return existing;
-    final created = _actorIdFactory();
-    _setMetadata('actor_id', created);
-    return created;
+  String getOrCreateActorId() => getOrCreateActorAccess().actorId;
+
+  LocalActorAccess getOrCreateActorAccess() {
+    late LocalActorAccess result;
+    _transaction(() {
+      final existingActorId = _metadata('actor_id');
+      final existingToken = _metadata('actor_access_token');
+      if (existingActorId != null &&
+          existingActorId.isNotEmpty &&
+          existingToken != null &&
+          _actorAccessTokenPattern.hasMatch(existingToken)) {
+        result = LocalActorAccess(
+          actorId: existingActorId,
+          accessToken: existingToken,
+        );
+        return;
+      }
+
+      final actorId = _actorIdFactory().trim();
+      final accessToken = _actorAccessTokenFactory().trim();
+      if (actorId.isEmpty) {
+        throw StateError('Actor ID factory returned an empty identifier.');
+      }
+      if (!_actorAccessTokenPattern.hasMatch(accessToken)) {
+        throw StateError(
+          'Actor access token factory returned an invalid token.',
+        );
+      }
+      _setMetadata('actor_id', actorId);
+      _setMetadata('actor_access_token', accessToken);
+      result = LocalActorAccess(actorId: actorId, accessToken: accessToken);
+    });
+    return result;
   }
 
   void replaceInterests(InterestKind kind, Iterable<String> topicIds) {
@@ -604,4 +649,10 @@ String _randomUuidV4() {
       '${pair(6)}${pair(7)}-'
       '${pair(8)}${pair(9)}-'
       '${pair(10)}${pair(11)}${pair(12)}${pair(13)}${pair(14)}${pair(15)}';
+}
+
+String _randomActorAccessToken() {
+  final random = Random.secure();
+  final bytes = List<int>.generate(32, (_) => random.nextInt(256));
+  return base64UrlEncode(bytes).replaceAll('=', '');
 }

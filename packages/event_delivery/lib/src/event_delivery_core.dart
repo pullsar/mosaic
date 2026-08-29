@@ -5,6 +5,8 @@ import 'dart:math';
 import 'package:analytics_contract/analytics_contract.dart';
 import 'package:platform_contracts/platform_contracts.dart';
 
+final RegExp _actorAccessTokenPattern = RegExp(r'^[A-Za-z0-9_-]{43}$');
+
 enum EventPriority {
   analytics(0),
   normal(50),
@@ -64,6 +66,45 @@ abstract interface class EventOutbox {
 
   Future<void> close();
 }
+
+/// Anonymous actor identity plus its proof-of-possession secret.
+///
+/// The actor ID may appear in ordinary Mosaic data. [accessToken] must never be
+/// placed in URLs, analytics payloads, logs, Play documents, or feed cursors.
+final class ActorAccessIdentity {
+  ActorAccessIdentity({required String actorId, required String accessToken})
+    : actorId = _requireText(actorId, 'actorId'),
+      accessToken = requireActorAccessToken(accessToken);
+
+  final String actorId;
+  final String accessToken;
+}
+
+String secureActorAccessToken() {
+  final random = Random.secure();
+  final bytes = List<int>.generate(32, (_) => random.nextInt(256));
+  return base64UrlEncode(bytes).replaceAll('=', '');
+}
+
+String requireActorAccessToken(String value) {
+  final normalized = value.trim();
+  if (!_actorAccessTokenPattern.hasMatch(normalized)) {
+    throw ArgumentError.value(
+      value,
+      'accessToken',
+      'must be a 32-byte base64url token without padding',
+    );
+  }
+  return normalized;
+}
+
+Map<String, String> actorAuthorizationHeaders(
+  String accessToken, {
+  bool json = false,
+}) => <String, String>{
+  'authorization': 'Bearer ${requireActorAccessToken(accessToken)}',
+  if (json) 'content-type': 'application/json',
+};
 
 final class EventContext {
   EventContext({
