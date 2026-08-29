@@ -288,3 +288,12 @@ production-builds" ]
   [[ "$workspace" == *'[[ "$ENGINE_MODE" != review ]] || copy_owner=0:0'* ]]
   [[ "$workspace" == *'chown -R $copy_owner /destination'* ]]
 }
+
+@test "review Docker CLI state stays in the private unit filesystem" {
+  prepare="$(sed -n '/^prepare_ci_engine()/,/^}/p' \
+    "$REPO_ROOT/ops/production/bin/server-ci.sh")"
+  [[ "$prepare" == *'mktemp -d /tmp/mixli-docker-config.XXXXXX'* ]]
+  [[ "$prepare" == *'export DOCKER_CONFIG="$docker_config"'* ]]
+  grep -Fq 'rm -rf -- "$docker_config"' \
+    "$REPO_ROOT/ops/production/bin/server-ci.sh"
+}

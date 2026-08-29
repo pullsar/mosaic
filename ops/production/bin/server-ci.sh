@@ -55,6 +55,7 @@ rootless_data=''
 rootless_home=''
 rootless_launcher_pid=''
 rootless_archive=''
+docker_config=''
 retain_release_images=0
 
 die_usage() {
@@ -182,6 +183,8 @@ stop_rootless_docker() {
 prepare_ci_engine() {
   if [[ "$ENGINE_MODE" == 'review' ]]; then
     start_rootless_docker
+    docker_config="$(mktemp -d /tmp/mixli-docker-config.XXXXXX)"
+    export DOCKER_CONFIG="$docker_config"
     export DOCKER_HOST="unix://$rootless_runtime/docker.sock"
     docker info --format '{{json .SecurityOptions}}' | grep -Fq 'name=rootless'
     [[ "$(docker info --format '{{.DockerRootDir}}')" == "$rootless_data" ]]
@@ -239,6 +242,9 @@ cleanup() {
   fi
   if [[ "$nginx_verify_root" == /tmp/mixli-nginx-verify.* && -d "$nginx_verify_root" ]]; then
     rm -rf -- "$nginx_verify_root"
+  fi
+  if [[ "$docker_config" == /tmp/mixli-docker-config.* && -d "$docker_config" ]]; then
+    rm -rf -- "$docker_config"
   fi
   if [[ "$status" -ne 0 ]]; then
     exit "$status"
