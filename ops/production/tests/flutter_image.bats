@@ -47,6 +47,7 @@ setup() {
   grep -Fq 'platforms/android-37.0' "$DOCKERFILE"
   grep -Fq 'build-tools/36.0.0' "$DOCKERFILE"
   grep -Fq 'build-tools/37.0.0' "$DOCKERFILE"
+  grep -Fq 'cmake/3.22.1' "$DOCKERFILE"
   grep -Fq 'ndk/28.2.13676358' "$DOCKERFILE"
 
   run docker run --rm "$IMAGE" bash -lc '
@@ -57,6 +58,7 @@ setup() {
     test -x /opt/android-sdk/platform-tools/adb
     test -x /opt/android-sdk/build-tools/36.0.0/aapt2
     test -x /opt/android-sdk/build-tools/37.0.0/aapt2
+    test -x /opt/android-sdk/cmake/3.22.1/bin/cmake
     test -d /opt/android-sdk/platforms/android-35
     test -d /opt/android-sdk/platforms/android-36
     test -d /opt/android-sdk/platforms/android-37.0
