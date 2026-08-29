@@ -211,7 +211,10 @@ container at `/srv/mixli/data/postgres` during validation.
   Begin an approved maintenance or deployment window in a persistent root shell.
   Acquire the deployment lock before the backup lock, ensure no related unit is
   active, and stop the timers while both locks are held. Keep descriptor 8 and
-  therefore the deployment lock through revocation and final verification.
+  therefore the deployment lock through revocation and final verification. Every
+  R2 command fence through the successful `exit` below continues in this same
+  root shell: do not leave it, send EOF, or run a later fence in a new shell. The
+  rollback fence explicitly starts a separate recovery shell only after failure.
 
   ```bash
   sudo -i
@@ -245,6 +248,9 @@ container at `/srv/mixli/data/postgres` during validation.
   cleanup_rotation() {
     status=$?
     trap - EXIT HUP INT TERM
+    if [[ "$rotation_complete" != 1 && "$status" == 0 ]]; then
+      status=1
+    fi
     set +e
     if [[ "$probe_uploaded" == 1 && -f "$curl_config" && -n "${probe_url:-}" ]]; then
       "$curl_bin" --config "$curl_config" --request DELETE --output /dev/null \
@@ -256,7 +262,9 @@ container at `/srv/mixli/data/postgres` during validation.
     elif [[ "$status" != 0 && "$active_replaced" == 0 ]]; then
       rm -f -- "$rollback"
       if [[ "$timers_stopped" == 1 ]]; then
-        systemctl start $timer_units || true
+        if ! systemctl start $timer_units; then
+          systemctl stop $timer_units || true
+        fi
       fi
     fi
     exit "$status"
@@ -310,41 +318,86 @@ container at `/srv/mixli/data/postgres` during validation.
   fi
   test "$(stat -c '%U:%G:%a' "$candidate")" = 'root:root:600'
 
-  normalize_rotation_keys() {
-    awk '
-      /^[[:space:]]*repo2-s3-key[[:space:]]*=/ {
-        sub(/=.*/, "=<ROTATED>")
-      }
-      /^[[:space:]]*repo2-s3-key-secret[[:space:]]*=/ {
-        sub(/=.*/, "=<ROTATED>")
-      }
-      { print }
-    ' "$1"
-  }
+  python3 - "$active" "$candidate" <<'PY'
+  import sys
 
-  if cmp -s "$active" "$candidate"; then
-    printf '%s\n' 'R2 rotation stopped: candidate does not rotate a key.' >&2
-    exit 1
-  else
-    cmp_status=$?
-    if [[ "$cmp_status" -ne 1 ]]; then
-      exit "$cmp_status"
-    fi
-  fi
-  cmp -s \
-    <(normalize_rotation_keys "$active") \
-    <(normalize_rotation_keys "$candidate")
+  targets = (b"repo2-s3-key", b"repo2-s3-key-secret")
+
+  def normalize(path):
+      with open(path, "rb") as handle:
+          data = handle.read()
+
+      section = b""
+      found = {}
+      normalized = []
+      for line in data.splitlines(keepends=True):
+          body = line
+          ending = b""
+          if body.endswith(b"\n"):
+              body = body[:-1]
+              ending = b"\n"
+          if body.endswith(b"\r"):
+              body = body[:-1]
+              ending = b"\r" + ending
+
+          stripped = body.strip(b" \t")
+          if stripped.startswith((b"#", b";")) or not stripped:
+              normalized.append(body + ending)
+              continue
+          if stripped.startswith(b"[") and stripped.endswith(b"]"):
+              section = stripped[1:-1].strip(b" \t")
+              normalized.append(body + ending)
+              continue
+
+          separator = body.find(b"=")
+          if separator < 0:
+              normalized.append(body + ending)
+              continue
+          key = body[:separator].strip(b" \t")
+          if key not in targets:
+              normalized.append(body + ending)
+              continue
+          if section != b"global" or key in found:
+              raise SystemExit(1)
+
+          field = body[separator + 1:]
+          leading_length = len(field) - len(field.lstrip(b" \t"))
+          trailing_length = len(field) - len(field.rstrip(b" \t"))
+          value_end = len(field) - trailing_length if trailing_length else len(field)
+          value = field[leading_length:value_end]
+          if not value:
+              raise SystemExit(1)
+          found[key] = value
+          trailing = field[value_end:] if trailing_length else b""
+          normalized.append(
+              body[:separator + 1] + field[:leading_length] +
+              b"<ROTATED>" + trailing + ending
+          )
+
+      if set(found) != set(targets):
+          raise SystemExit(1)
+      return b"".join(normalized), found
+
+  active_normalized, active_values = normalize(sys.argv[1])
+  candidate_normalized, candidate_values = normalize(sys.argv[2])
+  if any(active_values[key] == candidate_values[key] for key in targets):
+      raise SystemExit(1)
+  if active_normalized != candidate_normalized:
+      raise SystemExit(1)
+  PY
 
   compose run --rm --no-deps \
     -v "$candidate:/run/mixli-secrets/pgbackrest.conf:ro" \
     postgres true >/dev/null
   ```
 
-  The first quiet `cmp` requires a change; the second normalizes only the two
-  permitted key lines and rejects every other textual or semantic change without
-  outputting values. The disposable container then applies the production
-  entrypoint's value-free section, required-key, fixed-type, ownership, and mode
-  checks. Stop if any command fails.
+  The quiet parser requires exactly one nonempty assignment for each credential
+  in `[global]` in both files, rejects either assignment outside `[global]`, and
+  requires both candidate values to differ. It normalizes only those two exact
+  global values while preserving line endings and every other byte, then requires
+  the normalized files to match without outputting values. The disposable
+  container then applies the production entrypoint's value-free section,
+  required-key, fixed-type, ownership, and mode checks. Stop if any command fails.
 
   Exercise the new key with the provisioned, pinned host `curl`. The root-only
   curl configuration keeps credentials out of process arguments and output. The
@@ -408,9 +461,9 @@ container at `/srv/mixli/data/postgres` during validation.
   probe_url="https://$r2_endpoint/$r2_bucket/$probe_object"
   printf 'mixli-r2-rotation-probe:%s\n' "$rotation_id" >"$probe_body"
   test -x "$curl_bin"
+  probe_uploaded=1
   "$curl_bin" --config "$curl_config" --request PUT --upload-file "$probe_body" \
     --output /dev/null "$probe_url"
-  probe_uploaded=1
   "$curl_bin" --config "$curl_config" --output "$probe_read" "$probe_url"
   cmp -s "$probe_body" "$probe_read"
   "$curl_bin" --config "$curl_config" --request DELETE --output /dev/null \
@@ -497,18 +550,25 @@ container at `/srv/mixli/data/postgres` during validation.
   (( restore_success > rotation_started_epoch ))
   printf 'R2 rotation evidence: start=%s check=%s backup=%s restore=%s\n' \
     "$rotation_started_epoch" "$check_success" "$backup_success" "$restore_success"
+
+  exec 9>/run/lock/mixli-backup.lock
+  flock -n 9 || exit 75
   ```
 
   `mixli-backup-check.service` checks repo1 and repo2,
   `mixli-backup-incr.service` writes a dual-repository backup, and
   `mixli-restore-verify.service` performs the isolated repo2 restore. Revoke the
-  old key only after every command and freshness comparison succeeds. With the
-  deployment lock still held, run one final new-key check, restart the timers,
-  remove the protected rollback copy, and release the deployment lock.
+  old key only after every command and freshness comparison succeeds and fd 9 is
+  reacquired while fd 8 remains held. If reacquisition fails, stop without
+  revoking. Keep both locks through revocation and the final new-key check, then
+  release fd 9 immediately before restarting timers. Remove the protected
+  rollback copy and release the deployment lock only after final verification.
 
   ```bash
   compose exec -T --user postgres postgres \
     pgbackrest --stanza=mixli --repo=2 check
+  flock -u 9
+  exec 9>&-
   if ! systemctl start $timer_units; then
     systemctl stop $timer_units || true
     exit 1
