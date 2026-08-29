@@ -329,6 +329,7 @@ EOF
   printf '%s\n' 18 >"$TEST_ROOT/pgdata/PG_VERSION"
   cat >"$TEST_ROOT/bin/postgres" <<'EOF'
 #!/bin/sh
+set -eu
 test "$1" = -c
 test "$2" = shared_buffers=64MB
 test "$3" = -c
@@ -354,6 +355,7 @@ EOF
   set_source_metadata 0:0 0600
   cat >"$TEST_ROOT/upstream-entrypoint" <<'EOF'
 #!/bin/sh
+set -eu
 test "$#" -eq 3
 test "$1" = "argument with spaces"
 test "$2" = "--literal-option"
