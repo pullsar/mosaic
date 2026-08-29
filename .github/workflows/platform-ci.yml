@@ -50,7 +50,7 @@ jobs:
         run: flutter analyze
       - name: Test event delivery IndexedDB in Chrome
         working-directory: packages/event_delivery
-        run: dart test --platform chrome test_web/indexed_db_event_store_web_test.dart
+        run: dart test --platform chrome test_web
       - name: Test platform contracts
         working-directory: packages/platform_contracts
         run: dart test
