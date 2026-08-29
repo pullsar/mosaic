@@ -35,6 +35,42 @@ final class MapPlayVideoAssetResolver implements PlayVideoAssetResolver {
   Future<PlayVideoAsset?> resolve(String assetId) async => _assets[assetId];
 }
 
+/// Resolves the managed poster selected for a video delivery.
+///
+/// The relation is keyed by the video asset ID because the server publication
+/// gate already selects a poster derivative together with that asset. Keeping
+/// the poster outside [PlayVideoAsset] avoids duplicating image loading/cache
+/// semantics and lets delivery adapters resolve URLs independently.
+abstract interface class PlayVideoPosterResolver {
+  Future<PlayVisualAsset?> resolvePoster(String videoAssetId);
+}
+
+typedef PlayVideoPosterLookup =
+    FutureOr<PlayVisualAsset?> Function(String videoAssetId);
+
+final class CallbackPlayVideoPosterResolver implements PlayVideoPosterResolver {
+  const CallbackPlayVideoPosterResolver(this.lookup);
+
+  final PlayVideoPosterLookup lookup;
+
+  @override
+  Future<PlayVisualAsset?> resolvePoster(String videoAssetId) =>
+      Future<PlayVisualAsset?>.sync(() => lookup(videoAssetId));
+}
+
+final class MapPlayVideoPosterResolver implements PlayVideoPosterResolver {
+  MapPlayVideoPosterResolver(Map<String, PlayVisualAsset> postersByVideoAssetId)
+    : _posters = Map<String, PlayVisualAsset>.unmodifiable(
+        postersByVideoAssetId,
+      );
+
+  final Map<String, PlayVisualAsset> _posters;
+
+  @override
+  Future<PlayVisualAsset?> resolvePoster(String videoAssetId) async =>
+      _posters[videoAssetId];
+}
+
 final class ResolvedPlayVideo extends StatefulWidget {
   const ResolvedPlayVideo({
     required this.ownerId,
@@ -42,6 +78,7 @@ final class ResolvedPlayVideo extends StatefulWidget {
     required this.resolver,
     required this.coordinator,
     required this.controllerFactory,
+    this.posterResolver,
     this.active = true,
     this.semanticResumeEpoch = 0,
     this.loadingBuilder,
@@ -54,6 +91,7 @@ final class ResolvedPlayVideo extends StatefulWidget {
   final String ownerId;
   final String assetId;
   final PlayVideoAssetResolver resolver;
+  final PlayVideoPosterResolver? posterResolver;
   final ActiveMediaCoordinator coordinator;
   final PlayVideoControllerFactory controllerFactory;
   final bool active;
@@ -106,6 +144,29 @@ final class _ResolvedPlayVideoState extends State<ResolvedPlayVideo> {
       if (snapshot.hasError || asset == null) {
         return const PlayVideoUnavailable();
       }
+
+      final posterResolver = widget.posterResolver;
+      final loadingBuilder =
+          widget.loadingBuilder ??
+          (posterResolver == null
+              ? null
+              : (_, asset) => _ResolvedVideoPoster(
+                  videoAssetId: asset.id,
+                  resolver: posterResolver,
+                  fallback: const _VideoAssetLookupState(
+                    label: 'Loading video',
+                  ),
+                ));
+      final errorBuilder =
+          widget.errorBuilder ??
+          (posterResolver == null
+              ? null
+              : (_, asset) => _ResolvedVideoPoster(
+                  videoAssetId: asset.id,
+                  resolver: posterResolver,
+                  fallback: const PlayVideoUnavailable(),
+                ));
+
       return OwnedPlayVideo(
         ownerId: widget.ownerId,
         asset: asset,
@@ -113,10 +174,61 @@ final class _ResolvedPlayVideoState extends State<ResolvedPlayVideo> {
         controllerFactory: widget.controllerFactory,
         active: widget.active,
         semanticResumeEpoch: widget.semanticResumeEpoch,
-        loadingBuilder: widget.loadingBuilder,
-        errorBuilder: widget.errorBuilder,
+        loadingBuilder: loadingBuilder,
+        errorBuilder: errorBuilder,
         onError: widget.onError,
         onPlaybackEvent: widget.onPlaybackEvent,
+      );
+    },
+  );
+}
+
+final class _ResolvedVideoPoster extends StatefulWidget {
+  const _ResolvedVideoPoster({
+    required this.videoAssetId,
+    required this.resolver,
+    required this.fallback,
+  });
+
+  final String videoAssetId;
+  final PlayVideoPosterResolver resolver;
+  final Widget fallback;
+
+  @override
+  State<_ResolvedVideoPoster> createState() => _ResolvedVideoPosterState();
+}
+
+final class _ResolvedVideoPosterState extends State<_ResolvedVideoPoster> {
+  late Future<PlayVisualAsset?> _resolution;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolution = widget.resolver.resolvePoster(widget.videoAssetId);
+  }
+
+  @override
+  void didUpdateWidget(covariant _ResolvedVideoPoster oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.videoAssetId != widget.videoAssetId ||
+        oldWidget.resolver != widget.resolver) {
+      _resolution = widget.resolver.resolvePoster(widget.videoAssetId);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<PlayVisualAsset?>(
+    future: _resolution,
+    builder: (context, snapshot) {
+      final poster = snapshot.data;
+      if (snapshot.connectionState != ConnectionState.done ||
+          snapshot.hasError ||
+          poster == null) {
+        return widget.fallback;
+      }
+      return PlayVisualImage(
+        asset: poster,
+        unavailableSemanticLabel: 'Video poster unavailable',
       );
     },
   );
@@ -137,6 +249,7 @@ final class PlayMediaLayerBuilder {
     required this.videoResolver,
     required this.mediaCoordinator,
     required this.videoControllerFactory,
+    this.videoPosterResolver,
     this.audioResolver,
     this.audioEngine,
     this.canvasResolver,
@@ -149,6 +262,7 @@ final class PlayMediaLayerBuilder {
   final String ownerId;
   final PlayVisualAssetResolver visualResolver;
   final PlayVideoAssetResolver videoResolver;
+  final PlayVideoPosterResolver? videoPosterResolver;
   final PlayAudioAssetResolver? audioResolver;
   final AudioEngine? audioEngine;
   final PlayCanvasAssetResolver? canvasResolver;
@@ -171,6 +285,7 @@ final class PlayMediaLayerBuilder {
         ownerId: ownerId,
         assetId: assetId,
         resolver: videoResolver,
+        posterResolver: videoPosterResolver,
         coordinator: mediaCoordinator,
         controllerFactory: videoControllerFactory,
         active: active,
