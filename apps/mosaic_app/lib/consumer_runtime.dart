@@ -51,7 +51,7 @@ final class ConsumerFeedLoadResult {
 /// manufacture a second retry loop.
 final class ConsumerRuntime {
   ConsumerRuntime({
-    required this.api,
+    this.api,
     required this.localState,
     required this.capabilities,
     ConsumerRuntimeClock? clock,
@@ -62,7 +62,9 @@ final class ConsumerRuntime {
   static const int recentFeedMaxBytes = 256 * 1024;
   static const Duration recentFeedMaxAge = ConsumerFeedCache.maxAge;
 
-  final ConsumerApiClient api;
+  /// Null only when the app intentionally has no configured API endpoint.
+  /// Local onboarding remains usable and all network operations fail retryably.
+  final ConsumerApiClient? api;
   final ConsumerLocalState localState;
   final PlayCapabilityEnvelope capabilities;
   final ConsumerRuntimeErrorReporter? onError;
@@ -70,17 +72,69 @@ final class ConsumerRuntime {
 
   Future<ConsumerPreferences> readPreferences() => localState.readPreferences();
 
-  Future<ConsumerPreferenceSaveResult> savePreferences(
+  Future<bool> readOnboardingCompleted() async {
+    try {
+      return await localState.readOnboardingCompleted();
+    } on Object catch (error, stackTrace) {
+      _report(error, stackTrace, operation: 'consumer_onboarding_read');
+      return false;
+    }
+  }
+
+  Future<bool> writeOnboardingCompleted(bool completed) async {
+    try {
+      await localState.writeOnboardingCompleted(completed);
+      return true;
+    } on Object catch (error, stackTrace) {
+      _report(error, stackTrace, operation: 'consumer_onboarding_write');
+      return false;
+    }
+  }
+
+  Future<ConsumerApiResult<List<ConsumerTopic>>> searchTopics({
+    String query = '',
+    int limit = 100,
+  }) {
+    final client = api;
+    if (client == null) {
+      return Future.value(
+        const ConsumerApiFailure<List<ConsumerTopic>>(
+          ConsumerApiFailureKind.retryable,
+        ),
+      );
+    }
+    return client.searchTopics(query: query, limit: limit);
+  }
+
+  /// Persists a preference mutation without issuing a network request.
+  ///
+  /// Onboarding uses this per committed selection, then batches the remote
+  /// replacement separately so rapid taps never become one HTTP request each.
+  Future<bool> persistPreferencesLocally(
     ConsumerPreferences preferences,
   ) async {
     try {
       await localState.writePreferences(preferences);
+      return true;
     } on Object catch (error, stackTrace) {
       _report(error, stackTrace, operation: 'consumer_preferences_local_write');
-      return const ConsumerPreferenceSaveResult(localPersisted: false);
+      return false;
+    }
+  }
+
+  /// Replaces server preferences for a snapshot that is already durable locally.
+  Future<ConsumerPreferenceSaveResult> syncPreferences(
+    ConsumerPreferences preferences,
+  ) async {
+    final client = api;
+    if (client == null) {
+      return const ConsumerPreferenceSaveResult(
+        localPersisted: true,
+        remoteFailure: ConsumerApiFailureKind.retryable,
+      );
     }
 
-    final remote = await api.replacePreferences(preferences);
+    final remote = await client.replacePreferences(preferences);
     if (remote is ConsumerApiSuccess<ConsumerPreferences>) {
       return const ConsumerPreferenceSaveResult(localPersisted: true);
     }
@@ -92,11 +146,37 @@ final class ConsumerRuntime {
     );
   }
 
+  Future<ConsumerPreferenceSaveResult> syncLocalPreferences() async {
+    try {
+      return syncPreferences(await localState.readPreferences());
+    } on Object catch (error, stackTrace) {
+      _report(error, stackTrace, operation: 'consumer_preferences_local_read');
+      return const ConsumerPreferenceSaveResult(localPersisted: false);
+    }
+  }
+
+  Future<ConsumerPreferenceSaveResult> savePreferences(
+    ConsumerPreferences preferences,
+  ) async {
+    if (!await persistPreferencesLocally(preferences)) {
+      return const ConsumerPreferenceSaveResult(localPersisted: false);
+    }
+    return syncPreferences(preferences);
+  }
+
   Future<ConsumerFeedLoadResult> fetchFeed({
     String? cursor,
     int limit = 8,
   }) async {
-    final first = await api.fetchFeed(
+    final client = api;
+    if (client == null) {
+      return ConsumerFeedLoadResult(
+        recovered: await _recoverRecentFeed(),
+        failure: ConsumerApiFailureKind.retryable,
+      );
+    }
+
+    final first = await client.fetchFeed(
       capabilities: capabilities,
       cursor: cursor,
       limit: limit,
@@ -110,7 +190,7 @@ final class ConsumerRuntime {
     if (cursor != null &&
         firstFailure.kind == ConsumerApiFailureKind.invalidCursor) {
       await _clearResumeSafely();
-      final retry = await api.fetchFeed(
+      final retry = await client.fetchFeed(
         capabilities: capabilities,
         cursor: null,
         limit: limit,
@@ -137,7 +217,7 @@ final class ConsumerRuntime {
 
   Future<ConsumerFeedCache?> recoverRecentFeed() => _recoverRecentFeed();
 
-  void close() => api.close();
+  void close() => api?.close();
 
   Future<void> _persistNetworkPage(ConsumerFeedPage page) async {
     final now = _clock().toUtc();
