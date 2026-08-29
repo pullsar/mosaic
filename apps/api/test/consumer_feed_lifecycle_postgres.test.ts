@@ -92,7 +92,8 @@ test(
 
       await pool.query(
         `update feed_decisions
-            set expires_at = now() - interval '1 second'
+            set created_at = now() - interval '2 days',
+                expires_at = now() - interval '1 day'
           where request_id in ($1, $2)`,
         [expiredRequestId, otherRequestId],
       );
