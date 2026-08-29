@@ -251,8 +251,10 @@ final class _MosaicAppState extends State<MosaicApp> {
       ),
     ),
     routes: {
-      MosaicSettingsRoute.privacy: (_) => const _ReservedSettingsPage('Privacy'),
-      MosaicSettingsRoute.support: (_) => const _ReservedSettingsPage('Support'),
+      MosaicSettingsRoute.privacy: (_) =>
+          const _ReservedSettingsPage('Privacy'),
+      MosaicSettingsRoute.support: (_) =>
+          const _ReservedSettingsPage('Support'),
       MosaicSettingsRoute.deleteAccount: (_) =>
           const _ReservedSettingsPage('Delete account'),
     },

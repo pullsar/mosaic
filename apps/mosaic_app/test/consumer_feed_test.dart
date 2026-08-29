@@ -67,10 +67,8 @@ final class _MemoryConsumerState implements ConsumerLocalState {
   }
 }
 
-typedef _FeedResponder = FutureOr<http.Response> Function(
-  String? cursor,
-  int call,
-);
+typedef _FeedResponder =
+    FutureOr<http.Response> Function(String? cursor, int call);
 
 ConsumerRuntime _runtime(
   _MemoryConsumerState state,
@@ -132,7 +130,11 @@ void main() {
     tester,
   ) async {
     final state = _MemoryConsumerState();
-    final cachedItems = [_item('cached_0'), _item('cached_1'), _item('cached_2')];
+    final cachedItems = [
+      _item('cached_0'),
+      _item('cached_1'),
+      _item('cached_2'),
+    ];
     state.cache = ConsumerFeedCache(
       requestId: 'request_cached',
       items: cachedItems,
@@ -155,7 +157,10 @@ void main() {
     await tester.pump();
 
     expect(find.text('cached_1'), findsOneWidget);
-    expect(find.byKey(const ValueKey<String>('consumer-feed-pager')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('consumer-feed-pager')),
+      findsOneWidget,
+    );
 
     refresh.complete(http.Response('{"error":"temporary"}', 503));
     await tester.pumpAndSettle();
@@ -170,7 +175,9 @@ void main() {
     final runtime = _runtime(
       state,
       (cursor, call) => http.Response(
-        jsonEncode(_page('request_a', [_item('play_0'), _item('play_1')], null)),
+        jsonEncode(
+          _page('request_a', [_item('play_0'), _item('play_1')], null),
+        ),
         200,
       ),
     );
@@ -221,25 +228,21 @@ void main() {
     final state = _MemoryConsumerState();
     final nextPage = Completer<http.Response>();
     final requested = <String?>[];
-    final runtime = _runtime(
-      state,
-      (cursor, call) {
-        if (cursor == null) {
-          return http.Response(
-            jsonEncode(
-              _page(
-                'request_a',
-                List.generate(6, (index) => _item('play_$index')),
-                'cursor_6',
-              ),
+    final runtime = _runtime(state, (cursor, call) {
+      if (cursor == null) {
+        return http.Response(
+          jsonEncode(
+            _page(
+              'request_a',
+              List.generate(6, (index) => _item('play_$index')),
+              'cursor_6',
             ),
-            200,
-          );
-        }
-        return nextPage.future;
-      },
-      onFeedRequest: requested.add,
-    );
+          ),
+          200,
+        );
+      }
+      return nextPage.future;
+    }, onFeedRequest: requested.add);
     addTearDown(runtime.close);
 
     await tester.pumpWidget(_app(runtime));
@@ -270,60 +273,127 @@ void main() {
     expect(requested.where((cursor) => cursor == 'cursor_6'), hasLength(1));
   });
 
-  testWidgets('invalid cursor preserves visible Play until fresh decision exists', (
-    tester,
-  ) async {
-    final state = _MemoryConsumerState();
-    final oldItems = [_item('old_0'), _item('old_1')];
-    state.cache = ConsumerFeedCache(
-      requestId: 'request_old',
-      items: oldItems,
-      updatedAt: DateTime.now().toUtc(),
-    );
-    state.resume = ConsumerFeedResume(
-      requestId: 'request_old',
-      cursor: 'stale_cursor',
-      visibleRevisionId: oldItems[1].revisionId,
-      visiblePosition: 1,
-      windowRevisionIds: oldItems.map((item) => item.revisionId).toList(),
-      updatedAt: DateTime.now().toUtc(),
-    );
-    final requested = <String?>[];
-    final runtime = _runtime(
-      state,
-      (cursor, call) {
+  testWidgets(
+    'invalid cursor preserves visible Play until fresh decision exists',
+    (tester) async {
+      final state = _MemoryConsumerState();
+      final oldItems = [_item('old_0'), _item('old_1')];
+      state.cache = ConsumerFeedCache(
+        requestId: 'request_old',
+        items: oldItems,
+        updatedAt: DateTime.now().toUtc(),
+      );
+      state.resume = ConsumerFeedResume(
+        requestId: 'request_old',
+        cursor: 'stale_cursor',
+        visibleRevisionId: oldItems[1].revisionId,
+        visiblePosition: 1,
+        windowRevisionIds: oldItems.map((item) => item.revisionId).toList(),
+        updatedAt: DateTime.now().toUtc(),
+      );
+      final requested = <String?>[];
+      final runtime = _runtime(state, (cursor, call) {
         if (cursor == 'stale_cursor') {
           return http.Response('{"error":"invalid_feed_cursor"}', 400);
         }
         return http.Response(
           jsonEncode(
-            _page(
-              'request_fresh',
-              [_item('fresh_0'), _item('fresh_1')],
-              null,
-            ),
+            _page('request_fresh', [_item('fresh_0'), _item('fresh_1')], null),
           ),
           200,
         );
-      },
-      onFeedRequest: requested.add,
+      }, onFeedRequest: requested.add);
+      addTearDown(runtime.close);
+
+      await tester.pumpWidget(_app(runtime));
+      await tester.pumpAndSettle();
+
+      expect(requested, ['stale_cursor', null]);
+      expect(find.text('old_1'), findsOneWidget);
+      expect(state.resume?.cursor, isNull);
+
+      await tester.drag(
+        find.byKey(const ValueKey<String>('consumer-feed-pager')),
+        const Offset(0, -700),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('fresh_0'), findsOneWidget);
+      expect(state.resume?.requestId, 'request_fresh');
+    },
+  );
+
+  testWidgets('paging emits canonical context and active-page ownership', (
+    tester,
+  ) async {
+    final state = _MemoryConsumerState();
+    final events = <String>[];
+    final runtime = _runtime(
+      state,
+      (cursor, call) => http.Response(
+        jsonEncode(
+          _page('request_events', [_item('event_0'), _item('event_1')], null),
+        ),
+        200,
+      ),
     );
     addTearDown(runtime.close);
 
-    await tester.pumpWidget(_app(runtime));
+    await tester.pumpWidget(
+      _app(
+        runtime,
+        onEvent:
+            (
+              event, {
+              required feedRequestId,
+              required playRevisionId,
+              required payload,
+            }) {
+              events.add('$event:$feedRequestId:$playRevisionId');
+            },
+        itemBuilder:
+            (
+              context,
+              item, {
+              required feedRequestId,
+              required active,
+              required onDirectManipulationChanged,
+            }) => SizedBox.expand(
+              key: ValueKey<String>('active:${item.playId}:$active'),
+              child: Center(child: Text(item.playId)),
+            ),
+      ),
+    );
     await tester.pumpAndSettle();
 
-    expect(requested, ['stale_cursor', null]);
-    expect(find.text('old_1'), findsOneWidget);
-    expect(state.resume?.cursor, isNull);
+    expect(events.take(3), [
+      'play_impression:request_events:revision_event_0',
+      'play_visible:request_events:revision_event_0',
+      'play_started:request_events:revision_event_0',
+    ]);
+    expect(
+      find.byKey(const ValueKey<String>('active:event_0:true')),
+      findsOneWidget,
+    );
 
     await tester.drag(
       find.byKey(const ValueKey<String>('consumer-feed-pager')),
       const Offset(0, -700),
     );
     await tester.pumpAndSettle();
-    expect(find.text('fresh_0'), findsOneWidget);
-    expect(state.resume?.requestId, 'request_fresh');
+
+    expect(
+      events,
+      containsAllInOrder([
+        'play_dismissed:request_events:revision_event_0',
+        'play_impression:request_events:revision_event_1',
+        'play_visible:request_events:revision_event_1',
+        'play_started:request_events:revision_event_1',
+      ]),
+    );
+    expect(
+      find.byKey(const ValueKey<String>('active:event_1:true')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('long paging keeps persisted and warm windows hard-bounded', (
@@ -352,7 +422,8 @@ void main() {
       _app(
         runtime,
         onWarmWindow: (context, items) {
-          if (items.length > maximumWarmWindow) maximumWarmWindow = items.length;
+          if (items.length > maximumWarmWindow)
+            maximumWarmWindow = items.length;
         },
       ),
     );
@@ -366,8 +437,14 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    expect(state.maxPersistedItems, lessThanOrEqualTo(ConsumerFeedCache.maxItems));
-    expect(state.cache?.items.length, lessThanOrEqualTo(ConsumerFeedCache.maxItems));
+    expect(
+      state.maxPersistedItems,
+      lessThanOrEqualTo(ConsumerFeedCache.maxItems),
+    );
+    expect(
+      state.cache?.items.length,
+      lessThanOrEqualTo(ConsumerFeedCache.maxItems),
+    );
     expect(maximumWarmWindow, lessThanOrEqualTo(3));
     expect(tester.takeException(), isNull);
   });
@@ -409,7 +486,7 @@ Map<String, Object?> _play(String id) => <String, Object?>{
   'schemaVersion': 1,
   'id': id,
   'revisionId': 'revision_$id',
-  'format': 'tap',
+  'format': 'play',
   'classification': 'challenge',
   'topics': <String>['testing'],
   'learningTopics': <String>[],
@@ -421,11 +498,7 @@ Map<String, Object?> _play(String id) => <String, Object?>{
     'entry': <String, Object?>{
       'presentation': <String, Object?>{
         'layers': <Object>[
-          <String, Object?>{
-            'type': 'text',
-            'role': 'prompt',
-            'value': id,
-          },
+          <String, Object?>{'type': 'text', 'role': 'prompt', 'value': id},
         ],
       },
       'input': <String, Object?>{'type': 'tap', 'label': 'Done'},

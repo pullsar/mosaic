@@ -8,26 +8,25 @@ import 'consumer_api_client.dart';
 import 'consumer_local_state.dart';
 import 'consumer_runtime.dart';
 
-typedef ConsumerFeedItemBuilder = Widget Function(
-  BuildContext context,
-  ConsumerFeedItem item, {
-  required String feedRequestId,
-  required bool active,
-  required ValueChanged<bool> onDirectManipulationChanged,
-});
+typedef ConsumerFeedItemBuilder =
+    Widget Function(
+      BuildContext context,
+      ConsumerFeedItem item, {
+      required String feedRequestId,
+      required bool active,
+      required ValueChanged<bool> onDirectManipulationChanged,
+    });
 
-typedef ConsumerFeedEventSink = void Function(
-  String event, {
-  required String feedRequestId,
-  required String playRevisionId,
-  required Map<String, Object?> payload,
-});
+typedef ConsumerFeedEventSink =
+    void Function(
+      String event, {
+      required String feedRequestId,
+      required String playRevisionId,
+      required Map<String, Object?> payload,
+    });
 
 typedef ConsumerFeedWarmWindowCallback =
-    FutureOr<void> Function(
-      BuildContext context,
-      List<ConsumerFeedItem> items,
-    );
+    FutureOr<void> Function(BuildContext context, List<ConsumerFeedItem> items);
 
 /// Full-screen, bounded consumer feed coordination above immutable Play state.
 ///
@@ -94,7 +93,7 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
   bool _booting = true;
   bool _fetching = false;
   bool _directManipulationActive = false;
-  bool _suppressPageCallback = false;
+  int? _suppressedPageCallback;
 
   @override
   void initState() {
@@ -137,13 +136,12 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
     await _fetchPage(initialCursor, epoch: epoch);
   }
 
-  int _restoredIndex(
-    ConsumerFeedCache recovered,
-    ConsumerFeedResume? resume,
-  ) {
+  int _restoredIndex(ConsumerFeedCache recovered, ConsumerFeedResume? resume) {
     if (resume == null || resume.requestId != recovered.requestId) return 0;
     final position = resume.visiblePosition;
-    if (position != null && position >= 0 && position < recovered.items.length) {
+    if (position != null &&
+        position >= 0 &&
+        position < recovered.items.length) {
       final item = recovered.items[position];
       if (resume.visibleRevisionId == null ||
           item.revisionId == resume.visibleRevisionId) {
@@ -183,6 +181,9 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
     setState(() {
       _fetching = false;
       _failure = result.failure;
+      if (result.cursorReset && page == null) {
+        _nextCursor = null;
+      }
 
       if (page != null) {
         final nextCursor = page.nextCursor == cursor ? null : page.nextCursor;
@@ -253,7 +254,11 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
   }
 
   void _onPageChanged(int index) {
-    if (_suppressPageCallback || index < 0 || index >= _entries.length) return;
+    if (_suppressedPageCallback == index) {
+      _suppressedPageCallback = null;
+      return;
+    }
+    if (index < 0 || index >= _entries.length) return;
     final previous = _entries[_currentIndex];
     final next = _entries[index];
     if (previous.analyticsIdentity == next.analyticsIdentity) return;
@@ -285,10 +290,7 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
 
     final remainingExcess = _entries.length - widget.maxRetainedItems;
     if (remainingExcess > 0) {
-      _entries.removeRange(
-        _entries.length - remainingExcess,
-        _entries.length,
-      );
+      _entries.removeRange(_entries.length - remainingExcess, _entries.length);
     }
   }
 
@@ -297,9 +299,13 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
       if (!mounted || !_pageController.hasClients) return;
       final bounded = math.max(0, math.min(page, _entries.length - 1));
       if ((_pageController.page?.round() ?? 0) == bounded) return;
-      _suppressPageCallback = true;
+      _suppressedPageCallback = bounded;
       _pageController.jumpToPage(bounded);
-      _suppressPageCallback = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_suppressedPageCallback == bounded) {
+          _suppressedPageCallback = null;
+        }
+      });
     });
   }
 
@@ -329,10 +335,11 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       try {
-        final result = callback(context, items);
-        if (result is Future<void>) {
-          unawaited(result.catchError((Object _, StackTrace _) {}));
-        }
+        unawaited(
+          Future<void>.sync(() async {
+            await callback(context, items);
+          }).catchError((Object _, StackTrace _) {}),
+        );
       } on Object {
         // Prefetch is best-effort and cannot destabilize paging.
       }
@@ -362,9 +369,9 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
     final cursor = visible.requestId == _activeDecisionRequestId
         ? _nextCursor
         : null;
-    final items = decisionEntries.map((entry) => entry.item).toList(
-      growable: false,
-    );
+    final items = decisionEntries
+        .map((entry) => entry.item)
+        .toList(growable: false);
     _persistTail = _persistTail.then((_) async {
       await widget.runtime.persistFeedWindow(
         requestId: visible.requestId,
@@ -430,7 +437,7 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
   Future<void> _retry() async {
     if (_fetching) return;
     final cursor = _entries.isEmpty ? null : _nextCursor;
-    await _fetchPage(cursor, epoch: _entries.isEmpty ? _loadEpoch : null);
+    await _fetchPage(cursor, epoch: _loadEpoch);
   }
 
   @override
