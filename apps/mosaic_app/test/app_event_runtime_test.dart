@@ -103,12 +103,18 @@ void main() {
       await Future<void>.delayed(Duration.zero);
     }
 
-    expect(outbox.queued[0].envelope.sessionId, runtime.sessionId);
-    expect(outbox.queued[1].envelope.sessionId, runtime.sessionId);
-    expect(outbox.queued[0].envelope.feedRequestId, 'feed_b');
-    expect(outbox.queued[0].envelope.playRevisionId, 'rev_b');
-    expect(outbox.queued[1].envelope.feedRequestId, 'feed_a');
-    expect(outbox.queued[1].envelope.playRevisionId, 'rev_a');
+    final visible = outbox.queued
+        .singleWhere((queued) => queued.envelope.event == 'play_visible')
+        .envelope;
+    final delayed = outbox.queued
+        .singleWhere((queued) => queued.envelope.event == 'media_playback')
+        .envelope;
+    expect(visible.sessionId, runtime.sessionId);
+    expect(delayed.sessionId, runtime.sessionId);
+    expect(visible.feedRequestId, 'feed_b');
+    expect(visible.playRevisionId, 'rev_b');
+    expect(delayed.feedRequestId, 'feed_a');
+    expect(delayed.playRevisionId, 'rev_a');
 
     await runtime.close();
   });

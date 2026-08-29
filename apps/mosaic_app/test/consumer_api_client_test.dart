@@ -191,13 +191,11 @@ void main() {
     );
 
     final result = await client.getPreferences();
+    final failure = result as ConsumerApiFailure<ConsumerPreferences>;
 
     expect(requests, 1);
-    expect(
-      (result as ConsumerApiFailure<ConsumerPreferences>).kind,
-      ConsumerApiFailureKind.identityRecoveryRequired,
-    );
-    expect(result.statusCode, 409);
+    expect(failure.kind, ConsumerApiFailureKind.identityRecoveryRequired);
+    expect(failure.statusCode, 409);
   });
 
   test('public topic search does not require actor registration', () async {
