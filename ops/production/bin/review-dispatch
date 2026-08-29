@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly command_to_run="${SSH_ORIGINAL_COMMAND-}"
+
+if [[ ! "$command_to_run" =~ ^review\ ([1-9][0-9]*)\ ([0-9a-f]{40})$ ]]; then
+  printf '%s\n' 'Only review followed by a positive PR number and exact lowercase SHA is allowed.' >&2
+  exit 64
+fi
+
+readonly pr="${BASH_REMATCH[1]}"
+readonly sha="${BASH_REMATCH[2]}"
+
+if [[ "${MIXLI_REVIEW_DISPATCH_TEST_MODE:-0}" == '1' ]]; then
+  printf 'review:%s:%s\n' "$pr" "$sha"
+  exit 0
+fi
+
+exec sudo -n /opt/mixli/bin/review-request.sh "$pr" "$sha"
