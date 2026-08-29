@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import {spawn} from 'node:child_process';
 import {test} from 'node:test';
 import {Pool} from 'pg';
 import {
@@ -24,26 +23,6 @@ function puzzle(id = 'puzzle_canvas') {
       {type: 'label', x: 0.7, y: 0.7, text: '8 − 4 = 4'},
     ],
   };
-}
-
-async function migrateUp(): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn(
-      process.execPath,
-      ['--import', 'tsx', 'src/db/migrate.ts', 'up'],
-      {
-        cwd: new URL('../', import.meta.url),
-        env: process.env,
-        stdio: 'inherit',
-      },
-    );
-    child.on('exit', (code) =>
-      code === 0
-        ? resolve()
-        : reject(new Error(`migration up exited ${String(code)}`)),
-    );
-    child.on('error', reject);
-  });
 }
 
 test('canvas normalization materializes defaults into one bounded schema-v1 document', () => {
@@ -117,7 +96,6 @@ test(
   'PostgreSQL canvas catalog is exact-retry safe, immutable, revocable and tamper-evident',
   {skip: !databaseUrl},
   async () => {
-    await migrateUp();
     const pool = new Pool({connectionString: databaseUrl});
     const repo = new PostgresCanvasAssetRepository(pool);
     const suffix = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
