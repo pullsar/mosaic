@@ -1,9 +1,12 @@
 import 'package:analytics_contract/analytics_contract.dart';
 import 'package:event_delivery/event_delivery.dart';
 
+import 'consumer_local_state.dart';
+
 final class AppEventResources {
   const AppEventResources({
     required this.outbox,
+    required this.consumerLocalState,
     required this.actorId,
     required this.actorAccessToken,
     required this.close,
@@ -16,6 +19,7 @@ final class AppEventResources {
     );
     return AppEventResources(
       outbox: _DiscardingEventOutbox(),
+      consumerLocalState: const DisabledConsumerLocalState(),
       actorId: actorAccess.actorId,
       actorAccessToken: actorAccess.accessToken,
       close: _noopClose,
@@ -23,6 +27,7 @@ final class AppEventResources {
   }
 
   final EventOutbox outbox;
+  final ConsumerLocalState consumerLocalState;
   final String actorId;
   final String actorAccessToken;
   final Future<void> Function() close;

@@ -1,5 +1,6 @@
 library;
 
+export 'src/api_http_policy.dart';
 export 'src/event_delivery_core.dart';
 export 'src/http_event_transport.dart';
 export 'src/indexed_db_event_store_stub.dart'

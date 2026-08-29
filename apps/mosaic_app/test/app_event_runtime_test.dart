@@ -4,6 +4,7 @@ import 'package:analytics_contract/analytics_contract.dart';
 import 'package:event_delivery/event_delivery.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mosaic_app/app_event_runtime.dart';
+import 'package:mosaic_app/consumer_local_state.dart';
 import 'package:mosaic_app/event_runtime_resources.dart';
 
 const _actorToken = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
@@ -52,6 +53,7 @@ final class _MemoryOutbox implements EventOutbox {
 
 AppEventResources _resources(_MemoryOutbox outbox) => AppEventResources(
   outbox: outbox,
+  consumerLocalState: const DisabledConsumerLocalState(),
   actorId: 'actor_app',
   actorAccessToken: _actorToken,
   close: outbox.close,
@@ -59,15 +61,16 @@ AppEventResources _resources(_MemoryOutbox outbox) => AppEventResources(
 
 void main() {
   test(
-    'queue-only runtime still persists actor session and revision context',
+    'queue-only Play scope persists actor, session and immutable feed context',
     () async {
       final outbox = _MemoryOutbox();
-      final runtime = AppEventRuntime.create(
-        resources: _resources(outbox),
-        playRevisionId: 'rev_app',
+      final runtime = AppEventRuntime.create(resources: _resources(outbox));
+      final playTelemetry = runtime.telemetryForPlay(
+        feedRequestId: 'feed_a',
+        playRevisionId: 'rev_a',
       );
 
-      runtime.telemetry.event(MosaicEventName.mediaPlayback, const {
+      playTelemetry.event(MosaicEventName.mediaPlayback, const {
         'browser': 'safari',
         'videoCodec': 'h264',
       });
@@ -77,7 +80,8 @@ void main() {
       expect(runtime.deliveryConfigured, isFalse);
       expect(event.actorId, 'actor_app');
       expect(event.sessionId, runtime.sessionId);
-      expect(event.playRevisionId, 'rev_app');
+      expect(event.feedRequestId, 'feed_a');
+      expect(event.playRevisionId, 'rev_a');
       expect(event.payload['browser'], 'safari');
       expect(runtime.resources.actorAccess.accessToken, _actorToken);
 
@@ -86,6 +90,55 @@ void main() {
     },
   );
 
+  test('delayed callback from Play A cannot inherit Play B context', () async {
+    final outbox = _MemoryOutbox();
+    final runtime = AppEventRuntime.create(resources: _resources(outbox));
+    final playA = runtime.telemetryForPlay(
+      feedRequestId: 'feed_a',
+      playRevisionId: 'rev_a',
+    );
+    final playB = runtime.telemetryForPlay(
+      feedRequestId: 'feed_b',
+      playRevisionId: 'rev_b',
+    );
+
+    playB.event('play_visible', const {'position': 2});
+    playA.event('media_playback', const {'phase': 'playbackError'});
+    while (outbox.queued.length < 2) {
+      await Future<void>.delayed(Duration.zero);
+    }
+
+    final visible = outbox.queued
+        .singleWhere((queued) => queued.envelope.event == 'play_visible')
+        .envelope;
+    final delayed = outbox.queued
+        .singleWhere((queued) => queued.envelope.event == 'media_playback')
+        .envelope;
+    expect(visible.sessionId, runtime.sessionId);
+    expect(delayed.sessionId, runtime.sessionId);
+    expect(visible.feedRequestId, 'feed_b');
+    expect(visible.playRevisionId, 'rev_b');
+    expect(delayed.feedRequestId, 'feed_a');
+    expect(delayed.playRevisionId, 'rev_a');
+
+    await runtime.close();
+  });
+
+  test('unscoped app telemetry remains available for runtime events', () async {
+    final outbox = _MemoryOutbox();
+    final runtime = AppEventRuntime.create(resources: _resources(outbox));
+
+    runtime.telemetry.event('app_runtime', const {'state': 'foreground'});
+    await outbox.enqueued.future;
+
+    final event = outbox.queued.single.envelope;
+    expect(event.sessionId, runtime.sessionId);
+    expect(event.feedRequestId, isNull);
+    expect(event.playRevisionId, isNull);
+
+    await runtime.close();
+  });
+
   test(
     'invalid production API degrades to queue-only and reports config error',
     () async {
@@ -93,7 +146,6 @@ void main() {
       final errors = <String>[];
       final runtime = AppEventRuntime.create(
         resources: _resources(outbox),
-        playRevisionId: 'rev_app',
         apiBaseUrl: 'http://api.example.test/',
         onError: (error, stackTrace, {operation}) {
           errors.add(operation ?? 'unknown');

@@ -26,7 +26,6 @@ Future<void> main() async {
   );
   final eventRuntime = AppEventRuntime.create(
     resources: resources,
-    playRevisionId: _demoPlay.revisionId,
     apiBaseUrl: _apiBaseUrl,
     allowInsecureLocalhost: _allowInsecureLocalApi,
     onError: _reportEventRuntimeError,
@@ -48,6 +47,7 @@ final class _MosaicAppState extends State<MosaicApp> {
   final ActiveMediaCoordinator _mediaCoordinator = ActiveMediaCoordinator();
   final SoLoudAudioEngine _audioEngine = SoLoudAudioEngine();
   late final AppEventRuntime _eventRuntime;
+  late final Telemetry _demoPlayTelemetry;
   late final FlutterLifecycleBridge _lifecycle;
   late final PlayCanvasAssetResolver _canvasResolver;
   var _semanticResumeEpoch = 0;
@@ -55,9 +55,11 @@ final class _MosaicAppState extends State<MosaicApp> {
   @override
   void initState() {
     super.initState();
-    _eventRuntime =
-        widget.eventRuntime ??
-        AppEventRuntime.disabled(playRevisionId: _demoPlay.revisionId);
+    _eventRuntime = widget.eventRuntime ?? AppEventRuntime.disabled();
+    _demoPlayTelemetry = _eventRuntime.telemetryForPlay(
+      feedRequestId: 'demo_feed_request',
+      playRevisionId: _demoPlay.revisionId,
+    );
     _eventRuntime.requestDrain();
     _canvasResolver = MapPlayCanvasAssetResolver({_demoCanvas.id: _demoCanvas});
     _lifecycle = FlutterLifecycleBridge(
@@ -118,7 +120,7 @@ final class _MosaicAppState extends State<MosaicApp> {
   @override
   Widget build(BuildContext context) {
     final videoDiagnostics = PlayVideoDiagnosticObserver(
-      telemetry: _eventRuntime.telemetry,
+      telemetry: _demoPlayTelemetry,
       runtimeDiagnostics: const FlutterRuntimeDiagnostics(),
     );
     final media = PlayMediaLayerBuilder(
