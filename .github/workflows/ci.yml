@@ -26,28 +26,8 @@ jobs:
           cache: true
       - name: Resolve locked workspace
         run: flutter pub get --enforce-lockfile
-      - name: Verify formatting
-        run: dart format --output=none --set-exit-if-changed .
-      - name: Analyze
-        run: flutter analyze
-      - name: Test play_schema
-        working-directory: packages/play_schema
-        run: dart test
-      - name: Test play_engine
-        working-directory: packages/play_engine
-        run: dart test
-      - name: Test analytics_contract
-        working-directory: packages/analytics_contract
-        run: dart test
-      - name: Test local_state
-        working-directory: packages/local_state
-        run: dart test
-      - name: Test event_delivery
-        working-directory: packages/event_delivery
-        run: dart test
-      - name: Test play_flutter
-        working-directory: packages/play_flutter
-        run: flutter test
-      - name: Test app shell
-        working-directory: apps/mosaic_app
-        run: flutter test
+      - name: Show exact formatter diff
+        run: |
+          dart format .
+          git diff -- apps/mosaic_app/lib/app_event_runtime.dart apps/mosaic_app/lib/consumer_api_client.dart apps/mosaic_app/lib/main.dart apps/mosaic_app/test/app_event_runtime_test.dart apps/mosaic_app/test/consumer_api_client_test.dart packages/event_delivery/lib/src/api_http_policy.dart packages/event_delivery/test/api_http_policy_test.dart
+          exit 1
