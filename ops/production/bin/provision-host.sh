@@ -33,7 +33,7 @@ install_layout() {
   install -d -m 0755 "$(target /srv/mixli/releases)"
   install -d -m 0750 "$(target /etc/mixli/secrets)"
   install -d -o 65534 -g 65534 -m 0750 "$(target /srv/mixli/metrics)"
-  install -d -o 65534 -g 65534 -m 0750 "$(target /etc/mixli/prometheus)"
+  install -d -o root -g 65534 -m 0750 "$(target /etc/mixli/prometheus)"
 
   # Reassert the credential-directory boundary even when the directory already
   # exists with unsafe ownership or permissions.
@@ -58,7 +58,7 @@ install_layout() {
     install -m 0644 "$SOURCE_ROOT/ops/production/nginx/cloudflare-real-ip.conf.example" \
       "$real_ip_config"
   fi
-  install -o 65534 -g 65534 -m 0640 "$SOURCE_ROOT"/ops/production/prometheus/* \
+  install -o root -g 65534 -m 0640 "$SOURCE_ROOT"/ops/production/prometheus/* \
     "$(target /etc/mixli/prometheus/)"
   install -m 0644 "$SOURCE_ROOT/ops/production/alertmanager/alertmanager.yml" \
     "$(target /etc/mixli/alertmanager/alertmanager.yml)"
