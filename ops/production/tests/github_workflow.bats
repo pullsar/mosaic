@@ -43,8 +43,12 @@ setup() {
 }
 
 @test "production SSH secrets are unavailable to branch-controlled manual workflows" {
-  ! grep -Fq 'workflow_dispatch:' "$CI_WORKFLOW"
-  grep -Fq 'branches: [main]' "$CI_WORKFLOW"
+  for workflow in "$CI_WORKFLOW" "$DEPLOY_WORKFLOW"; do
+    ! grep -Fq 'workflow_dispatch:' "$workflow"
+    grep -Fq 'branches: [main]' "$workflow"
+  done
+  grep -Fq 'GitHub production environment branch protection is defense in depth' \
+    "$REPO_ROOT/ops/production/README.md"
 }
 
 @test "mobile platform CI is manual-only" {

@@ -119,6 +119,7 @@ deploy() {
     MIXLI_TEST_SHA_ALLOWED="${MIXLI_TEST_SHA_ALLOWED:-1}" \
     MIXLI_TEST_FAIL_STAGE="${MIXLI_TEST_FAIL_STAGE:-}" \
     MIXLI_TEST_FAIL_ROLLBACK_STAGE="${MIXLI_TEST_FAIL_ROLLBACK_STAGE:-}" \
+    MIXLI_TEST_ROLLBACK_RELEASE_SHA="${MIXLI_TEST_ROLLBACK_RELEASE_SHA:-}" \
     MIXLI_TEST_DOCKER_RM_FAIL_REF="${MIXLI_TEST_DOCKER_RM_FAIL_REF:-}" \
     MIXLI_TEST_DOCKER_RM_FAIL_ATTEMPTS="${MIXLI_TEST_DOCKER_RM_FAIL_ATTEMPTS:-0}" \
     MIXLI_TEST_DOCKER_LOOKUP_FAIL_REF="${MIXLI_TEST_DOCKER_LOOKUP_FAIL_REF:-}" \
@@ -276,6 +277,20 @@ deploy() {
   [ "$(cat "$TEST_ROOT/runtime/compose.yaml")" = "compose:$SHA" ]
 }
 
+@test "direct Nginx publish verifies the Cloudflare nft boundary first" {
+  script="$REPO_ROOT/ops/production/bin/deployment.sh"
+  reload="$(sed -n '/^reload_nginx()/,/^}/p' "$script")"
+  boundary_line="$(grep -n 'ensure_cloudflare_boundary' <<<"$reload" | cut -d: -f1)"
+  publish_line="$(grep -n 'compose up -d --no-deps nginx' <<<"$reload" | cut -d: -f1)"
+  [ -n "$boundary_line" ] && [ -n "$publish_line" ]
+  [ "$boundary_line" -lt "$publish_line" ]
+
+  MIXLI_TEST_FAIL_STAGE=cloudflare-boundary run deploy "$SHA"
+  [ "$status" -ne 0 ]
+  grep -qx 'failed:cloudflare-boundary' "$TEST_ROOT/log/deploy-events.log"
+  ! grep -qx "deployed:$SHA:green" "$TEST_ROOT/log/deploy-events.log"
+}
+
 @test "public smoke failure rolls back both atomic switches" {
   MIXLI_TEST_FAIL_STAGE=public-smoke run deploy "$SHA"
   [ "$status" -ne 0 ]
@@ -295,8 +310,32 @@ deploy() {
   [ ! -e "$TEST_ROOT/runtime/api-upstream.conf" ]
   [ ! -e "$TEST_ROOT/current" ]
   [ ! -e "$TEST_ROOT/runtime/compose.yaml" ]
+  grep -Fq 'rm --stop --force nginx api-blue-1 api-blue-2 api-green-1 api-green-2' \
+    "$COMMAND_LOG"
+  runtime_line="$(grep -n '^candidate-runtime-removed$' \
+    "$TEST_ROOT/log/deploy-events.log" | cut -d: -f1)"
+  compose_line="$(grep -n '^candidate-compose-removed$' \
+    "$TEST_ROOT/log/deploy-events.log" | cut -d: -f1)"
+  [ -n "$runtime_line" ] && [ -n "$compose_line" ]
+  [ "$runtime_line" -lt "$compose_line" ]
   grep -qx "MIXLI_API_BLUE_IMAGE=mixli-api:$OLD_SHA" "$TEST_ROOT/production.env"
   grep -qx "MIXLI_API_GREEN_IMAGE=mixli-api:$PREVIOUS_SHA" "$TEST_ROOT/production.env"
+}
+
+@test "first-deploy candidate cleanup failure retains compose for retry" {
+  rm -f "$TEST_ROOT/current" "$TEST_ROOT/runtime/api-upstream.conf" \
+    "$TEST_ROOT/runtime/compose.yaml" "$TEST_ROOT/state/current.json" \
+    "$TEST_ROOT/state/previous.json"
+
+  MIXLI_TEST_FAIL_STAGE=public-smoke \
+    MIXLI_TEST_FAIL_ROLLBACK_STAGE=candidate-runtime run deploy "$SHA"
+
+  [ "$status" -ne 0 ]
+  [ -f "$TEST_ROOT/runtime/compose.yaml" ]
+  grep -qx "candidate-runtime-rollback-failed:$SHA" \
+    "$TEST_ROOT/log/deploy-events.log"
+  grep -qx "deploy-rollback-failed:$SHA" "$TEST_ROOT/log/deploy-events.log"
+  ! grep -qx 'candidate-compose-removed' "$TEST_ROOT/log/deploy-events.log"
 }
 
 @test "first-deployment rollback stops PostgreSQL before removing candidate compose" {
@@ -374,6 +413,18 @@ deploy() {
   [ "$healthy_line" -lt "$traffic_line" ]
   [ "$traffic_line" -lt "$rollback_line" ]
   grep -q "\"sha\":\"$OLD_SHA\"" "$TEST_ROOT/state/current.json"
+}
+
+@test "rollback traffic must report the exact previous release SHA" {
+  MIXLI_TEST_FAIL_STAGE=record MIXLI_TEST_ROLLBACK_RELEASE_SHA="$PREVIOUS_SHA" \
+    run deploy "$SHA"
+  [ "$status" -ne 0 ]
+  ! grep -qx "rollback:$SHA" "$TEST_ROOT/log/deploy-events.log"
+  grep -qx "api-runtime-rollback-failed:$SHA" "$TEST_ROOT/log/deploy-events.log"
+  verify="$(sed -n '/^verify_rollback_traffic()/,/^}/p' \
+    "$REPO_ROOT/ops/production/bin/deployment.sh")"
+  [[ "$verify" == *'x-mixli-release'* ]]
+  [[ "$verify" == *'"$observed_release" == "$previous_release_sha"'* ]]
 }
 
 @test "rollback restore failure is propagated and never logged as success" {

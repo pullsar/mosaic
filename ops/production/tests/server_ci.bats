@@ -157,15 +157,41 @@ production-builds" ]
 
 @test "checkout Bats avoid the production Docker and sudo boundaries" {
   script="$REPO_ROOT/ops/production/bin/server-ci.sh"
-  grep -Fq 'BUILDER_BATS=(' "$script"
-  grep -Fq 'builder_exec bats "${BUILDER_BATS[@]}"' "$script"
+  grep -Fq 'ROOTLESS_HOST_BATS=(' "$script"
+  grep -Fq 'ROOTLESS_CONTAINER_BATS=(' "$script"
+  grep -Fq 'rootless_builder_exec bats "${ROOTLESS_HOST_BATS[@]}"' "$script"
   ! grep -Fq 'builder_exec bats ops/production/tests' "$script"
-  for privileged_test in api_image.bats flutter_image.bats nginx_config.bats \
-    postgres_backup.bats postgres_entrypoint.bats compose_config.bats \
-    monitoring_config.bats provisioning.bats; do
-    ! grep -Fq "ops/production/tests/$privileged_test" \
-      <(sed -n '/^readonly BUILDER_BATS=(/,/^)/p' "$script")
+  suites="$(sed -n '/^readonly ROOTLESS_HOST_BATS=(/,/^)/p; /^readonly ROOTLESS_CONTAINER_BATS=(/,/^)/p' "$script")"
+  for required_test in api_image.bats backup_scripts.bats ci_request.bats \
+    compose_config.bats deploy_dispatch.bats deployment.bats flutter_image.bats \
+    github_workflow.bats hardening_contracts.bats monitoring_config.bats \
+    nginx_config.bats postgres_backup.bats postgres_entrypoint.bats \
+    provisioning.bats server_ci.bats verify_script.bats; do
+    grep -Fq "ops/production/tests/$required_test" <<<"$suites"
   done
+}
+
+@test "server CI provisions and deterministically cleans a private rootless daemon" {
+  script="$REPO_ROOT/ops/production/bin/server-ci.sh"
+  provision="$REPO_ROOT/ops/production/bin/provision-host.sh"
+  for package in docker-ce-rootless-extras uidmap slirp4netns; do
+    grep -Fq "$package" "$provision"
+  done
+  grep -Fq 'DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK=true' "$script"
+  grep -Fq 'dockerd-rootless.sh' "$script"
+  grep -Fq 'DOCKER_HOST="unix://$rootless_runtime/docker.sock"' "$script"
+  grep -Fq 'rootless_docker system prune --all --force --volumes' "$script"
+  grep -Fq 'rm -rf -- "$rootless_root" "$rootless_runtime"' "$script"
+  ! grep -Eq 'DOCKER_HOST=.*(/var/run/docker.sock|/run/docker.sock)' "$script"
+}
+
+@test "rootless daemon receives exact candidate images independently of promotion" {
+  script="$REPO_ROOT/ops/production/bin/server-ci.sh"
+  grep -Fq 'rootless_docker build --target ci' "$script"
+  grep -Fq 'rootless_docker build -f "$CHECKOUT/ops/production/flutter/Dockerfile"' "$script"
+  grep -Fq 'rootless_docker build -f "$CHECKOUT/ops/production/postgres/Dockerfile"' "$script"
+  grep -Fq 'MIXLI_API_IMAGE="$API_CI_IMAGE"' "$script"
+  grep -Fq 'MIXLI_POSTGRES_IMAGE="$POSTGRES_CI_IMAGE"' "$script"
 }
 
 @test "ordinary CI builds only an exact-SHA PostgreSQL CI tag and removes it" {

@@ -45,6 +45,17 @@ setup() { setup_repo_root; }
   ! id -nG mixli-build | grep -Eq '(^|[[:space:]])(docker|sudo)([[:space:]]|$)'
 }
 
+@test "checkout Docker tests use only the private rootless daemon" {
+  [[ "${DOCKER_HOST:-}" == unix:///run/mixli-rootless-ci.*/*docker.sock ]]
+  [[ "$DOCKER_HOST" != 'unix:///var/run/docker.sock' ]]
+  run docker info --format '{{json .SecurityOptions}}'
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'name=rootless'* ]]
+  run docker info --format '{{.DockerRootDir}}'
+  [ "$status" -eq 0 ]
+  [ "$output" = "${MIXLI_ROOTLESS_DATA:?}" ]
+}
+
 @test "release web is nginx-readable without broadening secrets" {
   deploy="$REPO_ROOT/ops/production/bin/deployment.sh"
   provision="$REPO_ROOT/ops/production/bin/provision-host.sh"
@@ -140,4 +151,13 @@ setup() { setup_repo_root; }
   rules="$REPO_ROOT/ops/production/prometheus/rules.yml"
   grep -Fq 'absent(mixli_pgbackrest_last_backup_success_timestamp)' "$rules"
   grep -Fq 'absent(mixli_pgbackrest_last_restore_verify_success_timestamp)' "$rules"
+}
+
+@test "Prometheus configuration is readable only by its container identity" {
+  provision="$REPO_ROOT/ops/production/bin/provision-host.sh"
+  grep -Fq 'install -d -o 65534 -g 65534 -m 0750 "$(target /etc/mixli/prometheus)"' \
+    "$provision"
+  grep -Fq 'install -o 65534 -g 65534 -m 0640' "$provision"
+  ! grep -Eq 'chmod[[:space:]]+0?644.*prometheus|install .* -m 0?644.*prometheus' \
+    "$provision"
 }
