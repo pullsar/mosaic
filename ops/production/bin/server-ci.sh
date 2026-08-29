@@ -184,6 +184,11 @@ prepare_ci_engine() {
   if [[ "$ENGINE_MODE" == 'review' ]]; then
     start_rootless_docker
     docker_config="$(mktemp -d /tmp/mixli-docker-config.XXXXXX)"
+    chown "$BUILDER_USER:$BUILDER_USER" "$docker_config"
+    chmod 0700 "$docker_config"
+    printf '{}\n' >"$docker_config/config.json"
+    chown "$BUILDER_USER:$BUILDER_USER" "$docker_config/config.json"
+    chmod 0600 "$docker_config/config.json"
     export DOCKER_CONFIG="$docker_config"
     export DOCKER_HOST="unix://$rootless_runtime/docker.sock"
     docker info --format '{{json .SecurityOptions}}' | grep -Fq 'name=rootless'

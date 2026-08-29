@@ -293,6 +293,11 @@ production-builds" ]
   prepare="$(sed -n '/^prepare_ci_engine()/,/^}/p' \
     "$REPO_ROOT/ops/production/bin/server-ci.sh")"
   [[ "$prepare" == *'mktemp -d /tmp/mixli-docker-config.XXXXXX'* ]]
+  [[ "$prepare" == *'chown "$BUILDER_USER:$BUILDER_USER" "$docker_config"'* ]]
+  [[ "$prepare" == *'chmod 0700 "$docker_config"'* ]]
+  [[ "$prepare" == *'printf '\''{}\n'\'' >"$docker_config/config.json"'* ]]
+  [[ "$prepare" == *'chown "$BUILDER_USER:$BUILDER_USER" "$docker_config/config.json"'* ]]
+  [[ "$prepare" == *'chmod 0600 "$docker_config/config.json"'* ]]
   [[ "$prepare" == *'export DOCKER_CONFIG="$docker_config"'* ]]
   grep -Fq 'rm -rf -- "$docker_config"' \
     "$REPO_ROOT/ops/production/bin/server-ci.sh"
