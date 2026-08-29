@@ -235,7 +235,9 @@ final class AssetDeliveryClient {
   Uri contentUri(ManagedAssetObject object) {
     final raw = Uri.tryParse(object.url);
     if (raw == null || raw.hasQuery || raw.hasFragment) {
-      throw const AssetDeliveryFormatException('Managed content URL is malformed.');
+      throw const AssetDeliveryFormatException(
+        'Managed content URL is malformed.',
+      );
     }
     final resolved = raw.isAbsolute ? raw : _policy.baseUri.resolveUri(raw);
     if (!_sameOrigin(resolved, _policy.baseUri)) {
@@ -287,7 +289,9 @@ final class AssetDeliveryClient {
       );
     }
     if (response.bodyBytes.length > _maxDescriptorBytes) {
-      throw const AssetDeliveryFormatException('Managed descriptor is too large.');
+      throw const AssetDeliveryFormatException(
+        'Managed descriptor is too large.',
+      );
     }
     final descriptor = ManagedAssetDescriptor.fromJson(
       _decodeObject(response.bodyBytes, 'managed asset descriptor'),
@@ -327,7 +331,9 @@ final class AssetDeliveryClient {
 
   Future<http.Response> _get(Uri uri) async {
     if (_closed) {
-      throw const AssetDeliveryUnavailableException('Asset delivery is closed.');
+      throw const AssetDeliveryUnavailableException(
+        'Asset delivery is closed.',
+      );
     }
     try {
       return await _client.get(uri).timeout(_policy.requestTimeout);
@@ -446,12 +452,12 @@ final class ManagedCanvasAssetResolver implements PlayCanvasAssetResolver {
   final AssetDeliveryClient client;
 
   @override
-  Future<PlayCanvasAsset?> resolve(String assetId) => client.resolveCanvas(assetId);
+  Future<PlayCanvasAsset?> resolve(String assetId) =>
+      client.resolveCanvas(assetId);
 }
 
 PlayVideoFormatMetadata? _videoFormat(ManagedAssetObject object) {
-  if (
-      object.container == null &&
+  if (object.container == null &&
       object.videoCodec == null &&
       object.videoProfile == null &&
       object.audioCodec == null) {
@@ -513,11 +519,7 @@ Map<String, Object?> _jsonObject(Object? value, String field) {
   return result;
 }
 
-String _requiredString(
-  Map<String, Object?> json,
-  String key,
-  int maxLength,
-) {
+String _requiredString(Map<String, Object?> json, String key, int maxLength) {
   final value = json[key];
   if (value is! String) {
     throw AssetDeliveryFormatException('$key must be a string.');
