@@ -39,7 +39,8 @@ final class ConsumerFeedLoadResult {
   final bool cursorReset;
 
   bool get loadedFromNetwork => page != null;
-  bool get hasUsableContent => page != null || (recovered?.items.isNotEmpty ?? false);
+  bool get hasUsableContent =>
+      page != null || (recovered?.items.isNotEmpty ?? false);
 }
 
 /// Coordinates M2 consumer API and local recovery semantics without owning UI.
@@ -196,7 +197,9 @@ final class ConsumerRuntime {
 
   Future<ConsumerFeedCache?> _recoverRecentFeed() async {
     try {
-      final cached = await localState.readRecentFeed(capabilities: capabilities);
+      final cached = await localState.readRecentFeed(
+        capabilities: capabilities,
+      );
       if (cached == null) return null;
       final age = _clock().toUtc().difference(cached.updatedAt.toUtc());
       if (age > recentFeedMaxAge) {

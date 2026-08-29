@@ -130,57 +130,63 @@ ConsumerApiClient _client(http.Client client) => ConsumerApiClient(
 );
 
 void main() {
-  test('preference intent persists locally before a retryable remote failure', () async {
-    final local = _MemoryConsumerState();
-    final desired = ConsumerPreferences(
-      interestTopicIds: const ['science'],
-      learningTopicIds: const ['piano'],
-    );
-    final api = _client(
-      MockClient((request) async {
-        expect(local.preferences.interestTopicIds, const ['science']);
-        expect(local.preferences.learningTopicIds, const ['piano']);
-        expect(request.url.path, '/v1/actors');
-        return http.Response('{}', 503);
-      }),
-    );
-    final runtime = ConsumerRuntime(
-      api: api,
-      localState: local,
-      capabilities: PlayCapabilityEnvelope.m1(),
-    );
-
-    final result = await runtime.savePreferences(desired);
-
-    expect(result.localPersisted, isTrue);
-    expect(result.synced, isFalse);
-    expect(result.remoteFailure, ConsumerApiFailureKind.retryable);
-    expect(local.preferences.interestTopicIds, const ['science']);
-    runtime.close();
-  });
-
-  test('failed local preference persistence prevents remote mutation', () async {
-    final local = _MemoryConsumerState()..throwPreferenceWrite = true;
-    var networkCalled = false;
-    final runtime = ConsumerRuntime(
-      api: _client(
+  test(
+    'preference intent persists locally before a retryable remote failure',
+    () async {
+      final local = _MemoryConsumerState();
+      final desired = ConsumerPreferences(
+        interestTopicIds: const ['science'],
+        learningTopicIds: const ['piano'],
+      );
+      final api = _client(
         MockClient((request) async {
-          networkCalled = true;
-          return http.Response('{}', 201);
+          expect(local.preferences.interestTopicIds, const ['science']);
+          expect(local.preferences.learningTopicIds, const ['piano']);
+          expect(request.url.path, '/v1/actors');
+          return http.Response('{}', 503);
         }),
-      ),
-      localState: local,
-      capabilities: PlayCapabilityEnvelope.m1(),
-    );
+      );
+      final runtime = ConsumerRuntime(
+        api: api,
+        localState: local,
+        capabilities: PlayCapabilityEnvelope.m1(),
+      );
 
-    final result = await runtime.savePreferences(
-      ConsumerPreferences(interestTopicIds: const ['science']),
-    );
+      final result = await runtime.savePreferences(desired);
 
-    expect(result.localPersisted, isFalse);
-    expect(networkCalled, isFalse);
-    runtime.close();
-  });
+      expect(result.localPersisted, isTrue);
+      expect(result.synced, isFalse);
+      expect(result.remoteFailure, ConsumerApiFailureKind.retryable);
+      expect(local.preferences.interestTopicIds, const ['science']);
+      runtime.close();
+    },
+  );
+
+  test(
+    'failed local preference persistence prevents remote mutation',
+    () async {
+      final local = _MemoryConsumerState()..throwPreferenceWrite = true;
+      var networkCalled = false;
+      final runtime = ConsumerRuntime(
+        api: _client(
+          MockClient((request) async {
+            networkCalled = true;
+            return http.Response('{}', 201);
+          }),
+        ),
+        localState: local,
+        capabilities: PlayCapabilityEnvelope.m1(),
+      );
+
+      final result = await runtime.savePreferences(
+        ConsumerPreferences(interestTopicIds: const ['science']),
+      );
+
+      expect(result.localPersisted, isFalse);
+      expect(networkCalled, isFalse);
+      runtime.close();
+    },
+  );
 
   test('invalid cursor is cleared and retried fresh exactly once', () async {
     final local = _MemoryConsumerState();
@@ -216,53 +222,61 @@ void main() {
     runtime.close();
   });
 
-  test('retryable feed failure exposes recent validated recovery content', () async {
-    final now = DateTime.utc(2026, 8, 29, 16);
-    final local = _MemoryConsumerState()..recent = _cache(now);
-    final runtime = ConsumerRuntime(
-      api: _client(
-        MockClient((request) async {
-          if (request.url.path == '/v1/actors') return http.Response('{}', 201);
-          return http.Response('{}', 503);
-        }),
-      ),
-      localState: local,
-      capabilities: PlayCapabilityEnvelope.m1(),
-      clock: () => now,
-    );
+  test(
+    'retryable feed failure exposes recent validated recovery content',
+    () async {
+      final now = DateTime.utc(2026, 8, 29, 16);
+      final local = _MemoryConsumerState()..recent = _cache(now);
+      final runtime = ConsumerRuntime(
+        api: _client(
+          MockClient((request) async {
+            if (request.url.path == '/v1/actors')
+              return http.Response('{}', 201);
+            return http.Response('{}', 503);
+          }),
+        ),
+        localState: local,
+        capabilities: PlayCapabilityEnvelope.m1(),
+        clock: () => now,
+      );
 
-    final result = await runtime.fetchFeed();
+      final result = await runtime.fetchFeed();
 
-    expect(result.failure, ConsumerApiFailureKind.retryable);
-    expect(result.recovered?.items.single.revisionId, 'rev_0');
-    expect(result.hasUsableContent, isTrue);
-    runtime.close();
-  });
+      expect(result.failure, ConsumerApiFailureKind.retryable);
+      expect(result.recovered?.items.single.revisionId, 'rev_0');
+      expect(result.hasUsableContent, isTrue);
+      runtime.close();
+    },
+  );
 
-  test('stale recent feed is cleared instead of being served forever', () async {
-    final now = DateTime.utc(2026, 8, 29, 16);
-    final local = _MemoryConsumerState()
-      ..recent = _cache(now.subtract(const Duration(days: 3)));
-    final runtime = ConsumerRuntime(
-      api: _client(
-        MockClient((request) async {
-          if (request.url.path == '/v1/actors') return http.Response('{}', 201);
-          return http.Response('{}', 503);
-        }),
-      ),
-      localState: local,
-      capabilities: PlayCapabilityEnvelope.m1(),
-      clock: () => now,
-    );
+  test(
+    'stale recent feed is cleared instead of being served forever',
+    () async {
+      final now = DateTime.utc(2026, 8, 29, 16);
+      final local = _MemoryConsumerState()
+        ..recent = _cache(now.subtract(const Duration(days: 3)));
+      final runtime = ConsumerRuntime(
+        api: _client(
+          MockClient((request) async {
+            if (request.url.path == '/v1/actors')
+              return http.Response('{}', 201);
+            return http.Response('{}', 503);
+          }),
+        ),
+        localState: local,
+        capabilities: PlayCapabilityEnvelope.m1(),
+        clock: () => now,
+      );
 
-    final result = await runtime.fetchFeed();
+      final result = await runtime.fetchFeed();
 
-    expect(result.failure, ConsumerApiFailureKind.retryable);
-    expect(result.recovered, isNull);
-    expect(local.clearRecentCalls, 1);
-    expect(local.recent, isNull);
-    runtime.close();
-  });
+      expect(result.failure, ConsumerApiFailureKind.retryable);
+      expect(result.recovered, isNull);
+      expect(local.clearRecentCalls, 1);
+      expect(local.recent, isNull);
+      runtime.close();
+    },
+  );
 
   test('successful feed caches at most the bounded recent window', () async {
     final local = _MemoryConsumerState();
