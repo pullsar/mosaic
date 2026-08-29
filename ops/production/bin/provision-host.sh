@@ -30,6 +30,10 @@ install_layout() {
     install -d -m 0750 "$(target "$path")"
   done
 
+  # Reassert the credential-directory boundary even when the directory already
+  # exists with unsafe ownership or permissions.
+  install -d -o root -g root -m 0750 "$(target /etc/mixli/postgres)"
+
   # The restricted SSH account must be able to execute deploy-dispatch. The
   # directory is traversable, while every command remains root-owned and
   # non-writable by that account.

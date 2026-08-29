@@ -202,37 +202,328 @@ container at `/srv/mixli/data/postgres` during validation.
 
 ## Rotation
 
-- R2:
-  1. Create a second Object Read & Write key scoped only to the production backup
-     bucket. Keep the old key valid throughout the rotation.
-  2. Create a same-directory temporary file as `root:root 0600`, edit it through
-     a no-echo channel, and write the complete replacement pgBackRest
-     configuration. Do not edit the active file in place.
-  3. Validate the candidate's owner and mode with `stat`. Validate, using quiet
-     exit-status-only parsing, that the required local, repo2 S3, credential, and
-     encryption keys are present in the correct sections and that the fixed repo
-     and cipher types are valid. Do not print values. Stop if either validation
-     fails.
-  4. With the new key, perform a disposable object write, read it back and compare
-     locally, then delete it. Use a unique rotation-test object outside pgBackRest
-     repository paths and do not put credentials in command-line arguments or
-     logs. Stop and leave the active config and old key unchanged on any failure.
-  5. Retain one `root:root 0600` rollback copy without displaying it, then
-     atomically rename the validated candidate over
-     `/etc/mixli/postgres/pgbackrest.conf`. Recheck `root:root 0600` metadata.
-  6. During an approved maintenance or deployment window, force-recreate only
-     PostgreSQL so its entrypoint stages the new container-private copy, then wait
-     for the container to become healthy. A restart is insufficient. If startup
-     or health fails, stop the rotation, atomically restore the protected rollback
-     file, force-recreate PostgreSQL again, and keep the old key valid.
-  7. Run repo1 and repo2 checks, a dual-repository backup, and the isolated repo2
-     restore verification. All must succeed with fresh evidence. If any check
-     fails, stop, preserve the evidence without secret values, and either repair
-     forward or use the protected rollback file and recreate PostgreSQL.
-  8. Only after PostgreSQL is healthy and every check, backup, and isolated restore
-     succeeds may the old R2 key be revoked. Remove the protected rollback file
-     after the revocation and final checks. At no point copy old or new secret
-     values into this runbook, shell history, chat, tickets, or logs.
+- R2: create a second Object Read & Write key scoped only to the production
+  backup bucket. Keep the old key valid. In the candidate configuration, only
+  `repo2-s3-key` and `repo2-s3-key-secret` may change. The endpoint, bucket,
+  repository path, `repo2-cipher-pass`, and every other setting must remain
+  byte-for-byte equivalent.
+
+  Begin an approved maintenance or deployment window in a persistent root shell.
+  Acquire the deployment lock before the backup lock, ensure no related unit is
+  active, and stop the timers while both locks are held. Keep descriptor 8 and
+  therefore the deployment lock through revocation and final verification.
+
+  ```bash
+  sudo -i
+  set -uo pipefail
+  set +x
+  umask 077
+
+  compose_file=/srv/mixli/runtime/compose.yaml
+  env_file=/etc/mixli/env/production.env
+  curl_bin=/usr/bin/curl
+  active=/etc/mixli/postgres/pgbackrest.conf
+  timer_units='mixli-backup-full.timer mixli-backup-incr.timer mixli-backup-check.timer mixli-restore-verify.timer'
+  rotation_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  rotation_started_epoch="$(date -u +%s)"
+  rotation_started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  candidate="/etc/mixli/postgres/.pgbackrest.conf.candidate-$rotation_id"
+  rollback="/etc/mixli/postgres/.pgbackrest.conf.rollback-$rotation_id"
+  curl_config="/etc/mixli/postgres/.r2-curl-$rotation_id"
+  probe_body="/etc/mixli/postgres/.r2-probe-$rotation_id"
+  probe_read="/etc/mixli/postgres/.r2-probe-read-$rotation_id"
+  probe_object="mixli-rotation-probes/probe-$rotation_id"
+  probe_uploaded=0
+  timers_stopped=0
+  active_replaced=0
+  rotation_complete=0
+
+  compose() {
+    docker compose --env-file "$env_file" -f "$compose_file" "$@"
+  }
+
+  cleanup_rotation() {
+    status=$?
+    trap - EXIT HUP INT TERM
+    set +e
+    if [[ "$probe_uploaded" == 1 && -f "$curl_config" && -n "${probe_url:-}" ]]; then
+      "$curl_bin" --config "$curl_config" --request DELETE --output /dev/null \
+        "$probe_url" >/dev/null 2>&1 || true
+    fi
+    rm -f -- "$candidate" "$curl_config" "$probe_body" "$probe_read"
+    if [[ "$rotation_complete" == 1 || "$active_replaced" == 0 ]]; then
+      rm -f -- "$rollback"
+    fi
+    if [[ "$timers_stopped" == 1 && \
+          ( "$active_replaced" == 0 || "$rotation_complete" == 1 ) ]]; then
+      systemctl start $timer_units || true
+    fi
+    exit "$status"
+  }
+  trap cleanup_rotation EXIT HUP INT TERM
+
+  printf 'R2 rotation started at %s (epoch %s); id=%s\n' \
+    "$rotation_started_at" "$rotation_started_epoch" "$rotation_id"
+
+  exec 8>/run/lock/mixli-deploy.lock
+  flock -n 8 || exit 75
+  exec 9>/run/lock/mixli-backup.lock
+  flock -n 9 || exit 75
+
+  ! systemctl list-units --type=service --state=active --no-legend --plain \
+    'mixli-deploy-*' 'mixli-backup-*.service' \
+    'mixli-restore-verify.service' | grep -q .
+  systemctl stop $timer_units
+  timers_stopped=1
+  ```
+
+  Stop before changing the active file if a lock cannot be acquired, a relevant
+  unit is active, or a timer cannot be stopped. Do not reverse the lock order.
+  Create unique candidate and rollback files on the same filesystem as the
+  active file. Edit only the two key assignments through the no-echo editor.
+
+  ```bash
+  test -f "$active" && test ! -L "$active" && test -s "$active"
+  test "$(stat -c '%U:%G:%a' "$active")" = 'root:root:600'
+  test ! -e "$candidate" && test ! -L "$candidate"
+  test ! -e "$rollback" && test ! -L "$rollback"
+  install -o root -g root -m 0600 "$active" "$candidate"
+  sudoedit "$candidate"
+
+  test -f "$candidate" && test ! -L "$candidate" && test -s "$candidate"
+  test "$(stat -c '%U:%G:%a' "$candidate")" = 'root:root:600'
+
+  normalize_rotation_keys() {
+    awk '
+      /^[[:space:]]*repo2-s3-key[[:space:]]*=/ {
+        sub(/=.*/, "=<ROTATED>")
+      }
+      /^[[:space:]]*repo2-s3-key-secret[[:space:]]*=/ {
+        sub(/=.*/, "=<ROTATED>")
+      }
+      { print }
+    ' "$1"
+  }
+
+  ! cmp -s "$active" "$candidate"
+  cmp -s \
+    <(normalize_rotation_keys "$active") \
+    <(normalize_rotation_keys "$candidate")
+
+  compose run --rm --no-deps \
+    -v "$candidate:/run/mixli-secrets/pgbackrest.conf:ro" \
+    postgres true >/dev/null
+  ```
+
+  The first quiet `cmp` requires a change; the second normalizes only the two
+  permitted key lines and rejects every other textual or semantic change without
+  outputting values. The disposable container then applies the production
+  entrypoint's value-free section, required-key, fixed-type, ownership, and mode
+  checks. Stop if any command fails.
+
+  Exercise the new key with the provisioned, pinned host `curl`. The root-only
+  curl configuration keeps credentials out of process arguments and output. The
+  unique non-sensitive probe object is outside all pgBackRest repository paths.
+
+  ```bash
+  read_global_setting() {
+    awk -F= -v wanted="$1" '
+      function trim(value) {
+        sub(/^[[:space:]]+/, "", value)
+        sub(/[[:space:]]+$/, "", value)
+        return value
+      }
+      {
+        line = $0
+        sub(/\r$/, "", line)
+        if (line ~ /^[[:space:]]*[#;]/) next
+        if (line ~ /^[[:space:]]*\[[^][]]+\][[:space:]]*$/) {
+          section = line
+          sub(/^[[:space:]]*\[/, "", section)
+          sub(/\][[:space:]]*$/, "", section)
+          section = trim(section)
+          next
+        }
+        separator = index(line, "=")
+        if (section == "global" && separator > 0) {
+          key = trim(substr(line, 1, separator - 1))
+          if (key == wanted) {
+            value = trim(substr(line, separator + 1))
+            found++
+          }
+        }
+      }
+      END {
+        if (found != 1 || value == "") exit 1
+        printf "%s", value
+      }
+    ' "$candidate"
+  }
+
+  r2_endpoint="$(read_global_setting repo2-s3-endpoint)"
+  r2_bucket="$(read_global_setting repo2-s3-bucket)"
+  r2_key="$(read_global_setting repo2-s3-key)"
+  r2_secret="$(read_global_setting repo2-s3-key-secret)"
+  curl_escape() {
+    local value="$1"
+    value="${value//\\/\\\\}"
+    value="${value//\"/\\\"}"
+    printf '%s' "$value"
+  }
+  {
+    printf '%s\n' 'silent' 'show-error' 'fail' \
+      'aws-sigv4 = "aws:amz:auto:s3"'
+    printf 'user = "%s:%s"\n' \
+      "$(curl_escape "$r2_key")" "$(curl_escape "$r2_secret")"
+  } >"$curl_config"
+  unset r2_key r2_secret
+  chmod 0600 "$curl_config"
+  test "$(stat -c '%U:%G:%a' "$curl_config")" = 'root:root:600'
+
+  probe_url="https://$r2_endpoint/$r2_bucket/$probe_object"
+  printf 'mixli-r2-rotation-probe:%s\n' "$rotation_id" >"$probe_body"
+  test -x "$curl_bin"
+  "$curl_bin" --config "$curl_config" --request PUT --upload-file "$probe_body" \
+    --output /dev/null "$probe_url"
+  probe_uploaded=1
+  "$curl_bin" --config "$curl_config" --output "$probe_read" "$probe_url"
+  cmp -s "$probe_body" "$probe_read"
+  "$curl_bin" --config "$curl_config" --request DELETE --output /dev/null \
+    "$probe_url"
+  probe_uploaded=0
+  ```
+
+  Stop with the active configuration and old key unchanged if CRUD fails. After
+  successful CRUD, create and validate the protected rollback copy, atomically
+  replace the active file from the same directory, and force-recreate PostgreSQL
+  with the pinned runtime Compose and environment files. A restart is not enough.
+
+  ```bash
+  install -o root -g root -m 0600 "$active" "$rollback"
+  test -f "$rollback" && test ! -L "$rollback" && test -s "$rollback"
+  test "$(stat -c '%U:%G:%a' "$rollback")" = 'root:root:600'
+  mv -fT -- "$candidate" "$active"
+  active_replaced=1
+  test -f "$active" && test ! -L "$active" && test -s "$active"
+  test "$(stat -c '%U:%G:%a' "$active")" = 'root:root:600'
+
+  compose up -d --no-deps --force-recreate postgres
+  postgres_health=''
+  for attempt in $(seq 1 60); do
+    postgres_id="$(compose ps -q postgres)"
+    if [[ -n "$postgres_id" ]]; then
+      postgres_health="$(docker inspect \
+        --format '{{.State.Health.Status}}' "$postgres_id" 2>/dev/null || true)"
+    fi
+    [[ "$postgres_health" == healthy ]] && break
+    [[ "$postgres_health" == unhealthy ]] && break
+    sleep 2
+  done
+  test "$postgres_health" = healthy
+  docker inspect --format '{{.State.Health.Status}}' "$postgres_id" | \
+    grep -Fxq healthy
+
+  compose exec -T --user postgres postgres \
+    pgbackrest --stanza=mixli --repo=1 check
+  compose exec -T --user postgres postgres \
+    pgbackrest --stanza=mixli --repo=2 check
+  ```
+
+  The existing backup and restore services acquire the backup lock themselves.
+  Release only descriptor 9 before starting them; keep descriptor 8 locked and
+  keep all four timers stopped so no scheduled unit can race the ordered checks.
+
+  ```bash
+  flock -u 9
+  exec 9>&-
+
+  systemctl reset-failed mixli-backup-check.service \
+    mixli-backup-incr.service mixli-restore-verify.service
+  systemctl start mixli-backup-check.service
+  test "$(systemctl show -p Result --value mixli-backup-check.service)" = success
+  systemctl start mixli-backup-incr.service
+  test "$(systemctl show -p Result --value mixli-backup-incr.service)" = success
+  systemctl start mixli-restore-verify.service
+  test "$(systemctl show -p Result --value mixli-restore-verify.service)" = success
+
+  check_success="$(awk '$1 == "mixli_pgbackrest_last_check_success_timestamp" {print $2}' \
+    /srv/mixli/metrics/pgbackrest.prom | tail -n 1)"
+  backup_success="$(awk '$1 == "mixli_pgbackrest_last_backup_success_timestamp" {print $2}' \
+    /srv/mixli/metrics/pgbackrest.prom | tail -n 1)"
+  restore_success="$(awk '$1 == "mixli_pgbackrest_last_restore_verify_success_timestamp" {print $2}' \
+    /srv/mixli/metrics/restore-verify.prom | tail -n 1)"
+  [[ "$check_success" =~ ^[0-9]+$ ]]
+  [[ "$backup_success" =~ ^[0-9]+$ ]]
+  [[ "$restore_success" =~ ^[0-9]+$ ]]
+  (( check_success > rotation_started_epoch ))
+  (( backup_success > rotation_started_epoch ))
+  (( restore_success > rotation_started_epoch ))
+  printf 'R2 rotation evidence: start=%s check=%s backup=%s restore=%s\n' \
+    "$rotation_started_epoch" "$check_success" "$backup_success" "$restore_success"
+  ```
+
+  `mixli-backup-check.service` checks repo1 and repo2,
+  `mixli-backup-incr.service` writes a dual-repository backup, and
+  `mixli-restore-verify.service` performs the isolated repo2 restore. Revoke the
+  old key only after every command and freshness comparison succeeds. With the
+  deployment lock still held, run one final new-key check, restart the timers,
+  remove the protected rollback copy, and release the deployment lock.
+
+  ```bash
+  compose exec -T --user postgres postgres \
+    pgbackrest --stanza=mixli --repo=2 check
+  systemctl start $timer_units
+  timers_stopped=0
+  rm -f -- "$rollback"
+  rotation_complete=1
+  active_replaced=0
+  flock -u 8
+  exec 8>&-
+  exit
+  ```
+
+  If any command after atomic replacement fails, do not revoke the old key or
+  release the deployment lock. Wait for any started backup/restore unit to stop,
+  reacquire the backup lock after the deployment lock, atomically restore the
+  same-directory rollback file, recreate PostgreSQL, wait healthy, and check both
+  repositories. Then restart the timers and release the deployment lock. These
+  commands intentionally never print or copy secret values into documentation,
+  shell history, chat, tickets, or logs.
+
+  ```bash
+  exec 9>/run/lock/mixli-backup.lock
+  flock -n 9 || exit 75
+  ! systemctl list-units --type=service --state=active --no-legend --plain \
+    'mixli-backup-*.service' 'mixli-restore-verify.service' | grep -q .
+  test -f "$rollback" && test ! -L "$rollback" && test -s "$rollback"
+  test "$(stat -c '%U:%G:%a' "$rollback")" = 'root:root:600'
+  mv -fT -- "$rollback" "$active"
+  active_replaced=0
+  compose up -d --no-deps --force-recreate postgres
+  postgres_health=''
+  for attempt in $(seq 1 60); do
+    postgres_id="$(compose ps -q postgres)"
+    if [[ -n "$postgres_id" ]]; then
+      postgres_health="$(docker inspect \
+        --format '{{.State.Health.Status}}' "$postgres_id" 2>/dev/null || true)"
+    fi
+    [[ "$postgres_health" == healthy ]] && break
+    [[ "$postgres_health" == unhealthy ]] && break
+    sleep 2
+  done
+  test "$postgres_health" = healthy
+  compose exec -T --user postgres postgres \
+    pgbackrest --stanza=mixli --repo=1 check
+  compose exec -T --user postgres postgres \
+    pgbackrest --stanza=mixli --repo=2 check
+  flock -u 9
+  exec 9>&-
+  systemctl start $timer_units
+  timers_stopped=0
+  flock -u 8
+  exec 8>&-
+  exit 1
+  ```
 - Origin certificate: create the replacement, install certificate and key as
   new temporary files, validate key/certificate match and hostname coverage,
   atomically rename them, run `nginx -t`, and gracefully reload Nginx. Revoke

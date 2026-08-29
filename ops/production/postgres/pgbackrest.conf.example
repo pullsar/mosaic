@@ -9,9 +9,10 @@ spool-path=/var/spool/pgbackrest
 log-path=/var/log/pgbackrest
 log-level-console=info
 
-# Production repo2 settings. Provisioning writes these settings and replaces
-# every angle-bracket placeholder in the root-owned runtime copy. Values may
-# alternatively be supplied with the equivalent PGBACKREST_* environment keys.
+# Production repo2 settings. Provisioning intentionally installs only this
+# non-secret example and never creates the live configuration. An operator must
+# copy it to the protected root-owned runtime file and replace every
+# angle-bracket placeholder through a no-echo channel before starting PostgreSQL.
 # repo2-type=s3
 # repo2-path=/mixli/postgres
 # repo2-s3-region=auto
