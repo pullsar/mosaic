@@ -67,7 +67,7 @@ create table if not exists feed_decision_items (
   play_id text not null,
   revision_id text not null,
   source_bucket text not null
-    check (source_bucket in ('known', 'adjacent', 'wildcard', 'curated_fallback')),
+    check (source_bucket in ('known', 'wildcard', 'curated_fallback')),
   score double precision not null,
   feature_contributions jsonb not null default '{}'::jsonb
     check (jsonb_typeof(feature_contributions) = 'object'),
