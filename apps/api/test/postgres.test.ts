@@ -260,12 +260,34 @@ test('PostgreSQL media lifecycle is immutable, leased and stale-worker safe', {s
   }
 });
 
-test('consumer and media migrations roll back in order and cleanly reapply', {skip: !databaseUrl}, async () => {
+test('actor access, consumer and media migrations roll back in order and cleanly reapply', {skip: !databaseUrl}, async () => {
   await runMigration('up');
   await runMigration('down');
-  const pool = new Pool({connectionString: databaseUrl});
+  const actorAccessDownPool = new Pool({connectionString: databaseUrl});
   try {
-    const afterConsumerDown = await pool.query<{
+    const afterActorAccessDown = await actorAccessDownPool.query<{
+      actor_access_credentials: string | null;
+      feed_decisions: string | null;
+      media_assets: string | null;
+      actors: string | null;
+    }>(
+      `select to_regclass('public.actor_access_credentials')::text as actor_access_credentials,
+              to_regclass('public.feed_decisions')::text as feed_decisions,
+              to_regclass('public.media_assets')::text as media_assets,
+              to_regclass('public.actors')::text as actors`,
+    );
+    assert.equal(afterActorAccessDown.rows[0]?.actor_access_credentials, null);
+    assert.equal(afterActorAccessDown.rows[0]?.feed_decisions, 'feed_decisions');
+    assert.equal(afterActorAccessDown.rows[0]?.media_assets, 'media_assets');
+    assert.equal(afterActorAccessDown.rows[0]?.actors, 'actors');
+  } finally {
+    await actorAccessDownPool.end();
+  }
+
+  await runMigration('down');
+  const consumerDownPool = new Pool({connectionString: databaseUrl});
+  try {
+    const afterConsumerDown = await consumerDownPool.query<{
       feed_decisions: string | null;
       media_assets: string | null;
       media_derivatives: string | null;
@@ -281,7 +303,7 @@ test('consumer and media migrations roll back in order and cleanly reapply', {sk
     assert.equal(afterConsumerDown.rows[0]?.media_derivatives, 'media_derivatives');
     assert.equal(afterConsumerDown.rows[0]?.actors, 'actors');
   } finally {
-    await pool.end();
+    await consumerDownPool.end();
   }
 
   await runMigration('down');
