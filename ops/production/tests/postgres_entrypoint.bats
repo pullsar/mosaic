@@ -184,6 +184,47 @@ assert_private_failure() {
     "mixli postgres entrypoint: staged pgBackRest configuration must have mode 0600"
 }
 
+@test "wrapper rejects a staged symlink before copying it" {
+  write_valid_config
+  set_source_metadata 0:0 0600
+
+  run docker run --rm \
+    --entrypoint bash \
+    -v "$TEST_ROOT:/fixture:ro" \
+    "$IMAGE" -Eeuo pipefail -c '
+      ln -s /fixture/pgbackrest.conf "$1"
+      exec /usr/local/bin/docker-entrypoint-mixli.sh true
+    ' -- "$STAGED_CONFIG"
+
+  assert_private_failure \
+    "mixli postgres entrypoint: staged pgBackRest configuration must be a non-empty regular file"
+}
+
+@test "wrapper rejects a non-regular staged configuration before copying it" {
+  run docker run --rm \
+    --entrypoint bash \
+    "$IMAGE" -Eeuo pipefail -c '
+      mkdir "$1"
+      exec /usr/local/bin/docker-entrypoint-mixli.sh true
+    ' -- "$STAGED_CONFIG"
+
+  assert_private_failure \
+    "mixli postgres entrypoint: staged pgBackRest configuration must be a non-empty regular file"
+}
+
+@test "wrapper rejects non-root invocation before reading the staged configuration" {
+  write_valid_config
+  set_source_metadata 0:0 0600
+
+  run docker run --rm \
+    --user postgres:postgres \
+    -v "$SOURCE_CONFIG:$STAGED_CONFIG:ro" \
+    "$IMAGE" true
+
+  assert_private_failure \
+    "mixli postgres entrypoint: wrapper must run as root"
+}
+
 @test "wrapper rejects an incomplete staged pgBackRest configuration without leaking values" {
   cat >"$SOURCE_CONFIG" <<EOF
 [global]
@@ -224,6 +265,58 @@ EOF
     "mixli postgres entrypoint: staged pgBackRest configuration is missing required keys"
 }
 
+@test "wrapper accepts an explicit disabled strict repo2 toggle" {
+  write_valid_config
+  set_source_metadata 0:0 0600
+
+  run docker run --rm \
+    -e MIXLI_PGBACKREST_REQUIRE_REPO2_S3=0 \
+    -v "$SOURCE_CONFIG:$STAGED_CONFIG:ro" \
+    "$IMAGE" true
+
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "wrapper rejects a textual strict repo2 toggle without downgrading validation" {
+  write_valid_config
+  set_source_metadata 0:0 0600
+
+  run docker run --rm \
+    -e MIXLI_PGBACKREST_REQUIRE_REPO2_S3=true \
+    -v "$SOURCE_CONFIG:$STAGED_CONFIG:ro" \
+    "$IMAGE" true
+
+  assert_private_failure \
+    "mixli postgres entrypoint: MIXLI_PGBACKREST_REQUIRE_REPO2_S3 must be unset, 0, or 1"
+}
+
+@test "wrapper rejects a zero-padded strict repo2 toggle without downgrading validation" {
+  write_valid_config
+  set_source_metadata 0:0 0600
+
+  run docker run --rm \
+    -e MIXLI_PGBACKREST_REQUIRE_REPO2_S3=01 \
+    -v "$SOURCE_CONFIG:$STAGED_CONFIG:ro" \
+    "$IMAGE" true
+
+  assert_private_failure \
+    "mixli postgres entrypoint: MIXLI_PGBACKREST_REQUIRE_REPO2_S3 must be unset, 0, or 1"
+}
+
+@test "wrapper rejects a whitespace strict repo2 toggle without downgrading validation" {
+  write_valid_config
+  set_source_metadata 0:0 0600
+
+  run docker run --rm \
+    -e MIXLI_PGBACKREST_REQUIRE_REPO2_S3=' ' \
+    -v "$SOURCE_CONFIG:$STAGED_CONFIG:ro" \
+    "$IMAGE" true
+
+  assert_private_failure \
+    "mixli postgres entrypoint: MIXLI_PGBACKREST_REQUIRE_REPO2_S3 must be unset, 0, or 1"
+}
+
 @test "wrapper accepts a complete synthetic repo2 config in strict mode without network access" {
   write_strict_config
   set_source_metadata 0:0 0600
@@ -259,6 +352,36 @@ EOF
     assert_private_failure \
       "mixli postgres entrypoint: staged pgBackRest configuration is missing required keys"
   done
+}
+
+@test "wrapper ignores strict repo2 keys placed in the wrong section" {
+  local required_key required_value
+
+  while read -r required_key required_value; do
+    write_strict_config "$required_key"
+    cat >>"$SOURCE_CONFIG" <<EOF
+
+[wrong-section]
+$required_key=$required_value
+EOF
+    set_source_metadata 0:0 0600
+
+    run docker run --rm \
+      -e MIXLI_PGBACKREST_REQUIRE_REPO2_S3=1 \
+      -v "$SOURCE_CONFIG:$STAGED_CONFIG:ro" \
+      "$IMAGE" true
+
+    assert_private_failure \
+      "mixli postgres entrypoint: staged pgBackRest configuration is missing required keys"
+  done <<'EOF'
+repo2-type s3
+repo2-s3-endpoint offline.invalid
+repo2-s3-bucket synthetic-test-bucket
+repo2-s3-key MIXLI_TEST_ACCESS_KEY
+repo2-s3-key-secret MIXLI_TEST_SECRET_KEY
+repo2-cipher-type aes-256-cbc
+repo2-cipher-pass MIXLI_TEST_CIPHER_PASS
+EOF
 }
 
 @test "wrapper rejects blank strict repo2 endpoint bucket credential and passphrase values" {
@@ -320,6 +443,100 @@ EOF
   [ "$output" = "postgres:postgres 600" ]
   [ "$(sha256sum "$SOURCE_CONFIG")" = "$source_hash_before" ]
   [ "$(stat -c '%u:%g:%a:%s' "$SOURCE_CONFIG")" = "$source_metadata_before" ]
+}
+
+@test "wrapper removes same-directory temporary files after content validation fails" {
+  cat >"$SOURCE_CONFIG" <<EOF
+[global]
+repo1-path=/var/lib/pgbackrest/$CREDENTIAL_MARKER
+EOF
+  set_source_metadata 0:0 0600
+
+  run docker run --rm \
+    --entrypoint bash \
+    -v "$SOURCE_CONFIG:$STAGED_CONFIG:ro" \
+    "$IMAGE" -Eeuo pipefail -c '
+      set +e
+      /usr/local/bin/docker-entrypoint-mixli.sh true
+      wrapper_status=$?
+      set -e
+      test "$wrapper_status" -ne 0
+      test -z "$(find /etc/pgbackrest -maxdepth 1 -name ".pgbackrest.conf.tmp.*" -print -quit)"
+      exit "$wrapper_status"
+    '
+
+  assert_private_failure \
+    "mixli postgres entrypoint: staged pgBackRest configuration is missing required keys"
+}
+
+@test "wrapper atomically replaces an existing runtime target without leaving temporary files" {
+  write_valid_config
+  set_source_metadata 0:0 0600
+  cat >"$TEST_ROOT/verify-runtime-config" <<'EOF'
+#!/bin/sh
+set -eu
+cmp -s "$1" "$2"
+test -z "$(find /etc/pgbackrest -maxdepth 1 -name '.pgbackrest.conf.tmp.*' -print -quit)"
+EOF
+  chmod 0755 "$TEST_ROOT/verify-runtime-config"
+
+  run docker run --rm \
+    --entrypoint bash \
+    -v "$SOURCE_CONFIG:$STAGED_CONFIG:ro" \
+    -v "$TEST_ROOT/verify-runtime-config:/test-bin/verify-runtime-config:ro" \
+    "$IMAGE" -Eeuo pipefail -c '
+      printf "%s\n" stale-runtime-configuration >"$1"
+      exec /usr/local/bin/docker-entrypoint-mixli.sh \
+        /test-bin/verify-runtime-config "$2" "$1"
+    ' -- "$RUNTIME_CONFIG" "$STAGED_CONFIG"
+
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "image keeps staging metadata examples entrypoint and command fail-closed" {
+  run docker image inspect \
+    --format '{{json .Config.Entrypoint}}|{{json .Config.Cmd}}' \
+    "$IMAGE"
+
+  [ "$status" -eq 0 ]
+  [ "$output" = \
+    '["/usr/local/bin/docker-entrypoint-mixli.sh"]|["postgres","-c","config_file=/etc/postgresql/postgresql.conf"]' ]
+
+  run docker run --rm --entrypoint sh "$IMAGE" -ceu '
+    test "$(stat -c "%U:%G:%a" /run/mixli-secrets)" = "root:root:700"
+    test "$(stat -c "%U:%G:%a" /usr/local/share/mixli/pgbackrest.conf.example)" = "root:root:644"
+    test "$(stat -c "%U:%G:%a" /usr/local/bin/docker-entrypoint-mixli.sh)" = "root:root:755"
+    test -f /usr/local/share/mixli/pgbackrest.conf.example
+    test ! -e /etc/pgbackrest/pgbackrest.conf
+    test -z "$(find /etc/pgbackrest -maxdepth 1 -name "pgbackrest.conf.example" -print -quit)"
+  '
+
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "wrapper restores the incoming umask before delegating" {
+  write_valid_config
+  set_source_metadata 0:0 0600
+  cat >"$TEST_ROOT/verify-umask" <<'EOF'
+#!/bin/sh
+set -eu
+test "$(umask)" = "$1"
+EOF
+  chmod 0755 "$TEST_ROOT/verify-umask"
+
+  run docker run --rm \
+    --entrypoint sh \
+    -v "$SOURCE_CONFIG:$STAGED_CONFIG:ro" \
+    -v "$TEST_ROOT/verify-umask:/test-bin/verify-umask:ro" \
+    "$IMAGE" -ceu '
+      umask 0027
+      exec /usr/local/bin/docker-entrypoint-mixli.sh /test-bin/verify-umask 0027
+    '
+
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
 }
 
 @test "wrapper delegates leading PostgreSQL options through the upstream entrypoint and preserves its exit status" {
