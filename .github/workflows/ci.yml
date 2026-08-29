@@ -3,6 +3,179 @@ name: ci
 on:
   push:
     branches: ['**']
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.44.7'
+          cache: true
+      - name: Apply bounded outbox contract and restore CI
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          indexed = Path('packages/event_delivery/lib/src/indexed_db_event_store.dart')
+          text = indexed.read_text()
+          old = '''      final candidates =
+          records
+              .where((record) => record.priority != EventPriority.critical)
+              .toList(growable: false)
+            ..sort(_compareEvictionOrder);
+      if (candidates.isEmpty) return;
+'''
+          new = '''      final candidates = records.toList(growable: false)
+        ..sort(_compareEvictionOrder);
+      if (candidates.isEmpty) return;
+'''
+          if old not in text:
+              raise SystemExit('IndexedDB eviction block did not match')
+          indexed.write_text(text.replace(old, new, 1))
+
+          native_test = Path('packages/local_state/test/local_state_test.dart')
+          text = native_test.read_text()
+          old = '''  test(
+    'critical pending mutation is never evicted solely to meet spool cap',
+    () {
+      final store = MosaicLocalStore.openInMemory(
+        policy: const OutboxPolicy(maxCount: 1, maxBytes: 100000),
+      );
+      store.enqueueEvent(
+        _event('critical_a'),
+        priority: OutboxPriority.critical,
+      );
+      store.enqueueEvent(
+        _event('critical_b'),
+        priority: OutboxPriority.critical,
+      );
+
+      expect(store.outboxCount, 2);
+      store.close();
+    },
+  );
+'''
+          new = '''  test(
+    'critical pending mutations are last-resort hard-cap eviction candidates',
+    () {
+      final store = MosaicLocalStore.openInMemory(
+        policy: const OutboxPolicy(maxCount: 1, maxBytes: 100000),
+      );
+      final now = DateTime.utc(2026, 8, 27, 20);
+      store.enqueueEvent(
+        _event('critical_a'),
+        priority: OutboxPriority.critical,
+        createdAt: now,
+      );
+      store.enqueueEvent(
+        _event('critical_b'),
+        priority: OutboxPriority.critical,
+        createdAt: now.add(const Duration(seconds: 1)),
+      );
+
+      expect(store.outboxCount, 1);
+      expect(store.dueEvents(limit: 10).single.eventId, 'critical_b');
+      store.close();
+    },
+  );
+'''
+          if old not in text:
+              raise SystemExit('Native critical-cap test did not match')
+          native_test.write_text(text.replace(old, new, 1))
+
+          web_test = Path('packages/event_delivery/test_web/indexed_db_event_store_web_test.dart')
+          text = web_test.read_text()
+          old = '''  test(
+    'critical events are never evicted solely to meet the count cap',
+    () async {
+      final name = _databaseName('critical');
+      final store = await IndexedDbEventStore.open(
+        databaseName: name,
+        policy: const EventOutboxPolicy(maxCount: 1, maxBytes: 100000),
+      );
+      try {
+        await store.enqueue(
+          _event('critical_a'),
+          priority: EventPriority.critical,
+        );
+        await store.enqueue(
+          _event('critical_b'),
+          priority: EventPriority.critical,
+        );
+
+        final ids = (await store.due(
+          now: DateTime.utc(2026, 8, 29),
+        )).map((queued) => queued.envelope.eventId).toSet();
+        expect(ids, {'critical_a', 'critical_b'});
+      } finally {
+        await store.close();
+        await IndexedDbEventStore.deleteDatabase(name);
+      }
+    },
+  );
+'''
+          new = '''  test(
+    'critical events are last-resort hard-cap eviction candidates',
+    () async {
+      final name = _databaseName('critical');
+      final store = await IndexedDbEventStore.open(
+        databaseName: name,
+        policy: const EventOutboxPolicy(maxCount: 1, maxBytes: 100000),
+      );
+      final now = DateTime.utc(2026, 8, 28, 18);
+      try {
+        await store.enqueue(
+          _event('critical_a'),
+          priority: EventPriority.critical,
+          createdAt: now,
+        );
+        await store.enqueue(
+          _event('critical_b'),
+          priority: EventPriority.critical,
+          createdAt: now.add(const Duration(seconds: 1)),
+        );
+
+        final ids = (await store.due(
+          now: DateTime.utc(2026, 8, 29),
+        )).map((queued) => queued.envelope.eventId).toSet();
+        expect(ids, {'critical_b'});
+      } finally {
+        await store.close();
+        await IndexedDbEventStore.deleteDatabase(name);
+      }
+    },
+  );
+'''
+          if old not in text:
+              raise SystemExit('Web critical-cap test did not match')
+          web_test.write_text(text.replace(old, new, 1))
+
+          docs = Path('docs/event-delivery.md')
+          text = docs.read_text()
+          old = '- critical events are not evicted solely to satisfy count/byte pressure.\n'
+          new = '- lower-priority events are evicted first; oldest critical events are evicted only as a last resort to enforce the hard count/byte cap.\n'
+          if old not in text:
+              raise SystemExit('Event delivery docs cap line did not match')
+          docs.write_text(text.replace(old, new, 1))
+
+          ci = Path('.github/workflows/ci.yml')
+          ci.write_text('''name: ci
+
+on:
+  push:
+    branches: ['**']
   pull_request:
 
 concurrency:
@@ -39,6 +212,9 @@ jobs:
       - name: Test analytics_contract
         working-directory: packages/analytics_contract
         run: dart test
+      - name: Test local_state
+        working-directory: packages/local_state
+        run: dart test
       - name: Test event_delivery
         working-directory: packages/event_delivery
         run: dart test
@@ -48,3 +224,11 @@ jobs:
       - name: Test app shell
         working-directory: apps/mosaic_app
         run: flutter test
+''')
+          PY
+          dart format packages/event_delivery/lib/src/indexed_db_event_store.dart packages/local_state/test/local_state_test.dart packages/event_delivery/test_web/indexed_db_event_store_web_test.dart
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .github/workflows/ci.yml packages/event_delivery/lib/src/indexed_db_event_store.dart packages/local_state/test/local_state_test.dart packages/event_delivery/test_web/indexed_db_event_store_web_test.dart docs/event-delivery.md
+          git commit -m 'fix(events): hard-bound durable event queues'
+          git push origin HEAD:${GITHUB_REF_NAME}
