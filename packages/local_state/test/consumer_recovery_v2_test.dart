@@ -175,6 +175,7 @@ void main() {
     store.close();
   });
 
+  // dart format off
   test('migration failure preserves verified v1 database', () {
     final temp = Directory.systemTemp.createTempSync('mosaic-migrate-v1-');
     final path = '${temp.path}/mosaic.db';
@@ -228,4 +229,5 @@ void main() {
       temp.deleteSync(recursive: true);
     }
   });
+  // dart format on
 }
