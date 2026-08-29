@@ -75,6 +75,40 @@ sudo find /etc/mixli/secrets -maxdepth 1 -type f -printf '%U:%G %m %p\n'
 sudo stat -c '%U:%G %a %n' /etc/mixli/cloudflare/origin.pem /etc/mixli/cloudflare/origin.key /etc/mixli/postgres/pgbackrest.conf
 ```
 
+### pgBackRest root-only operator boundary
+
+Provisioning installs only the non-secret `pgbackrest.conf.example`; it never
+creates the live credential-bearing configuration. An operator must create the
+live file through a no-echo channel before enabling the production stack.
+
+`/etc/mixli/postgres/pgbackrest.conf` is an operator-managed credential file,
+not a container-readable configuration file. It must remain `root:root 0600`.
+The production Compose file mounts it read-only only at
+`/run/mixli-secrets/pgbackrest.conf`; it must never be mounted directly at the
+pgBackRest runtime path. On every PostgreSQL container start, the root entrypoint
+validates the staged file, copies it to a same-directory temporary file, changes
+that copy to `postgres:postgres 0600`, validates it again, and atomically installs
+it as the container-private `/etc/pgbackrest/pgbackrest.conf` before delegating to
+PostgreSQL. A host-file update therefore takes effect only after PostgreSQL is
+force-recreated.
+
+Do not loosen the host mode, grant a host group read access, or map a numeric
+host group such as the container's current `postgres` GID. Container numeric
+identities are an implementation detail and are not an authorization boundary.
+Permission loosening and numeric host-group mappings are forbidden; the root-only
+staging-and-copy flow is the only approved boundary.
+
+Startup fails closed before PostgreSQL runs unless the wrapper itself is root and
+the staged source is a non-empty, non-symlink regular file owned by `root:root`
+with mode `0600`. It also requires the `global`/`mixli` sections, local repository
+and PostgreSQL paths, all production repo2 S3 credential/encryption keys, S3 repo
+type, and AES-256-CBC repository encryption. Copy, ownership, mode, content
+validation, or atomic-install failure also stops startup; temporary files are
+removed. Diagnostics identify only the failed invariant. Never troubleshoot by
+printing the file, enabling shell tracing, dumping the environment, or logging
+parsed values. Use `stat` for metadata and quiet, exit-status-only checks for
+required key names and fixed semantics.
+
 ## Cloudflare and Porkbun
 
 Cloudflare must be authoritative for `mixli.app`; Porkbun remains the registrar.
@@ -168,9 +202,37 @@ container at `/srv/mixli/data/postgres` during validation.
 
 ## Rotation
 
-- R2: create a second bucket-scoped key, update only the root-owned pgBackRest
-  config, run repo2 `check` plus a disposable write/read/delete and incremental
-  backup, then revoke the old key.
+- R2:
+  1. Create a second Object Read & Write key scoped only to the production backup
+     bucket. Keep the old key valid throughout the rotation.
+  2. Create a same-directory temporary file as `root:root 0600`, edit it through
+     a no-echo channel, and write the complete replacement pgBackRest
+     configuration. Do not edit the active file in place.
+  3. Validate the candidate's owner and mode with `stat`. Validate, using quiet
+     exit-status-only parsing, that the required local, repo2 S3, credential, and
+     encryption keys are present in the correct sections and that the fixed repo
+     and cipher types are valid. Do not print values. Stop if either validation
+     fails.
+  4. With the new key, perform a disposable object write, read it back and compare
+     locally, then delete it. Use a unique rotation-test object outside pgBackRest
+     repository paths and do not put credentials in command-line arguments or
+     logs. Stop and leave the active config and old key unchanged on any failure.
+  5. Retain one `root:root 0600` rollback copy without displaying it, then
+     atomically rename the validated candidate over
+     `/etc/mixli/postgres/pgbackrest.conf`. Recheck `root:root 0600` metadata.
+  6. During an approved maintenance or deployment window, force-recreate only
+     PostgreSQL so its entrypoint stages the new container-private copy, then wait
+     for the container to become healthy. A restart is insufficient. If startup
+     or health fails, stop the rotation, atomically restore the protected rollback
+     file, force-recreate PostgreSQL again, and keep the old key valid.
+  7. Run repo1 and repo2 checks, a dual-repository backup, and the isolated repo2
+     restore verification. All must succeed with fresh evidence. If any check
+     fails, stop, preserve the evidence without secret values, and either repair
+     forward or use the protected rollback file and recreate PostgreSQL.
+  8. Only after PostgreSQL is healthy and every check, backup, and isolated restore
+     succeeds may the old R2 key be revoked. Remove the protected rollback file
+     after the revocation and final checks. At no point copy old or new secret
+     values into this runbook, shell history, chat, tickets, or logs.
 - Origin certificate: create the replacement, install certificate and key as
   new temporary files, validate key/certificate match and hostname coverage,
   atomically rename them, run `nginx -t`, and gracefully reload Nginx. Revoke

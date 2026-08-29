@@ -56,6 +56,20 @@ run_ip_refresh() {
   [ "$first" = "$second" ]
 }
 
+@test "provisioning keeps postgres configuration private and installs no credentials" {
+  root="$TEST_ROOT/root"
+  mkdir -p "$root"
+  run env MIXLI_PROVISION_TEST_MODE=1 MIXLI_PROVISION_ROOT="$root" \
+    "$REPO_ROOT/ops/production/bin/provision-host.sh"
+  [ "$status" -eq 0 ]
+
+  [ "$(stat -c '%a' "$root/etc/mixli/postgres")" = '750' ]
+  [ -f "$root/etc/mixli/postgres/pgbackrest.conf.example" ]
+  [ ! -e "$root/etc/mixli/postgres/pgbackrest.conf" ]
+  [ "$(find "$root/etc/mixli/postgres" -maxdepth 1 -type f \
+    -name 'pgbackrest.conf*' -printf '%f\n')" = 'pgbackrest.conf.example' ]
+}
+
 @test "forced-command deploy user can traverse the installed command directory" {
   root="$TEST_ROOT/root"
   mkdir -p "$root"
