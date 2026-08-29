@@ -4,30 +4,37 @@ load test_helper
 
 setup() {
   setup_repo_root
-  CI_WORKFLOW="$REPO_ROOT/.github/workflows/server-ci.yml"
+  REVIEW_WORKFLOW="$REPO_ROOT/.github/workflows/review-dispatch.yml"
   DEPLOY_WORKFLOW="$REPO_ROOT/.github/workflows/deploy-production.yml"
+  IOS_WORKFLOW="$REPO_ROOT/.github/workflows/ios-release.yml"
 }
 
 @test "hosted workflows only dispatch exact SHA work to the server" {
-  grep -Fq '"ci ${GITHUB_SHA}"' "$CI_WORKFLOW"
+  grep -Fq '"review ${PR_NUMBER} ${HEAD_SHA}"' "$REVIEW_WORKFLOW"
   grep -Fq '"deploy ${GITHUB_SHA}"' "$DEPLOY_WORKFLOW"
   ! grep -Eq 'actions/checkout|flutter-action|setup-node|npm (ci|test)|flutter (test|build)' \
-    "$CI_WORKFLOW" "$DEPLOY_WORKFLOW"
+    "$REVIEW_WORKFLOW" "$DEPLOY_WORKFLOW"
 }
 
 @test "dispatch jobs are read-only, production-gated, serialized, and bounded" {
-  for workflow in "$CI_WORKFLOW" "$DEPLOY_WORKFLOW"; do
+  for workflow in "$REVIEW_WORKFLOW" "$DEPLOY_WORKFLOW"; do
     grep -Fq 'contents: read' "$workflow"
-    grep -Fq 'environment: production' "$workflow"
-    grep -Fq 'cancel-in-progress: false' "$workflow"
     grep -Fq 'timeout-minutes: 2' "$workflow"
   done
+  grep -Fq 'cancel-in-progress: true' "$REVIEW_WORKFLOW"
+  ! grep -Fq 'environment: production' "$REVIEW_WORKFLOW"
+  grep -Fq 'environment: production' "$DEPLOY_WORKFLOW"
+  grep -Fq 'cancel-in-progress: false' "$DEPLOY_WORKFLOW"
 }
 
-@test "SSH requires the dedicated key and pinned known host" {
-  for workflow in "$CI_WORKFLOW" "$DEPLOY_WORKFLOW"; do
-    grep -Fq 'MIXLI_DEPLOY_SSH_KEY' "$workflow"
-    grep -Fq 'MIXLI_DEPLOY_KNOWN_HOST' "$workflow"
+@test "SSH lanes require separate dedicated keys and pinned known hosts" {
+  grep -Fq 'MIXLI_REVIEW_SSH_KEY' "$REVIEW_WORKFLOW"
+  grep -Fq 'MIXLI_REVIEW_KNOWN_HOST' "$REVIEW_WORKFLOW"
+  ! grep -Fq 'MIXLI_DEPLOY_SSH_KEY' "$REVIEW_WORKFLOW"
+  grep -Fq 'MIXLI_DEPLOY_SSH_KEY' "$DEPLOY_WORKFLOW"
+  grep -Fq 'MIXLI_DEPLOY_KNOWN_HOST' "$DEPLOY_WORKFLOW"
+  ! grep -Fq 'MIXLI_REVIEW_SSH_KEY' "$DEPLOY_WORKFLOW"
+  for workflow in "$REVIEW_WORKFLOW" "$DEPLOY_WORKFLOW"; do
     grep -Fq -- '-o BatchMode=yes' "$workflow"
     grep -Fq -- '-o IdentitiesOnly=yes' "$workflow"
     grep -Fq -- '-o StrictHostKeyChecking=yes' "$workflow"
@@ -38,23 +45,23 @@ setup() {
 
 @test "automatic production deploys originate only from main" {
   grep -Fq 'branches: [main]' "$DEPLOY_WORKFLOW"
-  grep -Fq 'branches: [main]' "$CI_WORKFLOW"
-  ! grep -Fq 'branches-ignore:' "$CI_WORKFLOW"
+  grep -Fq 'pull_request_target:' "$REVIEW_WORKFLOW"
+  ! grep -Eq '^[[:space:]]+push:' "$REVIEW_WORKFLOW"
 }
 
 @test "production SSH secrets are unavailable to branch-controlled manual workflows" {
-  for workflow in "$CI_WORKFLOW" "$DEPLOY_WORKFLOW"; do
-    ! grep -Fq 'workflow_dispatch:' "$workflow"
-    grep -Fq 'branches: [main]' "$workflow"
-  done
+  ! grep -Fq 'workflow_dispatch:' "$DEPLOY_WORKFLOW"
+  grep -Fq 'branches: [main]' "$DEPLOY_WORKFLOW"
+  ! grep -Fq 'MIXLI_DEPLOY_' "$REVIEW_WORKFLOW"
+  ! grep -Fq 'MIXLI_DEPLOY_' "$IOS_WORKFLOW"
   grep -Fq 'GitHub production environment branch protection is defense in depth' \
     "$REPO_ROOT/ops/production/README.md"
 }
 
-@test "mobile platform CI is manual-only" {
-  workflow="$REPO_ROOT/.github/workflows/platform-ci.yml"
-  grep -Fq 'workflow_dispatch:' "$workflow"
-  ! grep -Eq '^[[:space:]]+(push|pull_request):' "$workflow"
+@test "mobile platform CI is manual or release-only" {
+  grep -Fq 'workflow_dispatch:' "$IOS_WORKFLOW"
+  grep -Fq 'types: [published]' "$IOS_WORKFLOW"
+  ! grep -Eq '^[[:space:]]+(push|pull_request|pull_request_target):' "$IOS_WORKFLOW"
 }
 
 @test "only PR dispatch main deploy and exceptional iOS workflows remain" {

@@ -1,0 +1,45 @@
+name: review-dispatch
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: mixli-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Validate immutable request identity
+        shell: bash
+        run: |
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+      - name: Install review-only identity
+        env:
+          REVIEW_KEY: ${{ secrets.MIXLI_REVIEW_SSH_KEY }}
+          REVIEW_KNOWN_HOST: ${{ secrets.MIXLI_REVIEW_KNOWN_HOST }}
+        run: |
+          install -d -m 0700 "$HOME/.ssh"
+          install -m 0600 /dev/null "$HOME/.ssh/mixli-review"
+          install -m 0600 /dev/null "$HOME/.ssh/known_hosts"
+          printf '%s\n' "$REVIEW_KEY" >"$HOME/.ssh/mixli-review"
+          printf '%s\n' "$REVIEW_KNOWN_HOST" >"$HOME/.ssh/known_hosts"
+      - name: Queue isolated server review
+        run: >-
+          ssh -i "$HOME/.ssh/mixli-review"
+          -o BatchMode=yes
+          -o IdentitiesOnly=yes
+          -o StrictHostKeyChecking=yes
+          -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
+          mixli-review@152.53.55.38 "review ${PR_NUMBER} ${HEAD_SHA}"
