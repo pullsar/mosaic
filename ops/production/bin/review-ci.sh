@@ -62,7 +62,9 @@ main() {
   install -d -o mixli-build -g mixli-build -m 0700 "$checkout"
   trusted_git clone --no-local --no-hardlinks --no-checkout \
     "$REPO" "$checkout"
-  trusted_git -C "$checkout" checkout --detach "$SHA"
+  trusted_git -C "$checkout" fetch --no-tags origin "$SHA"
+  [[ "$(trusted_git -C "$checkout" rev-parse FETCH_HEAD)" == "$SHA" ]]
+  trusted_git -C "$checkout" checkout --detach FETCH_HEAD
   trusted_git -C "$checkout" remote remove origin
   chown -R mixli-review-build:mixli-review-build "$checkout"
   set +e
