@@ -150,7 +150,7 @@ production-builds" ]
 @test "authorized deployment retention applies only after every CI stage passes" {
   MIXLI_CI_RETAIN_POSTGRES_IMAGE=1 run run_ci "$CHECKOUT" "$SHA"
   [ "$status" -eq 0 ]
-  ! grep -Fxq "image rm mixli-postgres-ci:$SHA" "$COMMAND_LOG"
+  ! grep -Fxq "image rm --force mixli-postgres-ci:$SHA" "$COMMAND_LOG"
 
   grep -Fq 'MIXLI_CI_RETAIN_POSTGRES_IMAGE=1' \
     "$REPO_ROOT/ops/production/bin/deployment.sh"

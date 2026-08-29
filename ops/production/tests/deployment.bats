@@ -12,7 +12,9 @@ setup() {
     "$TEST_ROOT/runtime" "$TEST_ROOT/state" "$TEST_ROOT/log" "$TEST_ROOT/locks" "$TEST_ROOT/repo" \
     "$TEST_ROOT/builds/$SHA/ops/production" "$TEST_ROOT/bin" "$TEST_ROOT/images"
   COMMAND_LOG="$TEST_ROOT/commands.log"
-  export COMMAND_LOG MIXLI_TEST_DOCKER_STATE="$TEST_ROOT/images"
+  POSTGRES_RUNTIME_STATE="$TEST_ROOT/postgres-runtime-image"
+  export COMMAND_LOG POSTGRES_RUNTIME_STATE \
+    MIXLI_TEST_DOCKER_STATE="$TEST_ROOT/images"
   cat >"$TEST_ROOT/bin/docker" <<'SH'
 #!/usr/bin/env bash
 set -Eeuo pipefail
@@ -20,7 +22,20 @@ printf '%s\n' "$*" >>"$COMMAND_LOG"
 image_file() {
   printf '%s/%s' "$MIXLI_TEST_DOCKER_STATE" "${1//:/__}"
 }
-if [[ "$1 $2" == 'image inspect' ]]; then
+if [[ "$1" == 'compose' ]]; then
+  env_file=''
+  previous=''
+  for argument in "$@"; do
+    if [[ "$previous" == '--env-file' ]]; then
+      env_file="$argument"
+    fi
+    previous="$argument"
+  done
+  if [[ " $* " == *' up '* && " $* " == *' postgres '* ]]; then
+    awk -F= '$1 == "MIXLI_POSTGRES_IMAGE" { print $2 }' "$env_file" \
+      >"$POSTGRES_RUNTIME_STATE"
+  fi
+elif [[ "$1 $2" == 'image inspect' ]]; then
   ref="${@: -1}"
   [[ "$ref" != "${MIXLI_TEST_DOCKER_LOOKUP_FAIL_REF:-}" ]] || exit 43
   file="$(image_file "$ref")"
@@ -53,6 +68,7 @@ SH
   chmod +x "$TEST_ROOT/bin/docker"
   printf '%s\n' 'sha256:ci-postgres-image' \
     >"$TEST_ROOT/images/mixli-postgres-ci__$SHA"
+  printf '%s\n' "mixli-postgres:$OLD_SHA" >"$POSTGRES_RUNTIME_STATE"
   printf 'compose:%s\n' "$SHA" >"$TEST_ROOT/builds/$SHA/ops/production/compose.yaml"
   printf 'compose:%s\n' "$OLD_SHA" >"$TEST_ROOT/runtime/compose.yaml"
   cat >"$TEST_ROOT/production.env" <<EOF
@@ -82,6 +98,8 @@ deploy() {
     MIXLI_REPO="$TEST_ROOT/repo" \
     MIXLI_LOCK_FILE="$TEST_ROOT/locks/deploy.lock" \
     MIXLI_BACKUP_LOCK_FILE="$TEST_ROOT/locks/backup.lock" \
+    MIXLI_CI_LOCK_FILE="$TEST_ROOT/locks/ci.lock" \
+    MIXLI_CI_LOCK_WAIT_SECONDS="${MIXLI_CI_LOCK_WAIT_SECONDS:-0}" \
     MIXLI_COMPOSE_FILE="$TEST_ROOT/runtime/compose.yaml" \
     MIXLI_ENV_FILE="$TEST_ROOT/production.env" \
     MIXLI_TEST_SHA_ALLOWED="${MIXLI_TEST_SHA_ALLOWED:-1}" \
@@ -110,6 +128,24 @@ deploy() {
   run deploy "$SHA"
   exec 8>&-
   [ "$status" -eq 75 ]
+}
+
+@test "deployment serializes direct server CI on the shared CI lock" {
+  exec 6>"$TEST_ROOT/locks/ci.lock"
+  flock -n 6
+  run deploy "$SHA"
+  exec 6>&-
+
+  [ "$status" -eq 75 ]
+  ! grep -Eq '^(ci-verified|built|database-ready|migrated|deployed):' \
+    "$TEST_ROOT/log/deploy-events.log"
+
+  deploy_script="$REPO_ROOT/ops/production/bin/deployment.sh"
+  ci_script="$REPO_ROOT/ops/production/bin/ci-request.sh"
+  grep -Fq 'MIXLI_CI_LOCK_FILE:-/run/lock/mixli-ci.lock' "$deploy_script"
+  grep -Fq 'MIXLI_CI_LOCK_FILE:-/run/lock/mixli-ci.lock' "$ci_script"
+  run_repository_ci="$(sed -n '/^run_repository_ci()/,/^}/p' "$deploy_script")"
+  [[ "$run_repository_ci" == *'flock -w "$CI_LOCK_WAIT_SECONDS" 6'* ]]
 }
 
 @test "server CI completes before the release is marked built" {
@@ -155,6 +191,9 @@ deploy() {
   [ "$(readlink "$TEST_ROOT/current")" = "$TEST_ROOT/releases/$OLD_SHA" ]
   grep -qx "MIXLI_API_GREEN_IMAGE=mixli-api:$PREVIOUS_SHA" "$TEST_ROOT/production.env"
   grep -qx "MIXLI_POSTGRES_IMAGE=mixli-postgres:$OLD_SHA" "$TEST_ROOT/production.env"
+  [ "$(cat "$POSTGRES_RUNTIME_STATE")" = "mixli-postgres:$OLD_SHA" ]
+  grep -Fq 'up -d --no-deps postgres' "$COMMAND_LOG"
+  grep -Fq 'up -d --no-deps --force-recreate postgres' "$COMMAND_LOG"
   [ "$(cat "$TEST_ROOT/runtime/compose.yaml")" = "compose:$OLD_SHA" ]
 }
 
@@ -202,6 +241,7 @@ deploy() {
   grep -qx "MIXLI_API_BLUE_IMAGE=mixli-api:$OLD_SHA" "$TEST_ROOT/production.env"
   grep -qx "MIXLI_API_GREEN_IMAGE=mixli-api:$SHA" "$TEST_ROOT/production.env"
   grep -qx "MIXLI_API_GREEN_RELEASE_SHA=$SHA" "$TEST_ROOT/production.env"
+  [ "$(cat "$POSTGRES_RUNTIME_STATE")" = "mixli-postgres:$SHA" ]
   [ "$(cat "$TEST_ROOT/runtime/compose.yaml")" = "compose:$SHA" ]
 }
 
