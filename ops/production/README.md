@@ -154,9 +154,17 @@ and old-pool drain. Success evidence is `deployed:<sha>:<pool>` in
 modes passing.
 
 The deployer atomically pins the exact release's Compose file at
-`/srv/mixli/runtime/compose.yaml` and persists both pool image SHAs in the
-root-owned environment file. Systemd and scheduled backup jobs use only that
-runtime copy, so a reboot cannot drift to an unverified repository checkout.
+`/srv/mixli/runtime/compose.yaml` and persists both pool image SHAs plus
+`MIXLI_POSTGRES_IMAGE=mixli-postgres:<sha>` in the root-owned environment file.
+Ordinary branch/PR CI builds PostgreSQL only as `mixli-postgres-ci:<sha>` and
+removes that tag on success or failure. An authorized deployment retains the
+verified CI tag only long enough to compare its image ID, refuses a conflicting
+existing production SHA tag, creates the exact production tag, and removes the
+CI tag before any deployment-time Compose command. The bootstrap environment
+intentionally names a nonexistent placeholder; the first deployment must persist
+the verified exact ref before the stack starts. Systemd and scheduled backup jobs
+use only the pinned runtime files, so a reboot cannot drift to an unverified
+checkout or mutable PostgreSQL image.
 
 ## Rollback and migration-forward repair
 
@@ -210,11 +218,13 @@ container at `/srv/mixli/data/postgres` during validation.
 
   Begin an approved maintenance or deployment window in a persistent root shell.
   Acquire the deployment lock before the backup lock, ensure no related unit is
-  active, and stop the timers while both locks are held. Keep descriptor 8 and
-  therefore the deployment lock through revocation and final verification. Every
-  R2 command fence through the successful `exit` below continues in this same
-  root shell: do not leave it, send EOF, or run a later fence in a new shell. The
-  rollback fence explicitly starts a separate recovery shell only after failure.
+  active, require every related timer to be enabled and active, then disable and
+  stop the timers while both locks are held. The recorded expected prior state is
+  therefore enabled and active for all four timers. Keep descriptor 8 and the
+  deployment lock through revocation and final verification. Every R2 command
+  fence through the successful `exit` below continues in this same root shell:
+  do not leave it, send EOF, or run a later fence in a new shell. The rollback
+  fence explicitly starts a separate recovery shell only after failure.
 
   ```bash
   sudo -i
@@ -237,12 +247,22 @@ container at `/srv/mixli/data/postgres` during validation.
   probe_read="/etc/mixli/postgres/.r2-probe-read-$rotation_id"
   probe_object="mixli-rotation-probes/probe-$rotation_id"
   probe_uploaded=0
-  timers_stopped=0
+  timers_disabled=0
+  timers_expected_enabled_active=0
+  backup_lock_held=0
   active_replaced=0
   rotation_complete=0
 
   compose() {
     docker compose --env-file "$env_file" -f "$compose_file" "$@"
+  }
+
+  release_backup_lock() {
+    if [[ "$backup_lock_held" == 1 ]]; then
+      flock -u 9
+      exec 9>&-
+      backup_lock_held=0
+    fi
   }
 
   cleanup_rotation() {
@@ -261,9 +281,11 @@ container at `/srv/mixli/data/postgres` during validation.
       rm -f -- "$rollback"
     elif [[ "$status" != 0 && "$active_replaced" == 0 ]]; then
       rm -f -- "$rollback"
-      if [[ "$timers_stopped" == 1 ]]; then
-        if ! systemctl start $timer_units; then
-          systemctl stop $timer_units || true
+      if [[ "$timers_disabled" == 1 &&
+        "$timers_expected_enabled_active" == 1 ]]; then
+        release_backup_lock
+        if ! systemctl enable --now $timer_units; then
+          systemctl disable --now $timer_units || true
         fi
       fi
     fi
@@ -281,6 +303,7 @@ container at `/srv/mixli/data/postgres` during validation.
   flock -n 8 || exit 75
   exec 9>/run/lock/mixli-backup.lock
   flock -n 9 || exit 75
+  backup_lock_held=1
 
   active_units="$(systemctl list-units --type=service --state=active \
     --no-legend --plain 'mixli-deploy-*' 'mixli-backup-*.service' \
@@ -290,12 +313,21 @@ container at `/srv/mixli/data/postgres` during validation.
     exit 1
   fi
   unset active_units
-  timers_stopped=1
-  systemctl stop $timer_units
+  for timer in $timer_units; do
+    systemctl is-enabled --quiet "$timer"
+    systemctl is-active --quiet "$timer"
+  done
+  unset timer
+  timers_expected_enabled_active=1
+  timers_disabled=1
+  systemctl disable --now $timer_units
   ```
 
   Stop before changing the active file if a lock cannot be acquired, a relevant
-  unit is active, or a timer cannot be stopped. Do not reverse the lock order.
+  unit is active, a timer is not already enabled and active, or a timer cannot be
+  disabled and stopped. A safe abort after timer disablement releases fd 9 before
+  restoring the expected timer state with `enable --now`. Do not reverse the
+  lock order.
   Create unique candidate and rollback files on the same filesystem as the
   active file. Edit only the two key assignments through the no-echo editor.
 
@@ -521,11 +553,11 @@ container at `/srv/mixli/data/postgres` during validation.
 
   The existing backup and restore services acquire the backup lock themselves.
   Release only descriptor 9 before starting them; keep descriptor 8 locked and
-  keep all four timers stopped so no scheduled unit can race the ordered checks.
+  keep all four timers disabled and stopped so no scheduled unit can race the
+  ordered checks or return after a reboot.
 
   ```bash
-  flock -u 9
-  exec 9>&-
+  release_backup_lock
 
   systemctl reset-failed mixli-backup-check.service \
     mixli-backup-incr.service mixli-restore-verify.service
@@ -553,6 +585,7 @@ container at `/srv/mixli/data/postgres` during validation.
 
   exec 9>/run/lock/mixli-backup.lock
   flock -n 9 || exit 75
+  backup_lock_held=1
   ```
 
   `mixli-backup-check.service` checks repo1 and repo2,
@@ -561,19 +594,18 @@ container at `/srv/mixli/data/postgres` during validation.
   old key only after every command and freshness comparison succeeds and fd 9 is
   reacquired while fd 8 remains held. If reacquisition fails, stop without
   revoking. Keep both locks through revocation and the final new-key check, then
-  release fd 9 immediately before restarting timers. Remove the protected
+  release fd 9 immediately before re-enabling timers. Remove the protected
   rollback copy and release the deployment lock only after final verification.
 
   ```bash
   compose exec -T --user postgres postgres \
     pgbackrest --stanza=mixli --repo=2 check
-  flock -u 9
-  exec 9>&-
-  if ! systemctl start $timer_units; then
-    systemctl stop $timer_units || true
+  release_backup_lock
+  if ! systemctl enable --now $timer_units; then
+    systemctl disable --now $timer_units || true
     exit 1
   fi
-  timers_stopped=0
+  timers_disabled=0
   rm -f -- "$rollback"
   rotation_complete=1
   active_replaced=0
@@ -584,14 +616,15 @@ container at `/srv/mixli/data/postgres` during validation.
 
   If any invariant after atomic replacement fails, `errexit` terminates the
   rotation shell. Its exit trap deliberately preserves the rollback file and
-  leaves timers stopped; the kernel releases its lock descriptors. Do not revoke
-  the old key or continue deployment. Immediately open a new root shell, locate
-  the single protected rollback file without reading it, and reacquire the
-  deployment lock before the backup lock. Wait for any started backup/restore
-  unit to stop, atomically restore the same-directory file, recreate PostgreSQL,
-  wait healthy, and check both repositories. Then restart the timers and release
-  the locks. These commands never print or copy secret values into documentation,
-  shell history, chat, tickets, or logs.
+  leaves timers disabled and stopped across reboot; the kernel releases its lock
+  descriptors. Do not revoke the old key or continue deployment. Immediately
+  open a new root shell, locate the single protected rollback file without
+  reading it, and reacquire the deployment lock before the backup lock. Keep the
+  timers disabled, wait for any started backup/restore unit to stop, atomically
+  restore the same-directory file, recreate PostgreSQL, wait healthy, and check
+  both repositories. Then re-enable the timers and release the locks. These
+  commands never print or copy secret values into documentation, shell history,
+  chat, tickets, or logs.
 
   ```bash
   sudo -i
@@ -620,7 +653,7 @@ container at `/srv/mixli/data/postgres` during validation.
   flock -n 8 || exit 75
   exec 9>/run/lock/mixli-backup.lock
   flock -n 9 || exit 75
-  systemctl stop $timer_units
+  systemctl disable --now $timer_units
   active_units="$(systemctl list-units --type=service --state=active \
     --no-legend --plain 'mixli-backup-*.service' \
     'mixli-restore-verify.service')"
@@ -659,8 +692,8 @@ container at `/srv/mixli/data/postgres` during validation.
     pgbackrest --stanza=mixli --repo=2 check
   flock -u 9
   exec 9>&-
-  if ! systemctl start $timer_units; then
-    systemctl stop $timer_units || true
+  if ! systemctl enable --now $timer_units; then
+    systemctl disable --now $timer_units || true
     exit 1
   fi
   flock -u 8

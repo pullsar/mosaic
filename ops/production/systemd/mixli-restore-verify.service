@@ -5,6 +5,7 @@ After=docker.service mixli-stack.service
 
 [Service]
 Type=oneshot
+EnvironmentFile=/etc/mixli/env/production.env
 ExecStart=/opt/mixli/bin/restore-verify.sh
 TimeoutStartSec=6h
 Nice=15

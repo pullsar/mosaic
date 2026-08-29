@@ -5,9 +5,10 @@ umask 027
 readonly CHECKOUT="${1-}"
 readonly SHA="${2-}"
 readonly TEST_MODE="${MIXLI_CI_TEST_MODE:-0}"
+readonly RETAIN_POSTGRES_IMAGE_REQUESTED="${MIXLI_CI_RETAIN_POSTGRES_IMAGE:-0}"
 readonly SHORT_SHA="${SHA:0:12}"
 readonly FLUTTER_IMAGE="${MIXLI_FLUTTER_CI_IMAGE:-mixli-flutter-builder:3.44.7}"
-readonly POSTGRES_IMAGE="${MIXLI_POSTGRES_CI_IMAGE:-mixli-postgres:18.3}"
+readonly POSTGRES_CI_IMAGE="mixli-postgres-ci:$SHA"
 readonly API_IMAGE="mixli-api:$SHA"
 readonly API_CI_IMAGE="mixli-api-ci:$SHA"
 readonly PROMETHEUS_IMAGE="${MIXLI_PROMETHEUS_CI_IMAGE:-prom/prometheus:v3.5.5}"
@@ -18,6 +19,7 @@ postgres_container=''
 systemd_verify_root=''
 alertmanager_verify_root=''
 prometheus_verify_root=''
+retain_postgres_image=0
 
 die_usage() {
   printf '%s\n' 'server-ci.sh requires an absolute checkout and exact lowercase commit SHA.' >&2
@@ -30,6 +32,9 @@ checkout_git() {
 
 cleanup() {
   docker image rm "$API_CI_IMAGE" >/dev/null 2>&1 || true
+  if [[ "$retain_postgres_image" != '1' ]]; then
+    docker image rm "$POSTGRES_CI_IMAGE" >/dev/null 2>&1 || true
+  fi
   if [[ -n "$postgres_container" ]]; then
     docker rm -f "$postgres_container" >/dev/null 2>&1 || true
   fi
@@ -49,6 +54,8 @@ cleanup() {
 
 validate_inputs() {
   [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || die_usage
+  [[ "$RETAIN_POSTGRES_IMAGE_REQUESTED" == '0' ||
+    "$RETAIN_POSTGRES_IMAGE_REQUESTED" == '1' ]] || die_usage
   [[ "$CHECKOUT" == /* && "$CHECKOUT" != '/' && -d "$CHECKOUT" ]] || die_usage
   [[ "$(readlink -f "$CHECKOUT")" == "$CHECKOUT" ]] || die_usage
 
@@ -61,7 +68,11 @@ validate_inputs() {
 run_stage() {
   local name="$1" implementation="$2"
   printf '%s\n' "$name"
-  [[ "$TEST_MODE" == '1' ]] || "$implementation"
+  if [[ "$TEST_MODE" == '1' ]]; then
+    [[ "${MIXLI_CI_TEST_FAIL_STAGE:-}" != "$name" ]]
+  else
+    "$implementation"
+  fi
 }
 
 source_integrity() {
@@ -76,7 +87,7 @@ infrastructure_contracts() {
   docker build -f "$CHECKOUT/ops/production/flutter/Dockerfile" \
     -t "$FLUTTER_IMAGE" "$CHECKOUT"
   docker build -f "$CHECKOUT/ops/production/postgres/Dockerfile" \
-    -t "$POSTGRES_IMAGE" "$CHECKOUT/ops/production/postgres"
+    -t "$POSTGRES_CI_IMAGE" "$CHECKOUT/ops/production/postgres"
 
   (
     cd "$CHECKOUT"
@@ -84,7 +95,7 @@ infrastructure_contracts() {
       -f ops/production/compose.yaml config --quiet
     MIXLI_API_IMAGE="$API_IMAGE" \
       MIXLI_FLUTTER_IMAGE="$FLUTTER_IMAGE" \
-      MIXLI_POSTGRES_IMAGE="$POSTGRES_IMAGE" \
+      MIXLI_POSTGRES_IMAGE="$POSTGRES_CI_IMAGE" \
       MIXLI_HOST_REPO="$CHECKOUT" \
       bats ops/production/tests
   )
@@ -273,7 +284,7 @@ PY
 }
 
 production_builds() {
-  docker image inspect "$API_IMAGE" "$FLUTTER_IMAGE" "$POSTGRES_IMAGE" >/dev/null
+  docker image inspect "$API_IMAGE" "$FLUTTER_IMAGE" "$POSTGRES_CI_IMAGE" >/dev/null
   [[ -f "$CHECKOUT/apps/mosaic_app/build/web/index.html" ]]
 }
 
@@ -286,6 +297,9 @@ main() {
   run_stage flutter-workspace flutter_workspace
   run_stage platform-declarations platform_declarations
   run_stage production-builds production_builds
+  if [[ "$RETAIN_POSTGRES_IMAGE_REQUESTED" == '1' ]]; then
+    retain_postgres_image=1
+  fi
 }
 
 main

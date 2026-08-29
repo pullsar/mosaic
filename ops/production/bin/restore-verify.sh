@@ -9,11 +9,22 @@ readonly LOCK_FILE="${MIXLI_BACKUP_LOCK_FILE:-/run/lock/mixli-backup.lock}"
 readonly METRICS_DIR="$ROOT/metrics"
 readonly METRICS_FILE="$METRICS_DIR/restore-verify.prom"
 readonly TEST_MODE="${MIXLI_RESTORE_TEST_MODE:-0}"
-readonly POSTGRES_IMAGE="${MIXLI_POSTGRES_IMAGE:-mixli-postgres:18.3}"
+readonly POSTGRES_IMAGE="${MIXLI_POSTGRES_IMAGE:-}"
 readonly PGBACKREST_CONFIG="${MIXLI_PGBACKREST_CONFIG:-/etc/mixli/postgres/pgbackrest.conf}"
 readonly PGBACKREST_STAGED_CONFIG=/run/mixli-secrets/pgbackrest.conf
 readonly LOCAL_REPO="$ROOT/backups/pgbackrest"
 readonly REQUESTED_TARGET="${MIXLI_RESTORE_TARGET:-$RESTORE_ROOT/$(date -u +%Y%m%dT%H%M%SZ)}"
+
+if [[ "$TEST_MODE" == '1' ]]; then
+  if [[ "$POSTGRES_IMAGE" != 'mixli-postgres:test' &&
+    ! "$POSTGRES_IMAGE" =~ ^mixli-postgres:[0-9a-f]{40}$ ]]; then
+    printf '%s\n' 'Test restore verification requires an explicit PostgreSQL test or exact-SHA image.' >&2
+    exit 64
+  fi
+elif [[ ! "$POSTGRES_IMAGE" =~ ^mixli-postgres:[0-9a-f]{40}$ ]]; then
+  printf '%s\n' 'Restore verification requires MIXLI_POSTGRES_IMAGE=mixli-postgres:<40-character-lowercase-SHA>.' >&2
+  exit 64
+fi
 
 install -d -m 0750 "$(dirname "$LOCK_FILE")" "$RESTORE_ROOT" "$METRICS_DIR"
 restore_root_resolved="$(realpath -m "$RESTORE_ROOT")"

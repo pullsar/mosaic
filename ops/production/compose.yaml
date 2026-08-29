@@ -45,7 +45,7 @@ x-api: &api
 
 services:
   postgres:
-    image: ${MIXLI_POSTGRES_IMAGE:-mixli-postgres:18.3}
+    image: ${MIXLI_POSTGRES_IMAGE:-mixli-postgres:bootstrap-required}
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-mixli}
       POSTGRES_USER: ${POSTGRES_USER:-mixli}

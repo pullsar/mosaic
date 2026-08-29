@@ -18,6 +18,8 @@ readonly STATE="$ROOT/state"
 readonly LOG_DIR="$ROOT/log"
 readonly EVENTS="$LOG_DIR/deploy-events.log"
 readonly DRAIN_SECONDS="${MIXLI_DRAIN_SECONDS:-30}"
+readonly POSTGRES_CI_IMAGE="mixli-postgres-ci:$SHA"
+readonly POSTGRES_IMAGE="mixli-postgres:$SHA"
 
 switched=0
 previous_web=''
@@ -29,6 +31,7 @@ compose_changed=0
 compose_had_previous=0
 target_pool=''
 had_upstream=0
+postgres_ci_retained=0
 
 builder_git() {
   runuser -u mixli-build -- git "$@"
@@ -117,6 +120,8 @@ persist_runtime_images() {
   cp --preserve=mode,ownership,timestamps "$ENV_FILE" "$env_backup"
   env_changed=1
 
+  set_env_value MIXLI_POSTGRES_IMAGE "$POSTGRES_IMAGE"
+
   if [[ -z "$current_sha" ]]; then
     set_env_value MIXLI_API_BLUE_IMAGE "mixli-api:$SHA"
     set_env_value MIXLI_API_GREEN_IMAGE "mixli-api:$SHA"
@@ -126,6 +131,29 @@ persist_runtime_images() {
     set_env_value "MIXLI_API_${target_pool^^}_IMAGE" "mixli-api:$SHA"
     set_env_value "MIXLI_API_${target_pool^^}_RELEASE_SHA" "$SHA"
   fi
+}
+
+cleanup_postgres_ci_image() {
+  [[ "$postgres_ci_retained" == '1' ]] || return 0
+  docker image rm "$POSTGRES_CI_IMAGE" >/dev/null 2>&1 || true
+  postgres_ci_retained=0
+}
+
+promote_postgres_image() {
+  local ci_image_id production_image_id
+  ci_image_id="$(docker image inspect --format '{{.Id}}' "$POSTGRES_CI_IMAGE")"
+  [[ -n "$ci_image_id" ]]
+
+  if production_image_id="$(docker image inspect --format '{{.Id}}' "$POSTGRES_IMAGE" 2>/dev/null)"; then
+    [[ "$production_image_id" == "$ci_image_id" ]]
+  else
+    docker image tag "$ci_image_id" "$POSTGRES_IMAGE"
+    production_image_id="$(docker image inspect --format '{{.Id}}' "$POSTGRES_IMAGE")"
+    [[ "$production_image_id" == "$ci_image_id" ]]
+  fi
+
+  docker image rm "$POSTGRES_CI_IMAGE" >/dev/null
+  postgres_ci_retained=0
 }
 
 restore_runtime_compose() {
@@ -175,6 +203,7 @@ on_error() {
   rollback_switches
   restore_runtime_compose
   restore_runtime_env
+  cleanup_postgres_ci_image
   log_event "deploy-failed:$SHA:line-$line:status-$status"
   exit "$status"
 }
@@ -203,9 +232,11 @@ run_repository_ci() {
   fail_if_requested ci
   if [[ "$TEST_MODE" == '1' ]]; then
     log_event "ci-verified:$SHA"
+    postgres_ci_retained=1
     return 0
   fi
-  "$CI_RUNNER" "$BUILDS/$SHA" "$SHA"
+  MIXLI_CI_RETAIN_POSTGRES_IMAGE=1 "$CI_RUNNER" "$BUILDS/$SHA" "$SHA"
+  postgres_ci_retained=1
   log_event "ci-verified:$SHA"
 }
 
@@ -375,6 +406,7 @@ prune_releases() {
       rm -rf -- "$dir"
       if [[ "$TEST_MODE" != '1' ]]; then
         docker image rm "mixli-api:$sha" >/dev/null 2>&1 || true
+        docker image rm "mixli-postgres:$sha" >/dev/null 2>&1 || true
       fi
     fi
   done < <(find "$RELEASES" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' | sort -nr | cut -d' ' -f2-)
@@ -397,6 +429,7 @@ main() {
   verify_ancestry
   prepare_checkout
   run_repository_ci
+  promote_postgres_image
   persist_runtime_compose
   current_sha="$(json_field "$STATE/current.json" sha)"
   current_pool="$(json_field "$STATE/current.json" pool)"
@@ -406,8 +439,8 @@ main() {
     target_pool='blue'
   fi
 
-  build_release
   persist_runtime_images "$current_sha"
+  build_release
   prepare_database
   backup_and_migrate "$current_sha"
   start_candidate
