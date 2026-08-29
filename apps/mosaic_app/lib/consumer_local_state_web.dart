@@ -7,6 +7,7 @@ import 'consumer_api_client.dart';
 import 'consumer_local_state.dart';
 
 const _preferencesKey = 'preferences.v1';
+const _onboardingCompletedKey = 'onboarding_completed.v1';
 const _feedResumeKey = 'feed_resume.v1';
 const _recentFeedKey = 'recent_feed.v1';
 
@@ -33,6 +34,15 @@ final class IndexedDbConsumerLocalState implements ConsumerLocalState {
   @override
   Future<void> writePreferences(ConsumerPreferences preferences) => _store
       .writeConsumerMetadata(_preferencesKey, jsonEncode(preferences.toJson()));
+
+  @override
+  Future<bool> readOnboardingCompleted() async =>
+      await _store.readConsumerMetadata(_onboardingCompletedKey) == '1';
+
+  @override
+  Future<void> writeOnboardingCompleted(bool completed) => completed
+      ? _store.writeConsumerMetadata(_onboardingCompletedKey, '1')
+      : _store.deleteConsumerMetadata(_onboardingCompletedKey);
 
   @override
   Future<ConsumerFeedResume?> readFeedResume() async {
