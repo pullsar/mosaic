@@ -22,7 +22,7 @@ async function runMigration(): Promise<void> {
 }
 
 test(
-  'feed decision persistence supports anonymous first-use and actor-scoped expiry cleanup',
+  'feed persistence supports anonymous first-use and bounded expired-decision cleanup',
   {skip: !databaseUrl},
   async () => {
     await runMigration();
@@ -117,16 +117,13 @@ test(
         ranked,
       });
 
-      const expiredForActor = await pool.query<{count: string}>(
-        'select count(*)::text as count from feed_decisions where request_id = $1',
-        [expiredRequestId],
+      const expired = await pool.query<{count: string}>(
+        `select count(*)::text as count
+           from feed_decisions
+          where request_id = any($1::text[])`,
+        [[expiredRequestId, otherRequestId]],
       );
-      const expiredForOther = await pool.query<{count: string}>(
-        'select count(*)::text as count from feed_decisions where request_id = $1',
-        [otherRequestId],
-      );
-      assert.equal(expiredForActor.rows[0]?.count, '0');
-      assert.equal(expiredForOther.rows[0]?.count, '1');
+      assert.equal(expired.rows[0]?.count, '0');
     } finally {
       await pool.end();
     }
