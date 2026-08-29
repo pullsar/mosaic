@@ -164,9 +164,106 @@ final class ConsumerRuntime {
     return syncPreferences(preferences);
   }
 
+  Future<ConsumerFeedResume?> readFeedResume() async {
+    try {
+      return await localState.readFeedResume();
+    } on Object catch (error, stackTrace) {
+      _report(error, stackTrace, operation: 'consumer_feed_resume_read');
+      return null;
+    }
+  }
+
+  /// Persists the coordinator's bounded recoverable feed window and position.
+  ///
+  /// This is intentionally separate from [fetchFeed]. A feed pager can fetch
+  /// ahead without replacing the currently recoverable visible window with a
+  /// page that has not been shown yet.
+  Future<bool> persistFeedWindow({
+    required String requestId,
+    required String? cursor,
+    required String? visibleRevisionId,
+    required int? visiblePosition,
+    required List<ConsumerFeedItem> items,
+  }) async {
+    final now = _clock().toUtc();
+    ConsumerFeedItem? visibleItem;
+    if (visiblePosition != null &&
+        visiblePosition >= 0 &&
+        visiblePosition < items.length) {
+      final candidate = items[visiblePosition];
+      if (visibleRevisionId == null ||
+          candidate.revisionId == visibleRevisionId) {
+        visibleItem = candidate;
+      }
+    }
+    if (visibleItem == null && visibleRevisionId != null) {
+      for (final item in items) {
+        if (item.revisionId == visibleRevisionId) {
+          visibleItem = item;
+          break;
+        }
+      }
+    }
+
+    var boundedItems = _boundedRecentItems(requestId, items, now);
+    if (visibleItem != null &&
+        boundedItems.every((item) => !_sameFeedItem(item, visibleItem!))) {
+      final visibleOnly = _boundedRecentItems(requestId, [visibleItem], now);
+      if (visibleOnly.isNotEmpty) boundedItems = visibleOnly;
+    }
+
+    final persistedVisiblePosition = visibleItem == null
+        ? -1
+        : boundedItems.indexWhere((item) => _sameFeedItem(item, visibleItem!));
+    final normalizedVisiblePosition = persistedVisiblePosition < 0
+        ? null
+        : persistedVisiblePosition;
+    final normalizedVisibleRevisionId = normalizedVisiblePosition == null
+        ? null
+        : visibleItem!.revisionId;
+
+    var persisted = true;
+    try {
+      await localState.writeFeedResume(
+        ConsumerFeedResume(
+          requestId: requestId,
+          cursor: cursor,
+          visibleRevisionId: normalizedVisibleRevisionId,
+          visiblePosition: normalizedVisiblePosition,
+          windowRevisionIds: boundedItems
+              .map((item) => item.revisionId)
+              .toList(growable: false),
+          updatedAt: now,
+        ),
+      );
+    } on Object catch (error, stackTrace) {
+      persisted = false;
+      _report(error, stackTrace, operation: 'consumer_feed_resume_write');
+    }
+
+    try {
+      if (boundedItems.isEmpty) {
+        await localState.clearRecentFeed();
+      } else {
+        await localState.writeRecentFeed(
+          ConsumerFeedCache(
+            requestId: requestId,
+            items: boundedItems,
+            updatedAt: now,
+          ),
+        );
+      }
+    } on Object catch (error, stackTrace) {
+      persisted = false;
+      _report(error, stackTrace, operation: 'consumer_recent_feed_write');
+    }
+    return persisted;
+  }
+
   Future<ConsumerFeedLoadResult> fetchFeed({
     String? cursor,
     int limit = 8,
+    bool persistPage = true,
   }) async {
     final client = api;
     if (client == null) {
@@ -182,21 +279,21 @@ final class ConsumerRuntime {
       limit: limit,
     );
     if (first is ConsumerApiSuccess<ConsumerFeedPage>) {
-      await _persistNetworkPage(first.value);
+      if (persistPage) await _persistNetworkPage(first.value);
       return ConsumerFeedLoadResult(page: first.value);
     }
 
     final firstFailure = first as ConsumerApiFailure<ConsumerFeedPage>;
     if (cursor != null &&
         firstFailure.kind == ConsumerApiFailureKind.invalidCursor) {
-      await _clearResumeSafely();
+      await _clearStaleCursorSafely();
       final retry = await client.fetchFeed(
         capabilities: capabilities,
         cursor: null,
         limit: limit,
       );
       if (retry is ConsumerApiSuccess<ConsumerFeedPage>) {
-        await _persistNetworkPage(retry.value);
+        if (persistPage) await _persistNetworkPage(retry.value);
         return ConsumerFeedLoadResult(page: retry.value, cursorReset: true);
       }
       final retryFailure = retry as ConsumerApiFailure<ConsumerFeedPage>;
@@ -220,51 +317,27 @@ final class ConsumerRuntime {
   void close() => api?.close();
 
   Future<void> _persistNetworkPage(ConsumerFeedPage page) async {
-    final now = _clock().toUtc();
-    final boundedItems = _boundedRecentItems(page, now);
-    try {
-      await localState.writeFeedResume(
-        ConsumerFeedResume(
-          requestId: page.requestId,
-          cursor: page.nextCursor,
-          windowRevisionIds: page.items
-              .map((item) => item.revisionId)
-              .toList(growable: false),
-          updatedAt: now,
-        ),
-      );
-    } on Object catch (error, stackTrace) {
-      _report(error, stackTrace, operation: 'consumer_feed_resume_write');
-    }
-
-    try {
-      if (boundedItems.isEmpty) {
-        await localState.clearRecentFeed();
-      } else {
-        await localState.writeRecentFeed(
-          ConsumerFeedCache(
-            requestId: page.requestId,
-            items: boundedItems,
-            updatedAt: now,
-          ),
-        );
-      }
-    } on Object catch (error, stackTrace) {
-      _report(error, stackTrace, operation: 'consumer_recent_feed_write');
-    }
+    await persistFeedWindow(
+      requestId: page.requestId,
+      cursor: page.nextCursor,
+      visibleRevisionId: null,
+      visiblePosition: null,
+      items: page.items,
+    );
   }
 
   List<ConsumerFeedItem> _boundedRecentItems(
-    ConsumerFeedPage page,
+    String requestId,
+    Iterable<ConsumerFeedItem> items,
     DateTime now,
   ) {
     final selected = <ConsumerFeedItem>[];
-    for (final item in page.items) {
+    for (final item in items) {
       if (selected.length >= recentFeedMaxItems) break;
       final candidate = <ConsumerFeedItem>[...selected, item];
       final encoded = jsonEncode(
         ConsumerFeedCache(
-          requestId: page.requestId,
+          requestId: requestId,
           items: candidate,
           updatedAt: now,
         ).toJson(),
@@ -292,9 +365,23 @@ final class ConsumerRuntime {
     }
   }
 
-  Future<void> _clearResumeSafely() async {
+  Future<void> _clearStaleCursorSafely() async {
     try {
-      await localState.clearFeedResume();
+      final current = await localState.readFeedResume();
+      if (current == null) {
+        await localState.clearFeedResume();
+        return;
+      }
+      await localState.writeFeedResume(
+        ConsumerFeedResume(
+          requestId: current.requestId,
+          cursor: null,
+          visibleRevisionId: current.visibleRevisionId,
+          visiblePosition: current.visiblePosition,
+          windowRevisionIds: current.windowRevisionIds,
+          updatedAt: _clock().toUtc(),
+        ),
+      );
     } on Object catch (error, stackTrace) {
       _report(error, stackTrace, operation: 'consumer_feed_resume_clear');
     }
@@ -312,3 +399,6 @@ final class ConsumerRuntime {
     }
   }
 }
+
+bool _sameFeedItem(ConsumerFeedItem left, ConsumerFeedItem right) =>
+    left.playId == right.playId && left.revisionId == right.revisionId;

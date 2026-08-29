@@ -338,6 +338,96 @@ void main() {
     },
   );
 
+  test(
+    'coordinator fetch does not replace the visible recovery window',
+    () async {
+      final now = DateTime.utc(2026, 8, 29, 16);
+      final local = _MemoryConsumerState()
+        ..recent = _cache(now)
+        ..resume = ConsumerFeedResume(
+          requestId: 'feed_runtime',
+          cursor: 'cursor_existing',
+          visibleRevisionId: 'rev_0',
+          visiblePosition: 0,
+          windowRevisionIds: const ['rev_0'],
+          updatedAt: now,
+        );
+      final runtime = ConsumerRuntime(
+        api: _client(
+          MockClient((request) async {
+            if (request.url.path == '/v1/actors') {
+              return http.Response('{}', 201);
+            }
+            return http.Response(
+              jsonEncode(
+                _feed(requestId: 'feed_new', nextCursor: 'cursor_new'),
+              ),
+              200,
+            );
+          }),
+        ),
+        localState: local,
+        capabilities: PlayCapabilityEnvelope.m1(),
+        clock: () => now,
+      );
+
+      final result = await runtime.fetchFeed(persistPage: false);
+
+      expect(result.page?.requestId, 'feed_new');
+      expect(local.recent?.requestId, 'feed_runtime');
+      expect(local.resume?.requestId, 'feed_runtime');
+      expect(local.resume?.cursor, 'cursor_existing');
+      runtime.close();
+    },
+  );
+
+  test(
+    'persisted visible position disambiguates reused revision ids',
+    () async {
+      final now = DateTime.utc(2026, 8, 29, 16);
+      final local = _MemoryConsumerState();
+      final first = ConsumerFeedItem.fromJson(
+        <String, Object?>{
+          'playId': 'play_first',
+          'revisionId': 'rev_shared',
+          'sourceBucket': 'known',
+          'document': _play('play_first', 'rev_shared'),
+        },
+        compatibilityChecker: const PlayCompatibilityChecker(),
+        capabilities: PlayCapabilityEnvelope.m1(),
+      );
+      final second = ConsumerFeedItem.fromJson(
+        <String, Object?>{
+          'playId': 'play_second',
+          'revisionId': 'rev_shared',
+          'sourceBucket': 'known',
+          'document': _play('play_second', 'rev_shared'),
+        },
+        compatibilityChecker: const PlayCompatibilityChecker(),
+        capabilities: PlayCapabilityEnvelope.m1(),
+      );
+      final runtime = ConsumerRuntime(
+        localState: local,
+        capabilities: PlayCapabilityEnvelope.m1(),
+        clock: () => now,
+      );
+
+      final persisted = await runtime.persistFeedWindow(
+        requestId: 'feed_shared_revision',
+        cursor: 'cursor_shared',
+        visibleRevisionId: 'rev_shared',
+        visiblePosition: 1,
+        items: [first, second],
+      );
+
+      expect(persisted, isTrue);
+      expect(local.resume?.visiblePosition, 1);
+      expect(local.resume?.visibleRevisionId, 'rev_shared');
+      expect(local.recent?.items[1].playId, 'play_second');
+      runtime.close();
+    },
+  );
+
   test('successful feed caches at most the bounded recent window', () async {
     final local = _MemoryConsumerState();
     final runtime = ConsumerRuntime(
@@ -356,7 +446,10 @@ void main() {
 
     expect(result.page?.items, hasLength(20));
     expect(local.recent?.items, hasLength(ConsumerRuntime.recentFeedMaxItems));
-    expect(local.resume?.windowRevisionIds, hasLength(20));
+    expect(
+      local.resume?.windowRevisionIds,
+      hasLength(ConsumerRuntime.recentFeedMaxItems),
+    );
     runtime.close();
   });
 }

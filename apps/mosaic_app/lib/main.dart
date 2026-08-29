@@ -10,6 +10,7 @@ import 'package:play_schema/play_schema.dart';
 
 import 'app_event_runtime.dart';
 import 'consumer_api_client.dart';
+import 'consumer_feed.dart';
 import 'consumer_onboarding.dart';
 import 'consumer_runtime.dart';
 import 'event_runtime_resources_factory.dart';
@@ -18,6 +19,17 @@ import 'onboarding_localizations.dart';
 const _apiBaseUrl = String.fromEnvironment('MOSAIC_API_BASE_URL');
 const _allowInsecureLocalApi = bool.fromEnvironment(
   'MOSAIC_ALLOW_INSECURE_LOCAL_API',
+);
+
+// The renderer implements the broader M1 primitive set, but the production
+// app must advertise only primitives whose authored assets it can currently
+// resolve. #64 installs managed image/video/audio/canvas delivery and can widen
+// this envelope without weakening the server's compatibility contract.
+const _consumerCapabilities = PlayCapabilityEnvelope(
+  schemaVersions: {1},
+  presentationTypes: {'text'},
+  inputTypes: {'tap', 'single_choice', 'piano_key', 'drag'},
+  validatorTypes: {'none', 'equals', 'ordered_sequence', 'target_region'},
 );
 
 Future<void> main() async {
@@ -51,11 +63,20 @@ final class MosaicApp extends StatefulWidget {
 final class _MosaicAppState extends State<MosaicApp> {
   final ActiveMediaCoordinator _mediaCoordinator = ActiveMediaCoordinator();
   final SoLoudAudioEngine _audioEngine = SoLoudAudioEngine();
+  final PlayVideoAssetResolver _videoResolver = MapPlayVideoAssetResolver(
+    const {},
+  );
+  final PlayAudioAssetResolver _audioResolver = MapPlayAudioAssetResolver(
+    const {},
+  );
+  final PlayCanvasAssetResolver _canvasResolver = MapPlayCanvasAssetResolver(
+    const {},
+  );
   late final AppEventRuntime _eventRuntime;
   late final ConsumerRuntime _consumerRuntime;
-  late final Telemetry _demoPlayTelemetry;
+  late final CachingPlayVisualAssetResolver _visualResolver;
+  late final PlayVisualPrefetchController _visualPrefetch;
   late final FlutterLifecycleBridge _lifecycle;
-  late final PlayCanvasAssetResolver _canvasResolver;
   var _semanticResumeEpoch = 0;
 
   @override
@@ -65,15 +86,24 @@ final class _MosaicAppState extends State<MosaicApp> {
     _consumerRuntime = ConsumerRuntime(
       api: _createConsumerApi(_eventRuntime),
       localState: _eventRuntime.resources.consumerLocalState,
-      capabilities: PlayCapabilityEnvelope.m1(),
+      capabilities: _consumerCapabilities,
       onError: _reportEventRuntimeError,
     );
-    _demoPlayTelemetry = _eventRuntime.telemetryForPlay(
-      feedRequestId: 'demo_feed_request',
-      playRevisionId: _demoPlay.revisionId,
+    _visualResolver = CachingPlayVisualAssetResolver(
+      MapPlayVisualAssetResolver(const {}),
+      capacity: 24,
+    );
+    _visualPrefetch = PlayVisualPrefetchController(
+      resolver: _visualResolver,
+      maxAssets: 4,
+      maxConcurrent: 2,
+      onError: (assetId, error, stackTrace) => _reportEventRuntimeError(
+        error,
+        stackTrace,
+        operation: 'feed_visual_prefetch:$assetId',
+      ),
     );
     _eventRuntime.requestDrain();
-    _canvasResolver = MapPlayCanvasAssetResolver({_demoCanvas.id: _demoCanvas});
     _lifecycle = FlutterLifecycleBridge(
       mediaCoordinator: _mediaCoordinator,
       onSemanticResume: _resumeSemanticMedia,
@@ -89,6 +119,7 @@ final class _MosaicAppState extends State<MosaicApp> {
 
   @override
   void dispose() {
+    _visualPrefetch.cancel();
     _lifecycle.dispose();
     _consumerRuntime.close();
     unawaited(_disposeResources());
@@ -130,70 +161,125 @@ final class _MosaicAppState extends State<MosaicApp> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildFeedPlay(
+    BuildContext context,
+    ConsumerFeedItem item, {
+    required String feedRequestId,
+    required bool active,
+    required ValueChanged<bool> onDirectManipulationChanged,
+  }) {
+    final telemetry = _eventRuntime.telemetryForPlay(
+      feedRequestId: feedRequestId,
+      playRevisionId: item.revisionId,
+    );
     final videoDiagnostics = PlayVideoDiagnosticObserver(
-      telemetry: _demoPlayTelemetry,
+      telemetry: telemetry,
       runtimeDiagnostics: const FlutterRuntimeDiagnostics(),
     );
     final media = PlayMediaLayerBuilder(
-      ownerId: playMediaOwnerId(_demoPlay),
-      visualResolver: MapPlayVisualAssetResolver(const {}),
-      videoResolver: MapPlayVideoAssetResolver(const {}),
-      audioResolver: MapPlayAudioAssetResolver(const {}),
+      ownerId: playMediaOwnerId(item.play),
+      visualResolver: _visualResolver,
+      videoResolver: _videoResolver,
+      audioResolver: _audioResolver,
       audioEngine: _audioEngine,
       canvasResolver: _canvasResolver,
       mediaCoordinator: _mediaCoordinator,
       videoControllerFactory: VideoPlayerPlayController.new,
+      active: active,
       semanticResumeEpoch: _semanticResumeEpoch,
       onVideoPlaybackEvent: videoDiagnostics.call,
     );
-
-    return MaterialApp(
-      title: 'Mosaic',
-      debugShowCheckedModeBanner: false,
-      themeMode: ThemeMode.system,
-      supportedLocales: MosaicOnboardingStrings.supportedLocales,
-      localizationsDelegates: const <LocalizationsDelegate<Object>>[
-        MosaicOnboardingStrings.delegate,
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      darkTheme: ThemeData(
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: MosaicVisualTokens.surface,
-        colorScheme: const ColorScheme.dark(
-          primary: MosaicVisualTokens.foreground,
-          onPrimary: MosaicVisualTokens.surface,
-          surface: MosaicVisualTokens.surface,
-          onSurface: MosaicVisualTokens.foreground,
-        ),
-      ),
-      theme: ThemeData(
-        brightness: Brightness.light,
-        scaffoldBackgroundColor: const Color(0xFFFAFAF8),
-        colorScheme: const ColorScheme.light(
-          primary: Color(0xFF171717),
-          onPrimary: Color(0xFFFFFFFF),
-          surface: Color(0xFFFAFAF8),
-          onSurface: Color(0xFF171717),
-        ),
-      ),
-      routes: {
-        MosaicSettingsRoute.privacy: (_) =>
-            const _ReservedSettingsPage('Privacy'),
-        MosaicSettingsRoute.support: (_) =>
-            const _ReservedSettingsPage('Support'),
-        MosaicSettingsRoute.deleteAccount: (_) =>
-            const _ReservedSettingsPage('Delete account'),
-      },
-      home: ConsumerOnboardingGate(
-        runtime: _consumerRuntime,
-        child: PlaySurface(play: _demoPlay, mediaBuilder: media.call),
-      ),
+    return PlaySurface(
+      key: ValueKey<String>('play:${item.playId}:${item.revisionId}'),
+      play: item.play,
+      mediaBuilder: media.call,
+      onDirectManipulationChanged: onDirectManipulationChanged,
     );
   }
+
+  void _recordFeedEvent(
+    String event, {
+    required String feedRequestId,
+    required String playRevisionId,
+    required Map<String, Object?> payload,
+  }) {
+    _eventRuntime
+        .telemetryForPlay(
+          feedRequestId: feedRequestId,
+          playRevisionId: playRevisionId,
+        )
+        .event(event, payload);
+  }
+
+  Future<void> _warmFeedWindow(
+    BuildContext context,
+    List<ConsumerFeedItem> items,
+  ) async {
+    final assetIds = <String>[];
+    for (final item in items) {
+      for (final state in item.play.states.values) {
+        for (final layer in state.presentation) {
+          final assetId = layer.assetId?.trim();
+          if (layer.type == 'image' && assetId != null && assetId.isNotEmpty) {
+            assetIds.add(assetId);
+          }
+        }
+      }
+    }
+    await _visualPrefetch.prefetch(context, assetIds);
+  }
+
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+    title: 'Mosaic',
+    debugShowCheckedModeBanner: false,
+    themeMode: ThemeMode.system,
+    supportedLocales: MosaicOnboardingStrings.supportedLocales,
+    localizationsDelegates: const <LocalizationsDelegate<Object>>[
+      MosaicOnboardingStrings.delegate,
+      GlobalMaterialLocalizations.delegate,
+      GlobalWidgetsLocalizations.delegate,
+      GlobalCupertinoLocalizations.delegate,
+    ],
+    darkTheme: ThemeData(
+      brightness: Brightness.dark,
+      scaffoldBackgroundColor: MosaicVisualTokens.surface,
+      colorScheme: const ColorScheme.dark(
+        primary: MosaicVisualTokens.foreground,
+        onPrimary: MosaicVisualTokens.surface,
+        surface: MosaicVisualTokens.surface,
+        onSurface: MosaicVisualTokens.foreground,
+      ),
+    ),
+    theme: ThemeData(
+      brightness: Brightness.light,
+      scaffoldBackgroundColor: const Color(0xFFFAFAF8),
+      colorScheme: const ColorScheme.light(
+        primary: Color(0xFF171717),
+        onPrimary: Color(0xFFFFFFFF),
+        surface: Color(0xFFFAFAF8),
+        onSurface: Color(0xFF171717),
+      ),
+    ),
+    routes: {
+      MosaicSettingsRoute.privacy: (_) =>
+          const _ReservedSettingsPage('Privacy'),
+      MosaicSettingsRoute.support: (_) =>
+          const _ReservedSettingsPage('Support'),
+      MosaicSettingsRoute.deleteAccount: (_) =>
+          const _ReservedSettingsPage('Delete account'),
+    },
+    home: ConsumerOnboardingGate(
+      runtime: _consumerRuntime,
+      child: ConsumerFeed(
+        runtime: _consumerRuntime,
+        itemBuilder: _buildFeedPlay,
+        onEvent: _recordFeedEvent,
+        onWarmWindow: _warmFeedWindow,
+        onCancelWarmWindow: _visualPrefetch.cancel,
+      ),
+    ),
+  );
 }
 
 ConsumerApiClient? _createConsumerApi(AppEventRuntime eventRuntime) {
@@ -242,85 +328,3 @@ final class _ReservedSettingsPage extends StatelessWidget {
     body: SafeArea(child: Center(child: Text(label))),
   );
 }
-
-final _demoCanvas = PlayCanvasAsset(
-  id: 'demo_visual',
-  semanticLabel: 'Warm walkable city scene',
-  elements: [
-    PlayCanvasRect(
-      rect: const Rect.fromLTWH(0.04, 0.08, 0.92, 0.72),
-      fill: true,
-      tone: PlayCanvasTone.surface,
-    ),
-    PlayCanvasCircle(
-      center: const Offset(0.79, 0.23),
-      radius: 0.08,
-      fill: true,
-      tone: PlayCanvasTone.accent,
-    ),
-    PlayCanvasRect(
-      rect: const Rect.fromLTWH(0.12, 0.44, 0.18, 0.24),
-      fill: true,
-      tone: PlayCanvasTone.muted,
-    ),
-    PlayCanvasRect(
-      rect: const Rect.fromLTWH(0.34, 0.36, 0.19, 0.32),
-      fill: true,
-      tone: PlayCanvasTone.foreground,
-    ),
-    PlayCanvasRect(
-      rect: const Rect.fromLTWH(0.57, 0.48, 0.15, 0.20),
-      fill: true,
-      tone: PlayCanvasTone.muted,
-    ),
-    PlayCanvasLine(
-      start: const Offset(0.10, 0.73),
-      end: const Offset(0.90, 0.73),
-      width: 0.018,
-      tone: PlayCanvasTone.accent,
-    ),
-  ],
-);
-
-final _demoPlay = PlayDocument.fromJson({
-  'schemaVersion': 1,
-  'id': 'demo_where_is_this',
-  'revisionId': 'rev_2',
-  'format': 'guess',
-  'classification': 'challenge',
-  'topics': ['travel'],
-  'learningTopics': ['geography'],
-  'estimatedDurationSec': 12,
-  'assets': ['demo_visual'],
-  'sources': <Object>[],
-  'entryState': 'guess',
-  'states': {
-    'guess': {
-      'presentation': {
-        'layers': [
-          {'type': 'canvas', 'role': 'media', 'assetId': 'demo_visual'},
-          {'type': 'text', 'role': 'prompt', 'value': 'Where is this?'},
-        ],
-      },
-      'input': {
-        'type': 'single_choice',
-        'options': [
-          {'id': 'lisbon', 'label': 'Lisbon'},
-          {'id': 'marrakech', 'label': 'Marrakech'},
-        ],
-      },
-      'validation': {'type': 'equals', 'value': 'lisbon'},
-      'transition': {'correct': 'reveal', 'incorrect': 'reveal'},
-    },
-    'reveal': {
-      'presentation': {
-        'layers': [
-          {'type': 'text', 'role': 'reveal_title', 'value': 'Lisbon'},
-        ],
-      },
-      'input': {'type': 'tap', 'label': 'Done'},
-      'validation': {'type': 'none'},
-      'transition': {'default': r'$end'},
-    },
-  },
-});
