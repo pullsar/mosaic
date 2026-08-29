@@ -67,6 +67,19 @@ setup_file() {
   [ "$status" -eq 0 ]
 }
 
+@test "PostgreSQL stages the root-only pgBackRest config and requires production S3 settings" {
+  run jq -e '
+    (.services.postgres.volumes | any(
+      .source == "/etc/mixli/postgres/pgbackrest.conf" and
+      .target == "/run/mixli-secrets/pgbackrest.conf" and
+      .read_only == true
+    )) and
+    (.services.postgres.volumes | all(.target != "/etc/pgbackrest/pgbackrest.conf")) and
+    (.services.postgres.environment.MIXLI_PGBACKREST_REQUIRE_REPO2_S3 == "1")
+  ' <<<"$CONFIG_JSON"
+  [ "$status" -eq 0 ]
+}
+
 @test "Nginx receives the release tree read-only and has a health check" {
   run jq -e '
     .services.nginx.healthcheck != null and

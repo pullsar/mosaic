@@ -6,11 +6,37 @@ setup() {
   CONTAINER="mixli-pg-test-${SUFFIX}"
   DATA_VOLUME="mixli-pg-data-${SUFFIX}"
   REPO_VOLUME="mixli-pg-repo-${SUFFIX}"
+  CONFIG_ROOT="$(mktemp -d)"
+  SOURCE_CONFIG="$CONFIG_ROOT/pgbackrest.conf"
+  STAGED_CONFIG=/run/mixli-secrets/pgbackrest.conf
 }
 
 teardown() {
   docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
   docker volume rm -f "$DATA_VOLUME" "$REPO_VOLUME" >/dev/null 2>&1 || true
+  rm -rf "$CONFIG_ROOT"
+}
+
+write_local_pgbackrest_config() {
+  cat >"$SOURCE_CONFIG" <<'EOF'
+[global]
+repo1-path=/var/lib/pgbackrest
+repo1-retention-full=2
+repo1-bundle=y
+repo1-block=y
+process-max=2
+start-fast=y
+spool-path=/var/spool/pgbackrest
+log-path=/var/log/pgbackrest
+log-level-console=info
+
+[mixli]
+pg1-path=/var/lib/postgresql/18/docker
+pg1-database=mixli
+pg1-user=mixli
+EOF
+  docker run --rm -v "$CONFIG_ROOT:/fixture" alpine:3.22 \
+    sh -ceu 'chown 0:0 /fixture/pgbackrest.conf; chmod 0600 /fixture/pgbackrest.conf'
 }
 
 wait_for_postgres() {
@@ -33,6 +59,7 @@ wait_for_postgres() {
 @test "pgBackRest restores a sentinel row from a full local backup" {
   docker volume create "$DATA_VOLUME" >/dev/null
   docker volume create "$REPO_VOLUME" >/dev/null
+  write_local_pgbackrest_config
 
   docker run -d --name "$CONTAINER" \
     -e POSTGRES_PASSWORD=test-only-password \
@@ -40,6 +67,7 @@ wait_for_postgres() {
     -e POSTGRES_DB=mixli \
     -v "$DATA_VOLUME:/var/lib/postgresql" \
     -v "$REPO_VOLUME:/var/lib/pgbackrest" \
+    -v "$SOURCE_CONFIG:$STAGED_CONFIG:ro" \
     "$IMAGE" -c config_file=/etc/postgresql/postgresql.conf -c shared_buffers=128MB >/dev/null
 
   wait_for_postgres
@@ -53,11 +81,13 @@ wait_for_postgres() {
   docker run --rm --user 0 \
     -v "$DATA_VOLUME:/var/lib/postgresql" \
     -v "$REPO_VOLUME:/var/lib/pgbackrest" \
+    -v "$SOURCE_CONFIG:$STAGED_CONFIG:ro" \
     "$IMAGE" bash -c 'mkdir -p /var/lib/postgresql/18/docker && chown -R postgres:postgres /var/lib/postgresql /var/lib/pgbackrest'
-  docker run --rm --user postgres \
+  docker run --rm \
     -v "$DATA_VOLUME:/var/lib/postgresql" \
     -v "$REPO_VOLUME:/var/lib/pgbackrest" \
-    "$IMAGE" pgbackrest --stanza=mixli restore
+    -v "$SOURCE_CONFIG:$STAGED_CONFIG:ro" \
+    "$IMAGE" gosu postgres pgbackrest --stanza=mixli restore
 
   docker run -d --name "$CONTAINER" \
     -e POSTGRES_PASSWORD=test-only-password \
@@ -65,6 +95,7 @@ wait_for_postgres() {
     -e POSTGRES_DB=mixli \
     -v "$DATA_VOLUME:/var/lib/postgresql" \
     -v "$REPO_VOLUME:/var/lib/pgbackrest" \
+    -v "$SOURCE_CONFIG:$STAGED_CONFIG:ro" \
     "$IMAGE" -c config_file=/etc/postgresql/postgresql.conf -c shared_buffers=128MB >/dev/null
   wait_for_postgres
 
