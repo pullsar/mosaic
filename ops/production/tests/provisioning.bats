@@ -202,8 +202,9 @@ run_ip_refresh() {
 
 @test "review sudo rule grants only the fixed request entrypoint" {
   script="$REPO_ROOT/ops/production/bin/provision-host.sh"
-  grep -Fq 'mixli-review ALL=(root) NOPASSWD: /opt/mixli/bin/review-request.sh *' "$script"
-  ! grep -Eq 'mixli-review.*(deployment|ci-request|/bin/bash|ALL$)' "$script"
+  review_rule="$(grep -F 'mixli-review ALL=' "$script")"
+  [[ "$review_rule" == *'mixli-review ALL=(root) NOPASSWD: /opt/mixli/bin/review-request.sh *'* ]]
+  ! grep -Eq '(deployment|ci-request|/bin/bash|ALL$)' <<<"$review_rule"
 }
 
 @test "GitHub App private key is never sourced from repository examples" {
