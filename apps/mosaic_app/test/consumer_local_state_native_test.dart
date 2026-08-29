@@ -46,7 +46,9 @@ void main() {
   );
 
   test('onboarding completion survives native database reopen', () async {
-    final directory = await Directory.systemTemp.createTemp('mosaic_onboarding_');
+    final directory = await Directory.systemTemp.createTemp(
+      'mosaic_onboarding_',
+    );
     addTearDown(() async {
       if (await directory.exists()) await directory.delete(recursive: true);
     });
