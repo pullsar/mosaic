@@ -12,6 +12,7 @@ const app = buildApp({
   repository,
   consumerRepository,
   logLevel: config.logLevel,
+  allowedWebOrigins: config.allowedWebOrigins,
 });
 
 const shutdown = async (signal: string) => {
