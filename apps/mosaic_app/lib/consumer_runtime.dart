@@ -186,39 +186,41 @@ final class ConsumerRuntime {
     required List<ConsumerFeedItem> items,
   }) async {
     final now = _clock().toUtc();
-    var boundedItems = _boundedRecentItems(requestId, items, now);
-
-    if (visibleRevisionId != null &&
-        boundedItems.every((item) => item.revisionId != visibleRevisionId)) {
-      ConsumerFeedItem? visible;
-      if (visiblePosition != null &&
-          visiblePosition >= 0 &&
-          visiblePosition < items.length) {
-        final candidate = items[visiblePosition];
-        if (candidate.revisionId == visibleRevisionId) visible = candidate;
+    ConsumerFeedItem? visibleItem;
+    if (visiblePosition != null &&
+        visiblePosition >= 0 &&
+        visiblePosition < items.length) {
+      final candidate = items[visiblePosition];
+      if (visibleRevisionId == null ||
+          candidate.revisionId == visibleRevisionId) {
+        visibleItem = candidate;
       }
-      visible ??= items.cast<ConsumerFeedItem?>().firstWhere(
-        (item) => item?.revisionId == visibleRevisionId,
-        orElse: () => null,
-      );
-      if (visible != null) {
-        final visibleOnly = _boundedRecentItems(requestId, [visible], now);
-        if (visibleOnly.isNotEmpty) boundedItems = visibleOnly;
+    }
+    if (visibleItem == null && visibleRevisionId != null) {
+      for (final item in items) {
+        if (item.revisionId == visibleRevisionId) {
+          visibleItem = item;
+          break;
+        }
       }
     }
 
-    final persistedVisiblePosition = visibleRevisionId == null
-        ? null
-        : boundedItems.indexWhere(
-            (item) => item.revisionId == visibleRevisionId,
-          );
-    final normalizedVisiblePosition = persistedVisiblePosition == null ||
-            persistedVisiblePosition < 0
+    var boundedItems = _boundedRecentItems(requestId, items, now);
+    if (visibleItem != null &&
+        boundedItems.every((item) => !_sameFeedItem(item, visibleItem!))) {
+      final visibleOnly = _boundedRecentItems(requestId, [visibleItem], now);
+      if (visibleOnly.isNotEmpty) boundedItems = visibleOnly;
+    }
+
+    final persistedVisiblePosition = visibleItem == null
+        ? -1
+        : boundedItems.indexWhere((item) => _sameFeedItem(item, visibleItem!));
+    final normalizedVisiblePosition = persistedVisiblePosition < 0
         ? null
         : persistedVisiblePosition;
     final normalizedVisibleRevisionId = normalizedVisiblePosition == null
         ? null
-        : visibleRevisionId;
+        : visibleItem!.revisionId;
 
     var persisted = true;
     try {
@@ -397,3 +399,6 @@ final class ConsumerRuntime {
     }
   }
 }
+
+bool _sameFeedItem(ConsumerFeedItem left, ConsumerFeedItem right) =>
+    left.playId == right.playId && left.revisionId == right.revisionId;
