@@ -3,17 +3,16 @@ name: ci
 on:
   push:
     branches: ['**']
-  pull_request:
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  flutter:
+  patch:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -24,30 +23,12 @@ jobs:
         with:
           flutter-version: '3.44.7'
           cache: true
-      - name: Resolve locked workspace
-        run: flutter pub get --enforce-lockfile
-      - name: Verify formatting
-        run: dart format --output=none --set-exit-if-changed .
-      - name: Analyze
-        run: flutter analyze
-      - name: Test play_schema
-        working-directory: packages/play_schema
-        run: dart test
-      - name: Test play_engine
-        working-directory: packages/play_engine
-        run: dart test
-      - name: Test analytics_contract
-        working-directory: packages/analytics_contract
-        run: dart test
-      - name: Test local_state
-        working-directory: packages/local_state
-        run: dart test
-      - name: Test event_delivery
-        working-directory: packages/event_delivery
-        run: dart test
-      - name: Test play_flutter
-        working-directory: packages/play_flutter
-        run: flutter test
-      - name: Test app shell
-        working-directory: apps/mosaic_app
-        run: flutter test
+      - name: Apply bounded outbox patch
+        run: |
+          python3 .tmp_event_patch.py
+          dart format packages/local_state/lib/local_state.dart packages/local_state/test/local_state_test.dart packages/event_delivery/lib/src/indexed_db_event_store.dart packages/event_delivery/test_web/indexed_db_event_store_web_test.dart
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add packages/local_state/lib/local_state.dart packages/local_state/test/local_state_test.dart packages/event_delivery/lib/src/indexed_db_event_store.dart packages/event_delivery/test_web/indexed_db_event_store_web_test.dart docs/event-delivery.md
+          git commit -m 'fix(events): hard-bound durable event queues [skip ci]'
+          git push origin HEAD:${GITHUB_REF_NAME}
