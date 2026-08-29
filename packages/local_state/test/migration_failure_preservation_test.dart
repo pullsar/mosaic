@@ -11,14 +11,13 @@ void main() {
 
     try {
       final raw = sqlite3.open(path);
-      raw.execute('''
-        create table feed_resume (
-          singleton integer primary key check(singleton = 1),
-          cursor text,
-          window_json text not null,
-          updated_at text not null
-        )
-      ''');
+      raw.execute(
+        'create table feed_resume ('
+        'singleton integer primary key check(singleton = 1), '
+        'cursor text, '
+        'window_json text not null, '
+        'updated_at text not null)',
+      );
       raw.execute('create table recent_feed_cache (marker text not null)');
       raw.execute(
         'insert into recent_feed_cache (marker) values (?)',
