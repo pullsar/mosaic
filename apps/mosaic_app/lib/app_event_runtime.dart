@@ -36,6 +36,7 @@ final class AppEventRuntime {
       try {
         transport = HttpEventTransport(
           baseUri: Uri.parse(configuredApi),
+          actorAccess: resources.actorAccess,
           allowInsecureLocalhost: allowInsecureLocalhost,
         );
         drainController = EventDrainController(
