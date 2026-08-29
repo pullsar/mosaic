@@ -39,6 +39,12 @@ jobs:
       - name: Test analytics_contract
         working-directory: packages/analytics_contract
         run: dart test
+      - name: Test local_state
+        working-directory: packages/local_state
+        run: dart test
+      - name: Test event_delivery
+        working-directory: packages/event_delivery
+        run: dart test
       - name: Test play_flutter
         working-directory: packages/play_flutter
         run: flutter test

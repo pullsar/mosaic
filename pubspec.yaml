@@ -8,6 +8,7 @@ workspace:
   - packages/play_engine
   - packages/play_flutter
   - packages/analytics_contract
+  - packages/event_delivery
   - packages/platform_contracts
   - packages/platform_flutter
   - packages/local_state
