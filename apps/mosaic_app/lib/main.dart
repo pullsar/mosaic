@@ -21,6 +21,17 @@ const _allowInsecureLocalApi = bool.fromEnvironment(
   'MOSAIC_ALLOW_INSECURE_LOCAL_API',
 );
 
+// The renderer implements the broader M1 primitive set, but the production
+// app must advertise only primitives whose authored assets it can currently
+// resolve. #64 installs managed image/video/audio/canvas delivery and can widen
+// this envelope without weakening the server's compatibility contract.
+const _consumerCapabilities = PlayCapabilityEnvelope(
+  schemaVersions: {1},
+  presentationTypes: {'text'},
+  inputTypes: {'tap', 'single_choice', 'piano_key', 'drag'},
+  validatorTypes: {'none', 'equals', 'ordered_sequence', 'target_region'},
+);
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final resources = await openAppEventResources(
@@ -75,7 +86,7 @@ final class _MosaicAppState extends State<MosaicApp> {
     _consumerRuntime = ConsumerRuntime(
       api: _createConsumerApi(_eventRuntime),
       localState: _eventRuntime.resources.consumerLocalState,
-      capabilities: PlayCapabilityEnvelope.m1(),
+      capabilities: _consumerCapabilities,
       onError: _reportEventRuntimeError,
     );
     _visualResolver = CachingPlayVisualAssetResolver(
