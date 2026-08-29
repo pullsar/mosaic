@@ -86,6 +86,7 @@ production-builds" ]
     '--add-host api-blue-1:127.0.0.1' \
     '--add-host api-blue-2:127.0.0.1' \
     '--add-host grafana:127.0.0.1' \
+    '--tmpfs /var/run:rw,noexec,nosuid,nodev,mode=1777' \
     'MIXLI_HOST_REPO="$CHECKOUT"' \
     'shellcheck' \
     'systemd-analyze verify' \
