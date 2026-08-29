@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:analytics_contract/analytics_contract.dart';
 import 'package:http/http.dart' as http;
 
+import 'api_http_policy.dart';
 import 'event_delivery_core.dart';
 
 final class HttpEventTransport implements EventTransport {
@@ -11,34 +12,27 @@ final class HttpEventTransport implements EventTransport {
     required Uri baseUri,
     required ActorAccessIdentity actorAccess,
     http.Client? client,
-    this.requestTimeout = const Duration(seconds: 10),
+    Duration requestTimeout = const Duration(seconds: 10),
     bool allowInsecureLocalhost = false,
-  }) : _baseUri = _validatedBaseUri(
-         baseUri,
+  }) : _policy = ApiHttpPolicy(
+         baseUri: baseUri,
+         requestTimeout: requestTimeout,
          allowInsecureLocalhost: allowInsecureLocalhost,
        ),
        _actorAccess = actorAccess,
        _client = client ?? http.Client(),
-       _ownsClient = client == null {
-    if (requestTimeout <= Duration.zero) {
-      throw ArgumentError.value(
-        requestTimeout,
-        'requestTimeout',
-        'must be positive',
-      );
-    }
-  }
+       _ownsClient = client == null;
 
-  final Uri _baseUri;
+  final ApiHttpPolicy _policy;
   final ActorAccessIdentity _actorAccess;
   final http.Client _client;
   final bool _ownsClient;
-  final Duration requestTimeout;
   var _registered = false;
   var _closed = false;
 
-  Uri get endpoint => _baseUri.resolve('v1/events');
-  Uri get actorEndpoint => _baseUri.resolve('v1/actors');
+  Duration get requestTimeout => _policy.requestTimeout;
+  Uri get endpoint => _policy.resolve('v1/events');
+  Uri get actorEndpoint => _policy.resolve('v1/actors');
 
   @override
   Future<EventDeliveryResult> deliver(MosaicEventEnvelope event) async {
@@ -68,15 +62,29 @@ final class HttpEventTransport implements EventTransport {
       return const EventDeliveryResult(EventDeliveryDisposition.accepted);
     }
 
-    final result = await _postJson(
-      actorEndpoint,
-      <String, Object?>{'actorId': _actorAccess.actorId},
-      acceptedStatusCodes: const {200, 201},
+    final result = await _policy.registerActor(
+      client: _client,
+      actorAccess: _actorAccess,
     );
-    if (result.disposition == EventDeliveryDisposition.accepted) {
-      _registered = true;
+    switch (result.disposition) {
+      case ActorRegistrationDisposition.accepted:
+        _registered = true;
+        return EventDeliveryResult(
+          EventDeliveryDisposition.accepted,
+          statusCode: result.statusCode,
+        );
+      case ActorRegistrationDisposition.retryableFailure:
+        return EventDeliveryResult(
+          EventDeliveryDisposition.retryableFailure,
+          statusCode: result.statusCode,
+        );
+      case ActorRegistrationDisposition.identityRecoveryRequired:
+      case ActorRegistrationDisposition.rejected:
+        return EventDeliveryResult(
+          EventDeliveryDisposition.rejected,
+          statusCode: result.statusCode,
+        );
     }
-    return result;
   }
 
   Future<EventDeliveryResult> _postJson(
@@ -102,7 +110,7 @@ final class HttpEventTransport implements EventTransport {
           statusCode: statusCode,
         );
       }
-      if (_isRetryableStatus(statusCode)) {
+      if (isRetryableHttpStatus(statusCode)) {
         return EventDeliveryResult(
           EventDeliveryDisposition.retryableFailure,
           statusCode: statusCode,
@@ -126,43 +134,4 @@ final class HttpEventTransport implements EventTransport {
     _registered = false;
     if (_ownsClient) _client.close();
   }
-}
-
-bool _isRetryableStatus(int statusCode) =>
-    statusCode == 408 ||
-    statusCode == 425 ||
-    statusCode == 429 ||
-    statusCode >= 500;
-
-Uri _validatedBaseUri(Uri baseUri, {required bool allowInsecureLocalhost}) {
-  if (!baseUri.isAbsolute || baseUri.host.isEmpty) {
-    throw ArgumentError.value(baseUri, 'baseUri', 'must be an absolute URI');
-  }
-  if (baseUri.hasQuery || baseUri.hasFragment) {
-    throw ArgumentError.value(
-      baseUri,
-      'baseUri',
-      'must not contain query or fragment components',
-    );
-  }
-
-  final secure = baseUri.scheme == 'https';
-  final localHttp =
-      allowInsecureLocalhost &&
-      baseUri.scheme == 'http' &&
-      (baseUri.host == 'localhost' ||
-          baseUri.host == '127.0.0.1' ||
-          baseUri.host == '::1');
-  if (!secure && !localHttp) {
-    throw ArgumentError.value(
-      baseUri,
-      'baseUri',
-      'must use HTTPS outside explicit localhost development',
-    );
-  }
-
-  final normalizedPath = baseUri.path.endsWith('/')
-      ? baseUri.path
-      : '${baseUri.path}/';
-  return baseUri.replace(path: normalizedPath);
 }
