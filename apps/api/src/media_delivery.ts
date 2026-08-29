@@ -51,7 +51,7 @@ export interface MediaDeliveryDescriptorObject {
 export interface MediaDeliveryDescriptor {
   schemaVersion: 1;
   assetId: string;
-  kind: 'video' | 'audio';
+  kind: 'image' | 'video' | 'audio';
   primary: MediaDeliveryDescriptorObject;
   poster: MediaDeliveryDescriptorObject | null;
   captions: MediaDeliveryDescriptorObject | null;
@@ -256,6 +256,8 @@ function assertStorageIdentity(assetId: string, object: MediaDeliveryObject): vo
 
 function switchExtension(purpose: MediaDeliveryObject['purpose']): string {
   switch (purpose) {
+    case 'image':
+      return '.jpg';
     case 'playback':
       return '.mp4';
     case 'poster':
