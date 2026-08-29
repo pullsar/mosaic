@@ -7,6 +7,8 @@ readonly TEST_MODE="${MIXLI_DEPLOY_TEST_MODE:-0}"
 readonly ROOT="${MIXLI_ROOT:-/srv/mixli}"
 readonly REPO="${MIXLI_REPO:-/srv/mixli/repository}"
 readonly LOCK_FILE="${MIXLI_LOCK_FILE:-/run/lock/mixli-deploy.lock}"
+readonly CI_LOCK_FILE="${MIXLI_CI_LOCK_FILE:-/run/lock/mixli-ci.lock}"
+readonly CI_LOCK_WAIT_SECONDS="${MIXLI_CI_LOCK_WAIT_SECONDS:-2400}"
 readonly BACKUP_LOCK_FILE="${MIXLI_BACKUP_LOCK_FILE:-/run/lock/mixli-backup.lock}"
 readonly COMPOSE_FILE="${MIXLI_COMPOSE_FILE:-${MIXLI_ROOT:-/srv/mixli}/runtime/compose.yaml}"
 readonly ENV_FILE="${MIXLI_ENV_FILE:-/etc/mixli/env/production.env}"
@@ -32,6 +34,8 @@ compose_had_previous=0
 target_pool=''
 had_upstream=0
 postgres_ci_retained=0
+postgres_runtime_changed=0
+previous_postgres_image=''
 
 builder_git() {
   runuser -u mixli-build -- git "$@"
@@ -94,6 +98,12 @@ reload_nginx() {
   compose exec -T nginx nginx -s reload
 }
 
+env_field() {
+  local key="$1"
+  awk -F= -v key="$key" '$1 == key { print substr($0, index($0, "=") + 1); exit }' \
+    "$ENV_FILE"
+}
+
 restore_runtime_env() {
   local temporary="${ENV_FILE}.$$.rollback"
   [[ "$env_changed" == '1' && -n "$env_backup" && -f "$env_backup" ]] || return 0
@@ -145,6 +155,25 @@ cleanup_postgres_ci_image() {
   printf 'Failed to remove exact CI image tag %s.\n' "$POSTGRES_CI_IMAGE" >&2
   log_event "postgres-ci-cleanup-failed:$SHA" || true
   return "$cleanup_status"
+}
+
+restore_postgres_runtime() {
+  [[ "$postgres_runtime_changed" == '1' ]] || return 0
+
+  if [[ "$previous_postgres_image" =~ ^mixli-postgres:[0-9a-f]{40}$ ]]; then
+    if ! compose up -d --no-deps --force-recreate postgres; then
+      return 1
+    fi
+    if [[ "$TEST_MODE" != '1' ]] && ! wait_for_postgres_health; then
+      return 1
+    fi
+  elif ! compose stop postgres; then
+    return 1
+  fi
+
+  postgres_runtime_changed=0
+  log_event "postgres-runtime-restored:$SHA" || true
+  return 0
 }
 
 promote_postgres_image() {
@@ -211,6 +240,10 @@ on_error() {
   rollback_switches
   restore_runtime_compose
   restore_runtime_env
+  if ! restore_postgres_runtime; then
+    printf 'Failed to restore the prior PostgreSQL runtime after deployment error.\n' >&2
+    log_event "postgres-runtime-rollback-failed:$SHA"
+  fi
   cleanup_postgres_ci_image
   log_event "deploy-failed:$SHA:line-$line:status-$status"
   exit "$status"
@@ -237,15 +270,25 @@ verify_ancestry() {
 }
 
 run_repository_ci() {
+  local ci_status=0
   fail_if_requested ci
+  exec 6>"$CI_LOCK_FILE"
+  if ! flock -w "$CI_LOCK_WAIT_SECONDS" 6; then
+    exec 6>&-
+    return 75
+  fi
   if [[ "$TEST_MODE" == '1' ]]; then
     log_event "ci-verified:$SHA"
     postgres_ci_retained=1
-    return 0
+  elif MIXLI_CI_RETAIN_POSTGRES_IMAGE=1 "$CI_RUNNER" "$BUILDS/$SHA" "$SHA"; then
+    postgres_ci_retained=1
+    log_event "ci-verified:$SHA"
+  else
+    ci_status=$?
   fi
-  MIXLI_CI_RETAIN_POSTGRES_IMAGE=1 "$CI_RUNNER" "$BUILDS/$SHA" "$SHA"
-  postgres_ci_retained=1
-  log_event "ci-verified:$SHA"
+  flock -u 6
+  exec 6>&-
+  return "$ci_status"
 }
 
 prepare_checkout() {
@@ -282,18 +325,23 @@ validate_runtime_compose() {
 }
 
 prepare_database() {
+  postgres_runtime_changed=1
+  compose up -d --no-deps postgres
   if [[ "$TEST_MODE" == '1' ]]; then
     log_event 'database-ready'
     return 0
   fi
 
-  compose up -d --no-deps postgres
+  wait_for_postgres_health
+  compose exec -T --user postgres postgres pgbackrest --stanza=mixli stanza-create
+  log_event 'database-ready'
+}
+
+wait_for_postgres_health() {
   local attempt container_id
   for ((attempt = 1; attempt <= 60; attempt++)); do
     container_id="$(compose ps -q postgres)"
     if [[ -n "$container_id" && "$(docker inspect --format '{{.State.Health.Status}}' "$container_id")" == 'healthy' ]]; then
-      compose exec -T --user postgres postgres pgbackrest --stanza=mixli stanza-create
-      log_event 'database-ready'
       return 0
     fi
     sleep 2
@@ -439,7 +487,9 @@ main() {
   local current_sha current_pool
   validate_sha
   validate_root || exit 64
-  install -d -m 0750 "$(dirname "$LOCK_FILE")" "$(dirname "$BACKUP_LOCK_FILE")" "$RELEASES" "$RUNTIME" "$STATE" "$LOG_DIR"
+  [[ "$CI_LOCK_WAIT_SECONDS" =~ ^[0-9]+$ && "$CI_LOCK_WAIT_SECONDS" -le 2400 ]] || exit 64
+  install -d -m 0750 "$(dirname "$LOCK_FILE")" "$(dirname "$CI_LOCK_FILE")" \
+    "$(dirname "$BACKUP_LOCK_FILE")" "$RELEASES" "$RUNTIME" "$STATE" "$LOG_DIR"
   if [[ "$TEST_MODE" == '1' ]]; then
     install -d -m 0750 "$BUILDS"
   else
@@ -454,6 +504,7 @@ main() {
   run_repository_ci
   current_sha="$(json_field "$STATE/current.json" sha)"
   current_pool="$(json_field "$STATE/current.json" pool)"
+  previous_postgres_image="$(env_field MIXLI_POSTGRES_IMAGE)"
   if [[ "$current_pool" == 'blue' ]]; then
     target_pool='green'
   else
@@ -492,6 +543,7 @@ main() {
   env_changed=0
   compose_changed=0
   switched=0
+  postgres_runtime_changed=0
 }
 
 main

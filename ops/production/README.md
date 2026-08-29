@@ -153,6 +153,14 @@ and old-pool drain. Success evidence is `deployed:<sha>:<pool>` in
 `deploy-events.log`, matching `/srv/mixli/state/current.json`, and both verifier
 modes passing.
 
+Direct deployment CI and queued branch/PR CI serialize on the same
+`/run/lock/mixli-ci.lock`; only the caller takes that lock, so invoking the CI
+runner cannot recursively deadlock. If a later deployment stage fails after
+PostgreSQL may have started from the candidate image, rollback restores the old
+Compose and environment files first and then force-recreates PostgreSQL from the
+prior exact image. Without a prior exact pin, rollback stops the candidate
+database instead of leaving runtime state divergent from the restored files.
+
 The deployer atomically pins the exact release's Compose file at
 `/srv/mixli/runtime/compose.yaml` and persists both pool image SHAs plus
 `MIXLI_POSTGRES_IMAGE=mixli-postgres:<sha>` in the root-owned environment file.
