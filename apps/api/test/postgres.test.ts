@@ -14,7 +14,9 @@ async function runMigration(command: 'up' | 'down' = 'up'): Promise<void> {
       env: process.env,
       stdio: 'inherit',
     });
-    child.on('exit', (code) => code === 0 ? resolve() : reject(new Error(`migration ${command} exited ${code}`)));
+    child.on('exit', (code) =>
+      code === 0 ? resolve() : reject(new Error(`migration ${command} exited ${code}`)),
+    );
     child.on('error', reject);
   });
 }
@@ -133,7 +135,12 @@ test('PostgreSQL media lifecycle is immutable, leased and stale-worker safe', {s
     assert.ok(firstClaim);
     assert.equal(firstClaim.derivative.attemptCount, 1);
     assert.equal(
-      await mediaRepo.claimDerivative(assetId, registered.derivative.derivativeKey, 60_000, `claim_b_${suffix}`),
+      await mediaRepo.claimDerivative(
+        assetId,
+        registered.derivative.derivativeKey,
+        60_000,
+        `claim_b_${suffix}`,
+      ),
       null,
     );
     await assert.rejects(
@@ -155,12 +162,14 @@ test('PostgreSQL media lifecycle is immutable, leased and stale-worker safe', {s
     assert.equal(ready.state, 'ready');
     assert.equal(ready.videoCodec, 'h264');
     assert.equal(
-      (await mediaRepo.markDerivativeReady(
-        assetId,
-        registered.derivative.derivativeKey,
-        firstClaim.claimToken,
-        playbackOutput,
-      )).state,
+      (
+        await mediaRepo.markDerivativeReady(
+          assetId,
+          registered.derivative.derivativeKey,
+          firstClaim.claimToken,
+          playbackOutput,
+        )
+      ).state,
       'ready',
     );
     await assert.rejects(
@@ -209,12 +218,14 @@ test('PostgreSQL media lifecycle is immutable, leased and stale-worker safe', {s
       MediaIdentityConflictError,
     );
     assert.equal(
-      (await mediaRepo.markDerivativeFailed(
-        assetId,
-        retryDerivative.derivativeKey,
-        replacementClaim.claimToken,
-        'transcode_failed',
-      )).state,
+      (
+        await mediaRepo.markDerivativeFailed(
+          assetId,
+          retryDerivative.derivativeKey,
+          replacementClaim.claimToken,
+          'transcode_failed',
+        )
+      ).state,
       'failed',
     );
 
@@ -227,7 +238,10 @@ test('PostgreSQL media lifecycle is immutable, leased and stale-worker safe', {s
     assert.ok(finalClaim);
     assert.equal(await mediaRepo.revokeAsset(assetId), true);
     assert.equal((await mediaRepo.getAsset(assetId))?.state, 'revoked');
-    assert.equal((await mediaRepo.getDerivative(assetId, retryDerivative.derivativeKey))?.state, 'revoked');
+    assert.equal(
+      (await mediaRepo.getDerivative(assetId, retryDerivative.derivativeKey))?.state,
+      'revoked',
+    );
     await assert.rejects(
       mediaRepo.markDerivativeReady(
         assetId,
@@ -237,18 +251,43 @@ test('PostgreSQL media lifecycle is immutable, leased and stale-worker safe', {s
       ),
       MediaIdentityConflictError,
     );
-    await assert.rejects(mediaRepo.registerDerivative(assetId, playbackPlan), MediaIdentityConflictError);
+    await assert.rejects(
+      mediaRepo.registerDerivative(assetId, playbackPlan),
+      MediaIdentityConflictError,
+    );
   } finally {
     await pool.end();
   }
 });
 
-test('media foundation down migration removes only media schema and cleanly reapplies', {skip: !databaseUrl}, async () => {
+test('consumer and media migrations roll back in order and cleanly reapply', {skip: !databaseUrl}, async () => {
   await runMigration('up');
   await runMigration('down');
   const pool = new Pool({connectionString: databaseUrl});
   try {
-    const result = await pool.query<{
+    const afterConsumerDown = await pool.query<{
+      feed_decisions: string | null;
+      media_assets: string | null;
+      media_derivatives: string | null;
+      actors: string | null;
+    }>(
+      `select to_regclass('public.feed_decisions')::text as feed_decisions,
+              to_regclass('public.media_assets')::text as media_assets,
+              to_regclass('public.media_derivatives')::text as media_derivatives,
+              to_regclass('public.actors')::text as actors`,
+    );
+    assert.equal(afterConsumerDown.rows[0]?.feed_decisions, null);
+    assert.equal(afterConsumerDown.rows[0]?.media_assets, 'media_assets');
+    assert.equal(afterConsumerDown.rows[0]?.media_derivatives, 'media_derivatives');
+    assert.equal(afterConsumerDown.rows[0]?.actors, 'actors');
+  } finally {
+    await pool.end();
+  }
+
+  await runMigration('down');
+  const mediaDownPool = new Pool({connectionString: databaseUrl});
+  try {
+    const afterMediaDown = await mediaDownPool.query<{
       media_assets: string | null;
       media_derivatives: string | null;
       actors: string | null;
@@ -257,11 +296,11 @@ test('media foundation down migration removes only media schema and cleanly reap
               to_regclass('public.media_derivatives')::text as media_derivatives,
               to_regclass('public.actors')::text as actors`,
     );
-    assert.equal(result.rows[0]?.media_assets, null);
-    assert.equal(result.rows[0]?.media_derivatives, null);
-    assert.equal(result.rows[0]?.actors, 'actors');
+    assert.equal(afterMediaDown.rows[0]?.media_assets, null);
+    assert.equal(afterMediaDown.rows[0]?.media_derivatives, null);
+    assert.equal(afterMediaDown.rows[0]?.actors, 'actors');
   } finally {
-    await pool.end();
+    await mediaDownPool.end();
     await runMigration('up');
   }
 });
