@@ -155,6 +155,13 @@ final class _CacheEntry<T> {
   final DateTime expiresAt;
 }
 
+final class _RequestEpoch {
+  const _RequestEpoch(this.global, this.asset);
+
+  final int global;
+  final int asset;
+}
+
 final class AssetDeliveryClient {
   AssetDeliveryClient({
     required Uri baseUri,
@@ -190,6 +197,8 @@ final class AssetDeliveryClient {
       LinkedHashMap();
   final Map<String, Future<ManagedAssetDescriptor?>> _descriptorInFlight = {};
   final Map<String, Future<PlayCanvasAsset?>> _canvasInFlight = {};
+  final Map<String, int> _assetEpochs = {};
+  int _globalEpoch = 0;
   bool _closed = false;
 
   bool get supportsBinaryNetworkAssets => _policy.baseUri.scheme == 'https';
@@ -205,11 +214,10 @@ final class AssetDeliveryClient {
     final existing = _descriptorInFlight[id];
     if (existing != null) return existing;
 
+    final epoch = _requestEpoch(id);
     late final Future<ManagedAssetDescriptor?> request;
-    request = _fetchDescriptor(id).whenComplete(() {
-      if (identical(_descriptorInFlight[id], request)) {
-        _descriptorInFlight.remove(id);
-      }
+    request = _fetchDescriptor(id, epoch).whenComplete(() {
+      _removeCurrent(_descriptorInFlight, id, request);
     });
     _descriptorInFlight[id] = request;
     return request;
@@ -222,11 +230,10 @@ final class AssetDeliveryClient {
     final existing = _canvasInFlight[id];
     if (existing != null) return existing;
 
+    final epoch = _requestEpoch(id);
     late final Future<PlayCanvasAsset?> request;
-    request = _fetchCanvas(id).whenComplete(() {
-      if (identical(_canvasInFlight[id], request)) {
-        _canvasInFlight.remove(id);
-      }
+    request = _fetchCanvas(id, epoch).whenComplete(() {
+      _removeCurrent(_canvasInFlight, id, request);
     });
     _canvasInFlight[id] = request;
     return request;
@@ -255,17 +262,20 @@ final class AssetDeliveryClient {
 
   void invalidate(String assetId) {
     final id = _assetId(assetId);
+    _assetEpochs[id] = (_assetEpochs[id] ?? 0) + 1;
     _descriptorCache.remove(id);
     _canvasCache.remove(id);
-    _descriptorInFlight.remove(id);
-    _canvasInFlight.remove(id);
+    _detach(_descriptorInFlight, id);
+    _detach(_canvasInFlight, id);
   }
 
   void clear() {
+    _globalEpoch += 1;
     _descriptorCache.clear();
     _canvasCache.clear();
-    _descriptorInFlight.clear();
-    _canvasInFlight.clear();
+    _detachAll(_descriptorInFlight);
+    _detachAll(_canvasInFlight);
+    _assetEpochs.clear();
   }
 
   void close() {
@@ -275,12 +285,17 @@ final class AssetDeliveryClient {
     if (_ownsClient) _client.close();
   }
 
-  Future<ManagedAssetDescriptor?> _fetchDescriptor(String id) async {
+  Future<ManagedAssetDescriptor?> _fetchDescriptor(
+    String id,
+    _RequestEpoch epoch,
+  ) async {
     final response = await _get(
       _policy.resolve('v1/assets/${Uri.encodeComponent(id)}'),
     );
     if (response.statusCode == 404) {
-      _remember(_descriptorCache, id, null, _missingTtl);
+      if (_isCurrent(id, epoch)) {
+        _remember(_descriptorCache, id, null, _missingTtl);
+      }
       return null;
     }
     if (response.statusCode != 200) {
@@ -297,16 +312,20 @@ final class AssetDeliveryClient {
       _decodeObject(response.bodyBytes, 'managed asset descriptor'),
       expectedAssetId: id,
     );
-    _remember(_descriptorCache, id, descriptor, _successTtl);
+    if (_isCurrent(id, epoch)) {
+      _remember(_descriptorCache, id, descriptor, _successTtl);
+    }
     return descriptor;
   }
 
-  Future<PlayCanvasAsset?> _fetchCanvas(String id) async {
+  Future<PlayCanvasAsset?> _fetchCanvas(String id, _RequestEpoch epoch) async {
     final response = await _get(
       _policy.resolve('v1/canvas-assets/${Uri.encodeComponent(id)}'),
     );
     if (response.statusCode == 404) {
-      _remember(_canvasCache, id, null, _missingTtl);
+      if (_isCurrent(id, epoch)) {
+        _remember(_canvasCache, id, null, _missingTtl);
+      }
       return null;
     }
     if (response.statusCode != 200) {
@@ -325,7 +344,9 @@ final class AssetDeliveryClient {
         'Canvas returned ${canvas.id} while resolving $id.',
       );
     }
-    _remember(_canvasCache, id, canvas, _successTtl);
+    if (_isCurrent(id, epoch)) {
+      _remember(_canvasCache, id, canvas, _successTtl);
+    }
     return canvas;
   }
 
@@ -341,6 +362,14 @@ final class AssetDeliveryClient {
       throw AssetDeliveryUnavailableException('Asset request failed: $error');
     }
   }
+
+  _RequestEpoch _requestEpoch(String id) =>
+      _RequestEpoch(_globalEpoch, _assetEpochs[id] ?? 0);
+
+  bool _isCurrent(String id, _RequestEpoch epoch) =>
+      !_closed &&
+      epoch.global == _globalEpoch &&
+      epoch.asset == (_assetEpochs[id] ?? 0);
 
   (bool, T?) _cached<T>(
     LinkedHashMap<String, _CacheEntry<T>> cache,
@@ -365,6 +394,27 @@ final class AssetDeliveryClient {
       cache.remove(cache.keys.first);
     }
   }
+
+  void _removeCurrent<T>(Map<String, Future<T>> map, String id, Future<T> current) {
+    final stored = map[id];
+    if (identical(stored, current)) {
+      final removed = map.remove(id);
+      assert(identical(removed, current));
+    }
+  }
+
+  void _detach<T>(Map<String, Future<T>> map, String id) {
+    final detached = map.remove(id);
+    if (detached != null) unawaited(detached.then<void>((_) {}, onError: (_, __) {}));
+  }
+
+  void _detachAll<T>(Map<String, Future<T>> map) {
+    final detached = map.values.toList(growable: false);
+    map.clear();
+    for (final future in detached) {
+      unawaited(future.then<void>((_) {}, onError: (_, __) {}));
+    }
+  }
 }
 
 final class ManagedVisualAssetResolver implements PlayVisualAssetResolver {
@@ -378,6 +428,7 @@ final class ManagedVisualAssetResolver implements PlayVisualAssetResolver {
     final descriptor = await client.describe(assetId);
     if (descriptor == null) return null;
     _requireKind(descriptor, ManagedAssetKind.image);
+    _requireMime(descriptor.primary, 'image/jpeg');
     return PlayVisualAsset(
       id: descriptor.assetId,
       source: NetworkPlayVisualSource(client.contentUri(descriptor.primary)),
@@ -397,6 +448,7 @@ final class ManagedVideoAssetResolver implements PlayVideoAssetResolver {
     if (descriptor == null) return null;
     _requireKind(descriptor, ManagedAssetKind.video);
     final primary = descriptor.primary;
+    _requireMime(primary, 'video/mp4');
     final format = _videoFormat(primary);
     return PlayVideoAsset(
       id: descriptor.assetId,
@@ -421,6 +473,7 @@ final class ManagedVideoPosterResolver implements PlayVideoPosterResolver {
     _requireKind(descriptor, ManagedAssetKind.video);
     final poster = descriptor.poster;
     if (poster == null) return null;
+    _requireMime(poster, 'image/jpeg');
     return PlayVisualAsset(
       id: '${descriptor.assetId}:poster',
       source: NetworkPlayVisualSource(client.contentUri(poster)),
@@ -439,6 +492,7 @@ final class ManagedAudioAssetResolver implements PlayAudioAssetResolver {
     final descriptor = await client.describe(assetId);
     if (descriptor == null) return null;
     _requireKind(descriptor, ManagedAssetKind.audio);
+    _requireMime(descriptor.primary, 'audio/mp4');
     return PlayAudioAsset(
       id: descriptor.assetId,
       uri: client.contentUri(descriptor.primary),
@@ -478,6 +532,14 @@ void _requireKind(
   if (descriptor.kind != expected) {
     throw AssetDeliveryFormatException(
       'Asset ${descriptor.assetId} is ${descriptor.kind.name}, not ${expected.name}.',
+    );
+  }
+}
+
+void _requireMime(ManagedAssetObject object, String expected) {
+  if (object.mimeType != expected) {
+    throw AssetDeliveryFormatException(
+      'Managed ${object.variant} MIME ${object.mimeType} does not match $expected.',
     );
   }
 }
