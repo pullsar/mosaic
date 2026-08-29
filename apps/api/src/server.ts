@@ -4,6 +4,7 @@ import {PostgresCanvasAssetRepository} from './canvas_asset.js';
 import {registerCanvasAssetRoutes} from './canvas_asset_routes.js';
 import {loadConfig} from './config.js';
 import {PostgresConsumerRepository} from './consumer_repository.js';
+import {PostgresFeedAssetReadinessResolver} from './feed_asset_readiness.js';
 import {MediaDeliveryService} from './media_delivery.js';
 import {loadMediaDeliveryStorageConfig} from './media_delivery_config.js';
 import {LocalMediaDeliveryObjectReader} from './media_delivery_local_storage.js';
@@ -13,19 +14,23 @@ import {PostgresMediaPublicationGate} from './media_publication.js';
 import {PostgresRepository} from './repository.js';
 
 const config = loadConfig();
+const mediaDeliveryConfig = loadMediaDeliveryStorageConfig();
 const pool = new Pool({connectionString: config.databaseUrl});
 const repository = new PostgresRepository(pool);
 const consumerRepository = new PostgresConsumerRepository(pool);
+const feedAssetReadiness = new PostgresFeedAssetReadinessResolver(pool, {
+  binaryDeliveryEnabled: mediaDeliveryConfig.storageMode !== 'disabled',
+});
 const app = buildApp({
   repository,
   consumerRepository,
+  feedAssetReadiness,
   logLevel: config.logLevel,
   allowedWebOrigins: config.allowedWebOrigins,
 });
 
 registerCanvasAssetRoutes(app, new PostgresCanvasAssetRepository(pool));
 
-const mediaDeliveryConfig = loadMediaDeliveryStorageConfig();
 if (mediaDeliveryConfig.storageMode !== 'disabled') {
   const reader = mediaDeliveryConfig.storageMode === 'local'
     ? new LocalMediaDeliveryObjectReader(mediaDeliveryConfig.objectRoot)
