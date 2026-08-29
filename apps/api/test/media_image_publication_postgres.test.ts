@@ -137,6 +137,7 @@ test(
         (error) => blockedReason(error) === 'asset_revoked',
       );
     } finally {
+      await pool.query('delete from media_assets where id = $1', [assetId]).catch(() => undefined);
       await pool.end();
     }
   },
