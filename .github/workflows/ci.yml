@@ -1,21 +1,24 @@
-name: m2-feed-rebase-format
+name: ci
 
 on:
   push:
-    branches: ['agent/m2-feed-pager-20260829']
+    branches: ['**']
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  format:
+  flutter:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: agent/m2-feed-pager-20260829
       - name: Flutter
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
@@ -23,96 +26,28 @@ jobs:
           cache: true
       - name: Resolve locked workspace
         run: flutter pub get --enforce-lockfile
-      - name: Rebase controller ownership and bound analytics history
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path('apps/mosaic_app/lib/consumer_feed.dart')
-          text = path.read_text()
-          replacements = [
-              (
-                  "import 'dart:async';\nimport 'dart:math' as math;",
-                  "import 'dart:async';\nimport 'dart:collection';\nimport 'dart:math' as math;",
-                  'collection import',
-              ),
-              (
-                  '''final class _ConsumerFeedState extends State<ConsumerFeed> {\n  late final PageController _pageController;\n  final List<_FeedEntry> _entries = <_FeedEntry>[];\n  final Set<String> _impressed = <String>{};\n  final Set<String> _started = <String>{};''',
-                  '''final class _ConsumerFeedState extends State<ConsumerFeed> {\n  static const int _analyticsHistoryWindows = 4;\n\n  PageController _pageController = PageController();\n  final List<_FeedEntry> _entries = <_FeedEntry>[];\n  final LinkedHashSet<String> _impressed = LinkedHashSet<String>();\n  final LinkedHashSet<String> _started = LinkedHashSet<String>();''',
-                  'state fields',
-              ),
-              (
-                  '''  bool _directManipulationActive = false;\n  int? _suppressedPageCallback;''',
-                  '''  bool _directManipulationActive = false;''',
-                  'suppression field removal',
-              ),
-              (
-                  '''  void initState() {\n    super.initState();\n    _pageController = PageController();\n    unawaited(_bootstrap());\n  }''',
-                  '''  void initState() {\n    super.initState();\n    unawaited(_bootstrap());\n  }''',
-                  'init controller removal',
-              ),
-              (
-                  '''        _nextCursor = resume?.requestId == recovered.requestId\n            ? resume?.cursor\n            : null;\n        _booting = false;\n      });\n      _jumpAfterBuild(restoredIndex);''',
-                  '''        _nextCursor = resume?.requestId == recovered.requestId\n            ? resume?.cursor\n            : null;\n        _booting = false;\n        _replacePageController(restoredIndex);\n      });''',
-                  'restore rebase',
-              ),
-              (
-                  '''    var shouldJumpToZero = false;\n    var shouldEmitInitial = false;''',
-                  '''    var shouldEmitInitial = false;''',
-                  'fresh jump flag',
-              ),
-              (
-                  '''          _activeDecisionRequestId = page.requestId;\n          _nextCursor = nextCursor;\n          shouldJumpToZero = true;''',
-                  '''          _activeDecisionRequestId = page.requestId;\n          _nextCursor = nextCursor;\n          _replacePageController(0);''',
-                  'fresh decision rebase',
-              ),
-              (
-                  '''    if (shouldJumpToZero) _jumpAfterBuild(0);\n    if (shouldEmitInitial) _emitInitialVisibleAfterBuild();''',
-                  '''    if (shouldEmitInitial) _emitInitialVisibleAfterBuild();''',
-                  'fresh jump call',
-              ),
-              (
-                  '''  void _onPageChanged(int index) {\n    if (_suppressedPageCallback == index) {\n      _suppressedPageCallback = null;\n      return;\n    }\n    if (index < 0 || index >= _entries.length) return;''',
-                  '''  void _onPageChanged(int index) {\n    if (index < 0 || index >= _entries.length) return;''',
-                  'page suppression removal',
-              ),
-              (
-                  '''      _entries.removeRange(0, dropBefore);\n      _currentIndex -= dropBefore;\n      _jumpAfterBuild(_currentIndex);''',
-                  '''      _entries.removeRange(0, dropBefore);\n      _currentIndex -= dropBefore;\n      _replacePageController(_currentIndex);''',
-                  'trim rebase',
-              ),
-              (
-                  '''  void _jumpAfterBuild(int page) {\n    WidgetsBinding.instance.addPostFrameCallback((_) {\n      if (!mounted || !_pageController.hasClients) return;\n      final bounded = math.max(0, math.min(page, _entries.length - 1));\n      if ((_pageController.page?.round() ?? 0) == bounded) return;\n      _suppressedPageCallback = bounded;\n      _pageController.jumpToPage(bounded);\n      WidgetsBinding.instance.addPostFrameCallback((_) {\n        if (_suppressedPageCallback == bounded) {\n          _suppressedPageCallback = null;\n        }\n      });\n    });\n  }''',
-                  '''  void _replacePageController(int page) {\n    final bounded = math.max(0, math.min(page, _entries.length - 1));\n    final previous = _pageController;\n    _pageController = PageController(initialPage: bounded);\n    WidgetsBinding.instance.addPostFrameCallback((_) => previous.dispose());\n  }''',
-                  'controller replacement',
-              ),
-              (
-                  '''    if (_impressed.add(entry.analyticsIdentity)) {''',
-                  '''    if (_rememberAnalyticsIdentity(_impressed, entry.analyticsIdentity)) {''',
-                  'impression memory',
-              ),
-              (
-                  '''    if (_started.add(entry.analyticsIdentity)) {''',
-                  '''    if (_rememberAnalyticsIdentity(_started, entry.analyticsIdentity)) {''',
-                  'start memory',
-              ),
-          ]
-          for old, new, label in replacements:
-              if text.count(old) != 1:
-                  raise SystemExit(f'{label} patch anchor mismatch')
-              text = text.replace(old, new)
-
-          insert_before = '''  void _emitDismissed(_FeedEntry entry) {'''
-          helper = '''  bool _rememberAnalyticsIdentity(\n    LinkedHashSet<String> identities,\n    String identity,\n  ) {\n    if (!identities.add(identity)) return false;\n    final limit = widget.maxRetainedItems * _analyticsHistoryWindows;\n    while (identities.length > limit) {\n      identities.remove(identities.first);\n    }\n    return true;\n  }\n\n'''
-          if text.count(insert_before) != 1:
-              raise SystemExit('analytics helper insertion anchor mismatch')
-          path.write_text(text.replace(insert_before, helper + insert_before))
-          PY
-
-          dart format apps/mosaic_app/lib/consumer_feed.dart
-
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add apps/mosaic_app/lib/consumer_feed.dart
-          git commit -m 'fix(m2): bound feed identity state and rebase paging safely'
-          git push origin HEAD:agent/m2-feed-pager-20260829
+      - name: Verify formatting
+        run: dart format --output=none --set-exit-if-changed .
+      - name: Analyze
+        run: flutter analyze
+      - name: Test play_schema
+        working-directory: packages/play_schema
+        run: dart test
+      - name: Test play_engine
+        working-directory: packages/play_engine
+        run: dart test
+      - name: Test analytics_contract
+        working-directory: packages/analytics_contract
+        run: dart test
+      - name: Test local_state
+        working-directory: packages/local_state
+        run: dart test
+      - name: Test event_delivery
+        working-directory: packages/event_delivery
+        run: dart test
+      - name: Test play_flutter
+        working-directory: packages/play_flutter
+        run: flutter test
+      - name: Test app shell
+        working-directory: apps/mosaic_app
+        run: flutter test
