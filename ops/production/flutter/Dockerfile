@@ -43,6 +43,7 @@ RUN yes | /opt/android-sdk/cmdline-tools/latest/bin/android \
       sdk install \
       'platform-tools' \
       'platforms/android-37.0' \
+      'build-tools/36.0.0' \
       'build-tools/37.0.0' \
       'ndk/28.2.13676358'
 
