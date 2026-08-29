@@ -1,9 +1,10 @@
 import {
   compileFfmpegInvocation,
+  mediaOutputVerificationPlan,
   MediaPlanCompileError,
   supportsFfmpegPlan,
   type FfmpegExpectedOutput,
-} from './media_ffmpeg.js';
+} from './media_managed_ffmpeg.js';
 import {
   MediaProcessError,
   runMediaProcess,
@@ -223,7 +224,7 @@ export async function processClaimedFfmpegDerivative(
 
     const verified = await verifyOutput({
       outputPath: job.outputPath,
-      plan: claim.derivative.plan,
+      plan: mediaOutputVerificationPlan(claim.derivative.plan),
       expectedOutput: invocation.expectedOutput,
       ...(options.signal === undefined ? {} : {signal: options.signal}),
     });
@@ -307,6 +308,8 @@ export function mediaAttemptStorageKey(
 
 function mediaPurposeExtension(purpose: MediaDerivativePurpose): string {
   switch (purpose) {
+    case 'image':
+      return '.jpg';
     case 'playback':
       return '.mp4';
     case 'poster':

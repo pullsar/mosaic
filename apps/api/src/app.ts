@@ -13,15 +13,18 @@ import {
   type ConsumerRepository,
   UnknownTopicError,
 } from './consumer_repository.js';
+import type {FeedAssetReadinessResolver} from './feed_asset_readiness.js';
 import type {EventInput, MosaicRepository} from './repository.js';
 
 const ACTOR_ACCESS_TOKEN = /^[A-Za-z0-9_-]{43}$/;
-const CORS_METHODS = 'GET,POST,PUT,OPTIONS';
-const CORS_HEADERS = 'content-type,authorization';
+const CORS_METHODS = 'GET,HEAD,POST,PUT,OPTIONS';
+const CORS_HEADERS = 'content-type,authorization,range';
+const CORS_EXPOSE_HEADERS = 'accept-ranges,content-length,content-range';
 
 export interface BuildAppOptions {
   repository: MosaicRepository;
   consumerRepository?: ConsumerRepository;
+  feedAssetReadiness?: FeedAssetReadinessResolver;
   logLevel?: string;
   allowedWebOrigins?: readonly string[];
 }
@@ -62,6 +65,9 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     ? new ConsumerFeedService(options.consumerRepository, {
         onRankingError: (error) =>
           app.log.error({err: error}, 'consumer ranking failed; using curated fallback'),
+        ...(options.feedAssetReadiness === undefined
+          ? {}
+          : {assetReadiness: options.feedAssetReadiness}),
       })
     : null;
 
@@ -75,6 +81,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     reply.header('vary', 'Origin');
     reply.header('access-control-allow-methods', CORS_METHODS);
     reply.header('access-control-allow-headers', CORS_HEADERS);
+    reply.header('access-control-expose-headers', CORS_EXPOSE_HEADERS);
     reply.header('access-control-max-age', '600');
     if (request.method === 'OPTIONS') {
       return reply.code(204).send();

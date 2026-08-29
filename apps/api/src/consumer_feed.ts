@@ -1,5 +1,6 @@
 import {createHash, randomUUID} from 'node:crypto';
 import {checkPlayCompatibility, type ClientCapabilities} from './contracts/compatibility.js';
+import type {FeedAssetReadinessResolver} from './feed_asset_readiness.js';
 import type {ConsumerRepository, StoredFeedDecisionItem} from './consumer_repository.js';
 import {
   defaultConsumerRankingConfig,
@@ -45,6 +46,7 @@ export interface ConsumerFeedServiceOptions {
   candidateLimit?: number;
   requestIdFactory?: () => string;
   onRankingError?: (error: unknown) => void;
+  assetReadiness?: FeedAssetReadinessResolver;
 }
 
 export class InvalidFeedCursorError extends Error {
@@ -60,6 +62,7 @@ export class ConsumerFeedService {
   private readonly candidateLimit: number;
   private readonly requestIdFactory: () => string;
   private readonly onRankingError: ((error: unknown) => void) | undefined;
+  private readonly assetReadiness: FeedAssetReadinessResolver | undefined;
 
   constructor(
     private readonly repository: ConsumerRepository,
@@ -80,6 +83,7 @@ export class ConsumerFeedService {
     );
     this.requestIdFactory = options.requestIdFactory ?? randomUUID;
     this.onRankingError = options.onRankingError;
+    this.assetReadiness = options.assetReadiness;
   }
 
   async getFeed(input: FeedRequest): Promise<FeedPage> {
@@ -105,15 +109,18 @@ export class ConsumerFeedService {
     const compatible = candidates.filter(
       (candidate) => checkPlayCompatibility(candidate.document, input.capabilities).compatible,
     );
+    const deliverable = this.assetReadiness === undefined
+      ? compatible
+      : await this.assetReadiness.filterDeliverable(compatible);
 
     let rankingFallback = false;
     let ranked: RankedFeedCandidate[];
     try {
-      ranked = rankFeedCandidates(compatible, preferences, this.rankingConfig);
+      ranked = rankFeedCandidates(deliverable, preferences, this.rankingConfig);
     } catch (error) {
       rankingFallback = true;
       this.reportRankingError(error);
-      ranked = curatedFallbackCandidates(compatible);
+      ranked = curatedFallbackCandidates(deliverable);
     }
 
     const window = selectFeedWindow(ranked, this.windowSize);

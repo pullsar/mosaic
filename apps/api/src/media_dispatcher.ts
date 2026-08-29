@@ -6,6 +6,7 @@ import {
 } from './media_repository.js';
 
 export const FFMPEG_MEDIA_PROCESSORS = Object.freeze([
+  'ffmpeg-image-normalize-v1',
   'ffmpeg-video-normalize-v1',
   'ffmpeg-poster-v1',
   'ffmpeg-audio-normalize-v1',
@@ -55,6 +56,7 @@ export class PostgresMediaDispatcher {
            )
          order by
            case d.purpose
+             when 'image' then 0
              when 'playback' then 0
              when 'poster' then 1
              when 'audio' then 2

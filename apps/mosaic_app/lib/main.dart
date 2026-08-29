@@ -9,6 +9,8 @@ import 'package:play_flutter/play_flutter.dart';
 import 'package:play_schema/play_schema.dart';
 
 import 'app_event_runtime.dart';
+import 'asset_delivery_client.dart';
+import 'asset_delivery_warm.dart';
 import 'consumer_api_client.dart';
 import 'consumer_feed.dart';
 import 'consumer_onboarding.dart';
@@ -19,17 +21,6 @@ import 'onboarding_localizations.dart';
 const _apiBaseUrl = String.fromEnvironment('MOSAIC_API_BASE_URL');
 const _allowInsecureLocalApi = bool.fromEnvironment(
   'MOSAIC_ALLOW_INSECURE_LOCAL_API',
-);
-
-// The renderer implements the broader M1 primitive set, but the production
-// app must advertise only primitives whose authored assets it can currently
-// resolve. #64 installs managed image/video/audio/canvas delivery and can widen
-// this envelope without weakening the server's compatibility contract.
-const _consumerCapabilities = PlayCapabilityEnvelope(
-  schemaVersions: {1},
-  presentationTypes: {'text'},
-  inputTypes: {'tap', 'single_choice', 'piano_key', 'drag'},
-  validatorTypes: {'none', 'equals', 'ordered_sequence', 'target_region'},
 );
 
 Future<void> main() async {
@@ -63,18 +54,15 @@ final class MosaicApp extends StatefulWidget {
 final class _MosaicAppState extends State<MosaicApp> {
   final ActiveMediaCoordinator _mediaCoordinator = ActiveMediaCoordinator();
   final SoLoudAudioEngine _audioEngine = SoLoudAudioEngine();
-  final PlayVideoAssetResolver _videoResolver = MapPlayVideoAssetResolver(
-    const {},
-  );
-  final PlayAudioAssetResolver _audioResolver = MapPlayAudioAssetResolver(
-    const {},
-  );
-  final PlayCanvasAssetResolver _canvasResolver = MapPlayCanvasAssetResolver(
-    const {},
-  );
   late final AppEventRuntime _eventRuntime;
+  late final AssetDeliveryClient? _assetDelivery;
+  late final AssetMetadataWarmController? _metadataWarmer;
   late final ConsumerRuntime _consumerRuntime;
   late final CachingPlayVisualAssetResolver _visualResolver;
+  late final PlayVideoAssetResolver _videoResolver;
+  late final PlayVideoPosterResolver? _videoPosterResolver;
+  late final PlayAudioAssetResolver _audioResolver;
+  late final PlayCanvasAssetResolver _canvasResolver;
   late final PlayVisualPrefetchController _visualPrefetch;
   late final FlutterLifecycleBridge _lifecycle;
   var _semanticResumeEpoch = 0;
@@ -83,15 +71,44 @@ final class _MosaicAppState extends State<MosaicApp> {
   void initState() {
     super.initState();
     _eventRuntime = widget.eventRuntime ?? AppEventRuntime.disabled();
+    _assetDelivery = _createAssetDeliveryClient();
+    final binaryDelivery = _assetDelivery?.supportsBinaryNetworkAssets ?? false;
+    final assetDelivery = _assetDelivery;
+
+    _visualResolver = CachingPlayVisualAssetResolver(
+      binaryDelivery && assetDelivery != null
+          ? ManagedVisualAssetResolver(assetDelivery)
+          : MapPlayVisualAssetResolver(const {}),
+      capacity: 24,
+    );
+    _videoResolver = binaryDelivery && assetDelivery != null
+        ? ManagedVideoAssetResolver(assetDelivery)
+        : MapPlayVideoAssetResolver(const {});
+    _videoPosterResolver = binaryDelivery && assetDelivery != null
+        ? ManagedVideoPosterResolver(assetDelivery)
+        : null;
+    _audioResolver = binaryDelivery && assetDelivery != null
+        ? ManagedAudioAssetResolver(assetDelivery)
+        : MapPlayAudioAssetResolver(const {});
+    _canvasResolver = assetDelivery == null
+        ? MapPlayCanvasAssetResolver(const {})
+        : ManagedCanvasAssetResolver(assetDelivery);
+    _metadataWarmer = assetDelivery == null
+        ? null
+        : AssetMetadataWarmController(
+            client: assetDelivery,
+            onError: (assetId, error, stackTrace) => _reportEventRuntimeError(
+              error,
+              stackTrace,
+              operation: 'feed_asset_warm:$assetId',
+            ),
+          );
+
     _consumerRuntime = ConsumerRuntime(
       api: _createConsumerApi(_eventRuntime),
       localState: _eventRuntime.resources.consumerLocalState,
-      capabilities: _consumerCapabilities,
+      capabilities: consumerCapabilitiesForAssetDelivery(_assetDelivery),
       onError: _reportEventRuntimeError,
-    );
-    _visualResolver = CachingPlayVisualAssetResolver(
-      MapPlayVisualAssetResolver(const {}),
-      capacity: 24,
     );
     _visualPrefetch = PlayVisualPrefetchController(
       resolver: _visualResolver,
@@ -119,9 +136,10 @@ final class _MosaicAppState extends State<MosaicApp> {
 
   @override
   void dispose() {
-    _visualPrefetch.cancel();
+    _cancelWarmWindow();
     _lifecycle.dispose();
     _consumerRuntime.close();
+    _assetDelivery?.close();
     unawaited(_disposeResources());
     super.dispose();
   }
@@ -180,6 +198,7 @@ final class _MosaicAppState extends State<MosaicApp> {
       ownerId: playMediaOwnerId(item.play),
       visualResolver: _visualResolver,
       videoResolver: _videoResolver,
+      videoPosterResolver: _videoPosterResolver,
       audioResolver: _audioResolver,
       audioEngine: _audioEngine,
       canvasResolver: _canvasResolver,
@@ -215,18 +234,17 @@ final class _MosaicAppState extends State<MosaicApp> {
     BuildContext context,
     List<ConsumerFeedItem> items,
   ) async {
-    final assetIds = <String>[];
-    for (final item in items) {
-      for (final state in item.play.states.values) {
-        for (final layer in state.presentation) {
-          final assetId = layer.assetId?.trim();
-          if (layer.type == 'image' && assetId != null && assetId.isNotEmpty) {
-            assetIds.add(assetId);
-          }
-        }
-      }
-    }
-    await _visualPrefetch.prefetch(context, assetIds);
+    final plan = buildAssetWarmPlan(items.map((item) => item.play));
+    final metadataWarm = _metadataWarmer?.warm(plan) ?? Future<void>.value();
+    await Future.wait<void>([
+      _visualPrefetch.prefetch(context, plan.visualAssetIds).then((_) {}),
+      metadataWarm,
+    ]);
+  }
+
+  void _cancelWarmWindow() {
+    _metadataWarmer?.cancel();
+    _visualPrefetch.cancel();
   }
 
   @override
@@ -276,9 +294,32 @@ final class _MosaicAppState extends State<MosaicApp> {
         itemBuilder: _buildFeedPlay,
         onEvent: _recordFeedEvent,
         onWarmWindow: _warmFeedWindow,
-        onCancelWarmWindow: _visualPrefetch.cancel,
+        onCancelWarmWindow: _cancelWarmWindow,
       ),
     ),
+  );
+}
+
+PlayCapabilityEnvelope consumerCapabilitiesForAssetDelivery(
+  AssetDeliveryClient? assetDelivery,
+) {
+  final presentationTypes = <String>{'text'};
+  if (assetDelivery != null) {
+    presentationTypes.add('canvas');
+    if (assetDelivery.supportsBinaryNetworkAssets) {
+      presentationTypes.addAll(const {'image', 'video_clip', 'audio'});
+    }
+  }
+  return PlayCapabilityEnvelope(
+    schemaVersions: const {1},
+    presentationTypes: Set.unmodifiable(presentationTypes),
+    inputTypes: const {'tap', 'single_choice', 'piano_key', 'drag'},
+    validatorTypes: const {
+      'none',
+      'equals',
+      'ordered_sequence',
+      'target_region',
+    },
   );
 }
 
@@ -296,6 +337,24 @@ ConsumerApiClient? _createConsumerApi(AppEventRuntime eventRuntime) {
       error,
       stackTrace,
       operation: 'consumer_transport_config',
+    );
+    return null;
+  }
+}
+
+AssetDeliveryClient? _createAssetDeliveryClient() {
+  final configuredApi = _apiBaseUrl.trim();
+  if (configuredApi.isEmpty) return null;
+  try {
+    return AssetDeliveryClient(
+      baseUri: Uri.parse(configuredApi),
+      allowInsecureLocalhost: _allowInsecureLocalApi,
+    );
+  } on Object catch (error, stackTrace) {
+    _reportEventRuntimeError(
+      error,
+      stackTrace,
+      operation: 'asset_delivery_config',
     );
     return null;
   }

@@ -26,31 +26,39 @@ function derivative(
     state: 'ready',
     sourceSha256,
     planVersion: 1,
-    processor: purpose === 'playback'
-      ? 'ffmpeg-video-normalize-v1'
-      : purpose === 'poster'
-        ? 'ffmpeg-poster-v1'
-        : purpose === 'audio'
-          ? 'ffmpeg-audio-normalize-v1'
-          : 'speech-transcript-v1',
+    processor: purpose === 'image'
+      ? 'ffmpeg-image-normalize-v1'
+      : purpose === 'playback'
+        ? 'ffmpeg-video-normalize-v1'
+        : purpose === 'poster'
+          ? 'ffmpeg-poster-v1'
+          : purpose === 'audio'
+            ? 'ffmpeg-audio-normalize-v1'
+            : 'speech-transcript-v1',
     storageKey: `media/asset_publication/${purpose}`,
-    mimeType: purpose === 'playback'
-      ? 'video/mp4'
-      : purpose === 'poster'
-        ? 'image/jpeg'
+    mimeType: purpose === 'image' || purpose === 'poster'
+      ? 'image/jpeg'
+      : purpose === 'playback'
+        ? 'video/mp4'
         : purpose === 'audio'
           ? 'audio/mp4'
           : 'text/vtt',
     sizeBytes: 1_000,
-    width: purpose === 'playback' || purpose === 'poster' ? 1280 : null,
-    height: purpose === 'playback' || purpose === 'poster' ? 720 : null,
+    width: purpose === 'image' || purpose === 'playback' || purpose === 'poster'
+      ? 1280
+      : null,
+    height: purpose === 'image' || purpose === 'playback' || purpose === 'poster'
+      ? 720
+      : null,
     durationMs: purpose === 'playback' || purpose === 'audio' ? 7_000 : null,
     container: purpose === 'playback' || purpose === 'audio' ? 'mp4' : null,
     videoCodec: purpose === 'playback' ? 'h264' : null,
     videoProfile: purpose === 'playback' ? 'main' : null,
     audioCodec: purpose === 'playback' || purpose === 'audio' ? 'aac' : null,
     colorSpace: purpose === 'playback' ? 'bt709' : null,
-    dynamicRange: purpose === 'playback' || purpose === 'poster' ? 'sdr' : null,
+    dynamicRange: purpose === 'image' || purpose === 'playback' || purpose === 'poster'
+      ? 'sdr'
+      : null,
   };
   return {...base, ...overrides};
 }
@@ -58,6 +66,36 @@ function derivative(
 function reason(error: unknown): string | undefined {
   return error instanceof MediaPublicationBlockedError ? error.reason : undefined;
 }
+
+test('managed image publication requires a compatible current-source normalized JPEG', () => {
+  const image = derivative('image');
+  const selected = selectMediaDelivery(asset('image'), [image]);
+  assert.equal(selected.kind, 'image');
+  assert.equal(selected.primary.storageKey, image.storageKey);
+  assert.equal(selected.primary.mimeType, 'image/jpeg');
+  assert.equal(selected.poster, null);
+  assert.equal(selected.captions, null);
+  assert.equal('sourceStorageKey' in selected, false);
+
+  assert.throws(
+    () => selectMediaDelivery(asset('image'), []),
+    (error) => reason(error) === 'image_not_ready',
+  );
+  assert.throws(
+    () => selectMediaDelivery(asset('image'), [derivative('image', {mimeType: 'image/png'})]),
+    (error) => reason(error) === 'image_incompatible',
+  );
+  assert.throws(
+    () => selectMediaDelivery(asset('image'), [derivative('image', {dynamicRange: 'hdr'})]),
+    (error) => reason(error) === 'image_incompatible',
+  );
+  assert.throws(
+    () => selectMediaDelivery(asset('image'), [derivative('image', {
+      processor: 'ffmpeg-poster-v1',
+    })]),
+    (error) => reason(error) === 'image_incompatible',
+  );
+});
 
 test('video source is never deliverable without a compatible managed playback derivative', () => {
   assert.throws(
@@ -106,7 +144,12 @@ test('registered caption work blocks publication until a valid WebVTT artifact i
     () => selectMediaDelivery(asset(), [
       playback,
       poster,
-      derivative('captions', {state: 'pending', storageKey: null, mimeType: null, sizeBytes: null}),
+      derivative('captions', {
+        state: 'pending',
+        storageKey: null,
+        mimeType: null,
+        sizeBytes: null,
+      }),
     ]),
     (error) => reason(error) === 'captions_not_ready',
   );
@@ -120,7 +163,11 @@ test('registered caption work blocks publication until a valid WebVTT artifact i
     (error) => reason(error) === 'captions_incompatible',
   );
 
-  const selected = selectMediaDelivery(asset(), [playback, poster, derivative('captions')]);
+  const selected = selectMediaDelivery(asset(), [
+    playback,
+    poster,
+    derivative('captions'),
+  ]);
   assert.equal(selected.captions?.mimeType, 'text/vtt');
 });
 
@@ -132,7 +179,9 @@ test('audio publication requires normalized AAC/MP4 and honors caption dependenc
   assert.equal(selected.poster, null);
 
   assert.throws(
-    () => selectMediaDelivery(asset('audio'), [derivative('audio', {audioCodec: 'opus', container: 'webm'})]),
+    () => selectMediaDelivery(asset('audio'), [
+      derivative('audio', {audioCodec: 'opus', container: 'webm'}),
+    ]),
     (error) => reason(error) === 'audio_incompatible',
   );
 });
@@ -145,26 +194,35 @@ test('stale-source derivatives never satisfy publication for the current immutab
     ]),
     (error) => reason(error) === 'playback_not_ready',
   );
+  assert.throws(
+    () => selectMediaDelivery(asset('image'), [
+      derivative('image', {sourceSha256: 'b'.repeat(64)}),
+    ]),
+    (error) => reason(error) === 'image_not_ready',
+  );
 });
 
-test('revoked, unverified and image assets fail closed', () => {
+test('revoked and unverified assets fail closed before derivative selection', () => {
   assert.throws(
-    () => selectMediaDelivery(asset('video', 'revoked'), [derivative('playback'), derivative('poster')]),
+    () => selectMediaDelivery(
+      asset('video', 'revoked'),
+      [derivative('playback'), derivative('poster')],
+    ),
     (error) => reason(error) === 'asset_revoked',
   );
   assert.throws(
     () => selectMediaDelivery({...asset(), sourceSha256: null}, []),
     (error) => reason(error) === 'source_unverified',
   );
-  assert.throws(
-    () => selectMediaDelivery(asset('image'), []),
-    (error) => reason(error) === 'image_delivery_not_implemented',
-  );
 });
 
 test('an incompatible newer candidate cannot hide a compatible ready derivative', () => {
   const selected = selectMediaDelivery(asset(), [
-    derivative('playback', {derivativeKey: 'mdv1_bad', planVersion: 2, videoCodec: 'hevc'}),
+    derivative('playback', {
+      derivativeKey: 'mdv1_bad',
+      planVersion: 2,
+      videoCodec: 'hevc',
+    }),
     derivative('playback', {derivativeKey: 'mdv1_good', planVersion: 1}),
     derivative('poster'),
   ]);

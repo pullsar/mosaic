@@ -2,13 +2,64 @@ import {readFile, readdir} from 'node:fs/promises';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {Pool} from 'pg';
+import {PostgresCanvasAssetRepository} from './canvas_asset.js';
 import {loadConfig} from './config.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(here, '../../../packages/play_schema/fixtures');
 const pool = new Pool({connectionString: loadConfig().databaseUrl});
 
+const seedCanvasAssets = [
+  {
+    schemaVersion: 1,
+    id: 'puzzle_match_01',
+    semanticLabel: 'Matchstick equation: six plus four equals four',
+    elements: [
+      {type: 'label', x: 0.18, y: 0.42, text: '6', scale: 0.22},
+      {type: 'line', x1: 0.29, y1: 0.42, x2: 0.38, y2: 0.42, width: 0.016},
+      {type: 'line', x1: 0.335, y1: 0.35, x2: 0.335, y2: 0.49, width: 0.016, tone: 'accent'},
+      {type: 'label', x: 0.50, y: 0.42, text: '4', scale: 0.22},
+      {type: 'line', x1: 0.62, y1: 0.39, x2: 0.71, y2: 0.39, width: 0.012},
+      {type: 'line', x1: 0.62, y1: 0.45, x2: 0.71, y2: 0.45, width: 0.012},
+      {type: 'label', x: 0.82, y: 0.42, text: '4', scale: 0.22},
+    ],
+  },
+  {
+    schemaVersion: 1,
+    id: 'puzzle_match_01_solved',
+    semanticLabel: 'Solved matchstick equation: eight minus four equals four',
+    elements: [
+      {type: 'label', x: 0.18, y: 0.42, text: '8', scale: 0.22},
+      {type: 'line', x1: 0.29, y1: 0.42, x2: 0.38, y2: 0.42, width: 0.016, tone: 'accent'},
+      {type: 'label', x: 0.50, y: 0.42, text: '4', scale: 0.22},
+      {type: 'line', x1: 0.62, y1: 0.39, x2: 0.71, y2: 0.39, width: 0.012},
+      {type: 'line', x1: 0.62, y1: 0.45, x2: 0.71, y2: 0.45, width: 0.012},
+      {type: 'label', x: 0.82, y: 0.42, text: '4', scale: 0.22},
+    ],
+  },
+  {
+    schemaVersion: 1,
+    id: 'getaway_mood_01',
+    semanticLabel: 'Warm walkable city-break mood with evening sun and winding streets',
+    elements: [
+      {type: 'circle', x: 0.78, y: 0.20, radius: 0.075, fill: true, tone: 'accent'},
+      {type: 'rect', x: 0.12, y: 0.34, width: 0.22, height: 0.28, radius: 0.03, fill: true, tone: 'surface'},
+      {type: 'rect', x: 0.39, y: 0.28, width: 0.18, height: 0.34, radius: 0.03, fill: true, tone: 'muted'},
+      {type: 'rect', x: 0.62, y: 0.39, width: 0.18, height: 0.23, radius: 0.03, fill: true, tone: 'surface'},
+      {type: 'line', x1: 0.08, y1: 0.76, x2: 0.34, y2: 0.68, width: 0.018, tone: 'foreground'},
+      {type: 'line', x1: 0.34, y1: 0.68, x2: 0.60, y2: 0.78, width: 0.018, tone: 'foreground'},
+      {type: 'line', x1: 0.60, y1: 0.78, x2: 0.90, y2: 0.67, width: 0.018, tone: 'foreground'},
+    ],
+  },
+] as const;
+
 try {
+  const canvasRepository = new PostgresCanvasAssetRepository(pool);
+  for (const asset of seedCanvasAssets) {
+    const registered = await canvasRepository.register(asset);
+    console.log(`${registered.status === 'inserted' ? 'seeded' : 'verified'} canvas ${asset.id}`);
+  }
+
   const files = (await readdir(fixturesDir)).filter((name) => name.endsWith('.json')).sort();
   for (const [curatedOrder, file] of files.entries()) {
     const raw = JSON.parse(await readFile(join(fixturesDir, file), 'utf8')) as Record<
