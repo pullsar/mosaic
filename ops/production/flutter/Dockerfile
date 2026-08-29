@@ -10,6 +10,7 @@ RUN apt-get update \
       bash \
       ca-certificates \
       chromium \
+      chromium-sandbox \
       curl \
       git \
       openjdk-21-jdk-headless \
