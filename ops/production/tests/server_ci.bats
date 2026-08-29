@@ -257,8 +257,10 @@ production-builds" ]
 @test "checkout-controlled host Bats run from the exact checkout directory" {
   infrastructure="$(sed -n '/^infrastructure_contracts()/,/^}/p' \
     "$REPO_ROOT/ops/production/bin/server-ci.sh")"
-  [[ "$infrastructure" == *'cd "$CHECKOUT"'* ]]
-  [[ "$infrastructure" == *'rootless_builder_exec bats "${ROOTLESS_HOST_BATS[@]}"'* ]]
+  [[ "$infrastructure" == *'(
+    cd "$CHECKOUT"
+    rootless_builder_exec bats "${ROOTLESS_HOST_BATS[@]}"
+  )'* ]]
 }
 
 @test "review mode retains every release validation stage" {
