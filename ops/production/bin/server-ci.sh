@@ -13,15 +13,28 @@ readonly API_CI_IMAGE="mixli-api-ci:$SHA"
 readonly API_TEST_IMAGE="mixli-api-test:$SHA"
 readonly PROMETHEUS_IMAGE="${MIXLI_PROMETHEUS_CI_IMAGE:-prom/prometheus:v3.5.5}"
 readonly ALERTMANAGER_IMAGE="${MIXLI_ALERTMANAGER_CI_IMAGE:-prom/alertmanager:v0.32.1}"
-readonly BUILDER_BATS=(
+readonly ROOTLESS_STORAGE_PARENT="${MIXLI_ROOTLESS_STORAGE_PARENT:-/srv/mixli/builds}"
+readonly ROOTLESS_HOST_BATS=(
+  "$CHECKOUT/ops/production/tests/api_image.bats"
   "$CHECKOUT/ops/production/tests/ci_request.bats"
+  "$CHECKOUT/ops/production/tests/compose_config.bats"
   "$CHECKOUT/ops/production/tests/deploy_dispatch.bats"
   "$CHECKOUT/ops/production/tests/deployment.bats"
+  "$CHECKOUT/ops/production/tests/flutter_image.bats"
   "$CHECKOUT/ops/production/tests/github_workflow.bats"
   "$CHECKOUT/ops/production/tests/hardening_contracts.bats"
+  "$CHECKOUT/ops/production/tests/monitoring_config.bats"
+  "$CHECKOUT/ops/production/tests/nginx_config.bats"
+  "$CHECKOUT/ops/production/tests/postgres_backup.bats"
+  "$CHECKOUT/ops/production/tests/postgres_entrypoint.bats"
   "$CHECKOUT/ops/production/tests/server_ci.bats"
   "$CHECKOUT/ops/production/tests/verify_script.bats"
 )
+readonly ROOTLESS_CONTAINER_BATS=(
+  "$CHECKOUT/ops/production/tests/backup_scripts.bats"
+  "$CHECKOUT/ops/production/tests/provisioning.bats"
+)
+readonly ROOTLESS_BATS_IMAGE="mixli-rootless-bats:$SHA"
 
 network=''
 postgres_container=''
@@ -30,6 +43,11 @@ systemd_verify_root=''
 alertmanager_verify_root=''
 prometheus_verify_root=''
 nginx_verify_root=''
+rootless_root=''
+rootless_runtime=''
+rootless_data=''
+rootless_home=''
+rootless_launcher_pid=''
 retain_release_images=0
 
 die_usage() {
@@ -45,10 +63,93 @@ builder_exec() {
   runuser -u mixli-build -- "$@"
 }
 
+rootless_builder_exec() {
+  builder_exec env \
+    HOME="$rootless_home" \
+    XDG_RUNTIME_DIR="$rootless_runtime" \
+    DOCKER_HOST="unix://$rootless_runtime/docker.sock" \
+    MIXLI_ROOTLESS_DATA="$rootless_data" \
+    "$@"
+}
+
+rootless_docker() {
+  rootless_builder_exec docker "$@"
+}
+
+start_rootless_docker() {
+  local attempt
+  rootless_root="$(mktemp -d "$ROOTLESS_STORAGE_PARENT/.rootless-ci-$SHORT_SHA.XXXXXX")"
+  rootless_runtime="$(mktemp -d "/run/mixli-rootless-ci.$SHORT_SHA.XXXXXX")"
+  rootless_data="$rootless_root/data"
+  rootless_home="$rootless_root/home"
+  install -d -o mixli-build -g mixli-build -m 0700 \
+    "$rootless_data" "$rootless_home" "$rootless_root/exec"
+  chown mixli-build:mixli-build "$rootless_root" "$rootless_runtime"
+  chmod 0700 "$rootless_root" "$rootless_runtime"
+
+  setsid runuser -u mixli-build -- env \
+    HOME="$rootless_home" \
+    XDG_RUNTIME_DIR="$rootless_runtime" \
+    DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK=true \
+    dockerd-rootless.sh \
+      --data-root "$rootless_data" \
+      --exec-root "$rootless_root/exec" \
+      --pidfile "$rootless_root/docker.pid" \
+      >"$rootless_root/docker.log" 2>&1 &
+  rootless_launcher_pid=$!
+
+  for ((attempt = 1; attempt <= 120; attempt++)); do
+    if rootless_docker info >/dev/null 2>&1; then
+      return 0
+    fi
+    kill -0 "$rootless_launcher_pid" 2>/dev/null || break
+    sleep 1
+  done
+  printf '%s\n' 'Private rootless Docker daemon failed to start.' >&2
+  tail -n 40 "$rootless_root/docker.log" >&2 || true
+  return 1
+}
+
+stop_rootless_docker() {
+  local attempt status=0
+  if [[ -n "$rootless_runtime" && -S "$rootless_runtime/docker.sock" ]]; then
+    rootless_docker system prune --all --force --volumes >/dev/null 2>&1 || status=$?
+  fi
+  if [[ "$rootless_launcher_pid" =~ ^[0-9]+$ ]]; then
+    kill -- "-$rootless_launcher_pid" >/dev/null 2>&1 || true
+    for ((attempt = 1; attempt <= 50; attempt++)); do
+      kill -0 "$rootless_launcher_pid" >/dev/null 2>&1 || break
+      sleep 0.1
+    done
+    if kill -0 "$rootless_launcher_pid" >/dev/null 2>&1; then
+      kill -KILL -- "-$rootless_launcher_pid" >/dev/null 2>&1 || status=$?
+    fi
+    wait "$rootless_launcher_pid" 2>/dev/null || true
+  fi
+  if [[ "$rootless_root" == "$ROOTLESS_STORAGE_PARENT"/.rootless-ci-* && -d "$rootless_root" &&
+    "$rootless_runtime" == /run/mixli-rootless-ci.* && -d "$rootless_runtime" ]]; then
+    rm -rf -- "$rootless_root" "$rootless_runtime" || status=$?
+  elif [[ -n "$rootless_root" || -n "$rootless_runtime" ]]; then
+    status=1
+  fi
+  rootless_root=''
+  rootless_runtime=''
+  rootless_data=''
+  rootless_home=''
+  rootless_launcher_pid=''
+  return "$status"
+}
+
 cleanup() {
-  local status="$1" cleanup_status=0 image image_cleanup_status
+  local status="$1" cleanup_status=0 image image_cleanup_status rootless_cleanup_status
   trap - EXIT
   set +e
+  stop_rootless_docker
+  rootless_cleanup_status=$?
+  if [[ "$rootless_cleanup_status" -ne 0 ]]; then
+    printf '%s\n' 'Failed to clean the private rootless Docker daemon.' >&2
+    cleanup_status="$rootless_cleanup_status"
+  fi
   docker image rm "$API_TEST_IMAGE" >/dev/null 2>&1 || true
   if [[ "$retain_release_images" != '1' ]]; then
     for image in "$API_CI_IMAGE" "$POSTGRES_CI_IMAGE"; do
@@ -158,6 +259,18 @@ infrastructure_contracts() {
   docker build -f "$CHECKOUT/ops/production/postgres/Dockerfile" \
     -t "$POSTGRES_CI_IMAGE" "$CHECKOUT/ops/production/postgres"
 
+  start_rootless_docker
+  rootless_docker build --target ci -f "$CHECKOUT/apps/api/Dockerfile" \
+    -t "$API_TEST_IMAGE" "$CHECKOUT"
+  rootless_docker build -f "$CHECKOUT/apps/api/Dockerfile" \
+    -t "$API_CI_IMAGE" "$CHECKOUT"
+  rootless_docker build -f "$CHECKOUT/ops/production/flutter/Dockerfile" \
+    -t "$FLUTTER_IMAGE" "$CHECKOUT"
+  rootless_docker build -f "$CHECKOUT/ops/production/postgres/Dockerfile" \
+    -t "$POSTGRES_CI_IMAGE" "$CHECKOUT/ops/production/postgres"
+  rootless_docker build -f "$CHECKOUT/ops/production/rootless-bats.Dockerfile" \
+    -t "$ROOTLESS_BATS_IMAGE" "$CHECKOUT"
+
   (
     cd "$CHECKOUT"
     docker compose --env-file ops/production/env/production.env.example \
@@ -165,7 +278,14 @@ infrastructure_contracts() {
   )
   isolated_nginx_contract
   export MIXLI_HOST_REPO="$CHECKOUT"
-  builder_exec bats "${BUILDER_BATS[@]}"
+  export MIXLI_API_IMAGE="$API_CI_IMAGE"
+  export MIXLI_FLUTTER_IMAGE="$FLUTTER_IMAGE"
+  export MIXLI_POSTGRES_IMAGE="$POSTGRES_CI_IMAGE"
+  rootless_builder_exec bats "${ROOTLESS_HOST_BATS[@]}"
+  rootless_docker run --rm --network none \
+    -v "$CHECKOUT:$CHECKOUT:ro" -w "$CHECKOUT" \
+    "$ROOTLESS_BATS_IMAGE" "${ROOTLESS_CONTAINER_BATS[@]}"
+  stop_rootless_docker
 
   mapfile -d '' shell_files < <(
     builder_exec find "$CHECKOUT/ops/production/bin" -maxdepth 1 -type f \

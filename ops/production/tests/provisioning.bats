@@ -54,6 +54,11 @@ run_ip_refresh() {
   [ "$status" -eq 0 ]
   second="$(find "$root" -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum)"
   [ "$first" = "$second" ]
+  [ "$(stat -c '%u:%g:%a' "$root/etc/mixli/prometheus")" = '65534:65534:750' ]
+  [ "$(stat -c '%u:%g:%a' "$root/etc/mixli/prometheus/prometheus.yml")" = \
+    '65534:65534:640' ]
+  run sudo -u nobody test -r "$root/etc/mixli/prometheus/prometheus.yml"
+  [ "$status" -eq 0 ]
 }
 
 @test "reprovisioning preserves the generated Cloudflare real-IP trust file" {

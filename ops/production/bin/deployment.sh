@@ -44,6 +44,7 @@ ci_lock_held=0
 old_pool_stopped=0
 stopped_pool=''
 previous_release_sha=''
+candidate_runtime_cleaned=0
 
 builder_git() {
   runuser -u mixli-build -- git "$@"
@@ -112,22 +113,55 @@ reload_nginx() {
   else
     fail_if_requested nginx || return 1
   fi
+  ensure_cloudflare_boundary "$context" || return 1
   [[ "$TEST_MODE" == '1' ]] && return 0
   compose up -d --no-deps nginx || return 1
   compose exec -T nginx nginx -t || return 1
   compose exec -T nginx nginx -s reload || return 1
 }
 
+ensure_cloudflare_boundary() {
+  local context="${1:-deploy}" rules
+  if [[ "$TEST_MODE" == '1' ]]; then
+    if [[ "$context" == 'deploy' ]]; then
+      fail_if_requested cloudflare-boundary || return 1
+    fi
+    log_event 'cloudflare-boundary-verified'
+    return 0
+  fi
+  systemctl start mixli-cloudflare-ips.service || return 1
+  rules="$(nft list chain inet mixli_cloudflare forward)" || return 1
+  grep -Fq 'hook forward' <<<"$rules" || return 1
+  grep -Fq 'tcp dport { 80, 443 }' <<<"$rules" || return 1
+  grep -Fq 'reject' <<<"$rules" || return 1
+  log_event 'cloudflare-boundary-verified'
+}
+
 verify_rollback_traffic() {
+  local headers observed_release
   [[ -n "$stopped_pool" && -n "$previous_release_sha" ]] || return 0
   rollback_fail_if_requested traffic || return 1
   if [[ "$TEST_MODE" == '1' ]]; then
-    log_event "rollback-traffic-verified:$stopped_pool"
-    return 0
+    observed_release="${MIXLI_TEST_ROLLBACK_RELEASE_SHA:-$previous_release_sha}"
+  else
+    headers="$(mktemp /tmp/mixli-rollback-headers.XXXXXX)" || return 1
+    if ! curl --fail --silent --show-error --max-time 10 \
+      --dump-header "$headers" --output /dev/null \
+      --cacert "$ORIGIN_CA" --resolve api.mixli.app:443:127.0.0.1 \
+      https://api.mixli.app/ready; then
+      rm -f -- "$headers"
+      return 1
+    fi
+    observed_release="$(awk '
+      tolower($1) == "x-mixli-release:" {
+        gsub(/\r/, "", $2)
+        print $2
+        exit
+      }
+    ' "$headers")"
+    rm -f -- "$headers" || return 1
   fi
-  curl --fail --silent --show-error --max-time 10 \
-    --cacert "$ORIGIN_CA" --resolve api.mixli.app:443:127.0.0.1 \
-    https://api.mixli.app/ready >/dev/null
+  [[ "$observed_release" == "$previous_release_sha" ]] || return 1
   log_event "rollback-traffic-verified:$stopped_pool"
 }
 
@@ -265,14 +299,25 @@ restore_runtime_compose() {
   if [[ "$compose_had_previous" == '1' && -f "$compose_backup" ]]; then
     cp --preserve=mode,ownership,timestamps "$compose_backup" "$temporary"
     mv -fT "$temporary" "$COMPOSE_FILE"
-  elif [[ "$postgres_runtime_changed" != '1' ]]; then
-    rm -f -- "$COMPOSE_FILE"
   fi
 }
 
 finalize_runtime_compose_rollback() {
   [[ "$compose_changed" == '1' && "$compose_had_previous" == '0' ]] || return 0
-  rm -f -- "$COMPOSE_FILE"
+  [[ "$candidate_runtime_cleaned" == '1' ]] || return 1
+  rm -f -- "$COMPOSE_FILE" || return 1
+  log_event 'candidate-compose-removed' || return 1
+}
+
+cleanup_first_deploy_runtime() {
+  local remaining
+  [[ "$compose_changed" == '1' && "$compose_had_previous" == '0' ]] || return 0
+  rollback_fail_if_requested candidate-runtime || return 1
+  compose rm --stop --force nginx api-blue-1 api-blue-2 api-green-1 api-green-2 || return 1
+  remaining="$(compose ps -q nginx api-blue-1 api-blue-2 api-green-1 api-green-2)" || return 1
+  [[ -z "$remaining" ]] || return 1
+  candidate_runtime_cleaned=1
+  log_event 'candidate-runtime-removed' || return 1
 }
 
 persist_runtime_compose() {
@@ -308,13 +353,18 @@ rollback_switches() {
   else
     rm -f -- "$ROOT/current" || return 1
   fi
+  [[ -n "$previous_release_sha" ]] || return 0
   reload_nginx rollback || return 1
   verify_rollback_traffic || return 1
-  log_event "rollback:$SHA" || return 1
 }
 
 on_error() {
-  local status="$1" line="$2" rollback_failed=0
+  local status="$1" line="$2" rollback_failed=0 rollback_required=0
+  local postgres_restored=0 candidate_runtime_restored=0
+  if [[ "$switched" == '1' || "$env_changed" == '1' || "$compose_changed" == '1' ||
+    "$postgres_runtime_changed" == '1' ]]; then
+    rollback_required=1
+  fi
   trap - ERR
   set +e
   if ! cleanup_release_ci_images; then
@@ -335,16 +385,28 @@ on_error() {
     rollback_failed=1
   fi
   if restore_postgres_runtime; then
-    if ! finalize_runtime_compose_rollback; then
-      rollback_failed=1
-    fi
+    postgres_restored=1
   else
     printf 'Failed to restore the prior PostgreSQL runtime after deployment error.\n' >&2
     log_event "postgres-runtime-rollback-failed:$SHA" || true
     rollback_failed=1
   fi
+  if cleanup_first_deploy_runtime; then
+    candidate_runtime_restored=1
+  else
+    printf 'Failed to remove candidate API and Nginx runtime after deployment error.\n' >&2
+    log_event "candidate-runtime-rollback-failed:$SHA" || true
+    rollback_failed=1
+  fi
+  if [[ "$postgres_restored" == '1' && "$candidate_runtime_restored" == '1' ]]; then
+    if ! finalize_runtime_compose_rollback; then
+      rollback_failed=1
+    fi
+  fi
   if [[ "$rollback_failed" == '1' ]]; then
     log_event "deploy-rollback-failed:$SHA" || true
+  elif [[ "$rollback_required" == '1' ]]; then
+    log_event "rollback:$SHA" || true
   fi
   log_event "deploy-failed:$SHA:line-$line:status-$status" || true
   exit "$status"

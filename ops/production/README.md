@@ -31,6 +31,13 @@ ssh.exe -i C:\keys\mixli-prod -o IdentitiesOnly=yes -o KexAlgorithms=curve25519-
 
 ## Initial provisioning
 
+Production-secret GitHub workflows are correct only for `push` events on
+`main`; manual deployment remains available through the server's restricted
+SSH command. GitHub production environment branch protection is defense in depth,
+not a substitute for that workflow-level trigger boundary. Configure the
+environment to allow only the protected `main` branch before adding its SSH
+secrets.
+
 1. Install the administrator public key for `mixli`, then run the checked-out
    provisioner as root: `sudo ops/production/bin/provision-host.sh`.
 2. Run it a second time. Both runs must exit zero.

@@ -81,7 +81,7 @@ production-builds" ]
   for required in \
     'git diff --check' \
     'docker compose' \
-    'builder_exec bats "${BUILDER_BATS[@]}"' \
+    'rootless_builder_exec bats "${ROOTLESS_HOST_BATS[@]}"' \
     'docker run --rm --network none --read-only --user 101:101' \
     '--add-host api-blue-1:127.0.0.1' \
     '--add-host api-blue-2:127.0.0.1' \

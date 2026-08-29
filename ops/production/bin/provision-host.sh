@@ -33,6 +33,7 @@ install_layout() {
   install -d -m 0755 "$(target /srv/mixli/releases)"
   install -d -m 0750 "$(target /etc/mixli/secrets)"
   install -d -o 65534 -g 65534 -m 0750 "$(target /srv/mixli/metrics)"
+  install -d -o 65534 -g 65534 -m 0750 "$(target /etc/mixli/prometheus)"
 
   # Reassert the credential-directory boundary even when the directory already
   # exists with unsafe ownership or permissions.
@@ -57,7 +58,7 @@ install_layout() {
     install -m 0644 "$SOURCE_ROOT/ops/production/nginx/cloudflare-real-ip.conf.example" \
       "$real_ip_config"
   fi
-  install -m 0644 "$SOURCE_ROOT"/ops/production/prometheus/* \
+  install -o 65534 -g 65534 -m 0640 "$SOURCE_ROOT"/ops/production/prometheus/* \
     "$(target /etc/mixli/prometheus/)"
   install -m 0644 "$SOURCE_ROOT/ops/production/alertmanager/alertmanager.yml" \
     "$(target /etc/mixli/alertmanager/alertmanager.yml)"
@@ -83,7 +84,7 @@ install_packages() {
   apt-get update -qq
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
     ca-certificates curl git jq openssh-server sudo fail2ban unattended-upgrades \
-    nftables shellcheck bats python3-yaml
+    nftables shellcheck bats python3-yaml uidmap slirp4netns
 
   if ! command -v docker >/dev/null 2>&1; then
     install -d -m 0755 /etc/apt/keyrings
@@ -103,8 +104,26 @@ install_packages() {
       >/etc/apt/sources.list.d/docker.sources
     apt-get update -qq
     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-      docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+      docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin \
+      docker-ce-rootless-extras
+  elif ! dpkg-query -W docker-ce-rootless-extras >/dev/null 2>&1; then
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker-ce-rootless-extras
   fi
+}
+
+ensure_subordinate_ids() {
+  local file="$1" option="$2" start end
+  grep -Eq '^mixli-build:[0-9]+:65536$' "$file" && return 0
+  start="$(awk -F: '
+    BEGIN { maximum = 99999 }
+    NF == 3 && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9]+$/ {
+      candidate = $2 + $3 - 1
+      if (candidate > maximum) maximum = candidate
+    }
+    END { print maximum + 1 }
+  ' "$file")"
+  end=$((start + 65535))
+  usermod "$option" "$start-$end" mixli-build
 }
 
 ensure_account() {
@@ -118,6 +137,9 @@ ensure_account() {
 configure_host() {
   ensure_account mixli-build /srv/mixli /usr/sbin/nologin
   ensure_account mixli-deploy /var/lib/mixli-deploy /bin/bash
+  ensure_subordinate_ids /etc/subuid --add-subuids
+  ensure_subordinate_ids /etc/subgid --add-subgids
+  runuser -u mixli-build -- env HOME=/srv/mixli dockerd-rootless-setuptool.sh check
   install_layout
   install -d -o mixli-build -g mixli-build -m 0750 /srv/mixli/repository
   chown -R mixli-build:mixli-build /srv/mixli/builds /srv/mixli/repository
