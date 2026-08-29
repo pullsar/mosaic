@@ -78,8 +78,8 @@ export class PostgresConsumerRepository implements ConsumerRepository {
       `select id, label
          from topics
         where $1 = ''
-           or lower(id) like '%' || $1 || '%'
-           or lower(label) like '%' || $1 || '%'
+           or position($1 in lower(id)) > 0
+           or position($1 in lower(label)) > 0
         order by
           case when lower(id) = $1 or lower(label) = $1 then 0 else 1 end,
           label asc,
@@ -102,11 +102,7 @@ export class PostgresConsumerRepository implements ConsumerRepository {
     const client = await this.pool.connect();
     try {
       await client.query('begin');
-      await client.query(
-        `insert into actors (id) values ($1)
-         on conflict (id) do nothing`,
-        [normalizedActorId],
-      );
+      await ensureActor(client, normalizedActorId);
       await client.query('select id from actors where id = $1 for update', [normalizedActorId]);
       await this.assertKnownTopics(client, requested);
       await client.query('delete from actor_topic_preferences where actor_id = $1', [
@@ -210,7 +206,11 @@ export class PostgresConsumerRepository implements ConsumerRepository {
     const client = await this.pool.connect();
     try {
       await client.query('begin');
-      await client.query('delete from feed_decisions where expires_at <= now()');
+      await ensureActor(client, actorId);
+      await client.query(
+        'delete from feed_decisions where actor_id = $1 and expires_at <= now()',
+        [actorId],
+      );
       await client.query(
         `insert into feed_decisions (
            request_id, actor_id, ranking_config_version, capability_fingerprint,
@@ -333,6 +333,14 @@ export class PostgresConsumerRepository implements ConsumerRepository {
     const unknown = topicIds.filter((topicId) => !known.has(topicId));
     if (unknown.length > 0) throw new UnknownTopicError(unknown);
   }
+}
+
+async function ensureActor(client: PoolClient, actorId: string): Promise<void> {
+  await client.query(
+    `insert into actors (id) values ($1)
+     on conflict (id) do nothing`,
+    [actorId],
+  );
 }
 
 async function insertPreferences(
