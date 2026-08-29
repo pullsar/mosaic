@@ -12,7 +12,7 @@
     "worker:transcript": "node --enable-source-maps dist/media_transcript_worker_main.js",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "node --import tsx --test test/**/*.test.ts",
+    "test": "node --import tsx --test --test-concurrency=1 test/**/*.test.ts",
     "migrate": "tsx src/db/migrate.ts up",
     "migrate:down": "tsx src/db/migrate.ts down",
     "migrate:status": "tsx src/db/migrate.ts status",
