@@ -47,6 +47,7 @@ RUN yes | /opt/android-sdk/cmdline-tools/latest/bin/android \
       'platforms/android-37.0' \
       'build-tools/36.0.0' \
       'build-tools/37.0.0' \
+      'cmake/3.22.1' \
       'ndk/28.2.13676358'
 
 RUN curl --fail --show-error --location \
