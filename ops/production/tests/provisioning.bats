@@ -45,6 +45,7 @@ run_ip_refresh() {
 @test "provisioning test mode is semantically idempotent" {
   root="$TEST_ROOT/root"
   mkdir -p "$root"
+  chmod 0755 "$TEST_ROOT" "$root"
   run env MIXLI_PROVISION_TEST_MODE=1 MIXLI_PROVISION_ROOT="$root" \
     "$REPO_ROOT/ops/production/bin/provision-host.sh"
   [ "$status" -eq 0 ]
