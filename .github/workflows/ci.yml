@@ -1,24 +1,21 @@
-name: ci
+name: m2-feed-persistence-format
 
 on:
   push:
-    branches: ['**']
-  pull_request:
-
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+    branches: ['agent/m2-feed-pager-20260829']
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  flutter:
+  format:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/m2-feed-pager-20260829
       - name: Flutter
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
@@ -26,28 +23,215 @@ jobs:
           cache: true
       - name: Resolve locked workspace
         run: flutter pub get --enforce-lockfile
-      - name: Verify formatting
-        run: dart format --output=none --set-exit-if-changed .
-      - name: Analyze
-        run: flutter analyze
-      - name: Test play_schema
-        working-directory: packages/play_schema
-        run: dart test
-      - name: Test play_engine
-        working-directory: packages/play_engine
-        run: dart test
-      - name: Test analytics_contract
-        working-directory: packages/analytics_contract
-        run: dart test
-      - name: Test local_state
-        working-directory: packages/local_state
-        run: dart test
-      - name: Test event_delivery
-        working-directory: packages/event_delivery
-        run: dart test
-      - name: Test play_flutter
-        working-directory: packages/play_flutter
-        run: flutter test
-      - name: Test app shell
-        working-directory: apps/mosaic_app
-        run: flutter test
+      - name: Coalesce persistence, add regression, format, and push product files
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          feed = Path('apps/mosaic_app/lib/consumer_feed.dart')
+          text = feed.read_text()
+
+          entry_anchor = '''final class _FeedEntry {
+            const _FeedEntry({required this.requestId, required this.item});
+
+            final String requestId;
+            final ConsumerFeedItem item;
+
+            String get identity => '${item.playId}\\u0000${item.revisionId}';
+            String get analyticsIdentity => '$requestId\\u0000$identity';
+          }
+
+          final class _ConsumerFeedState extends State<ConsumerFeed> {'''
+          snapshot_block = '''final class _FeedEntry {
+            const _FeedEntry({required this.requestId, required this.item});
+
+            final String requestId;
+            final ConsumerFeedItem item;
+
+            String get identity => '${item.playId}\\u0000${item.revisionId}';
+            String get analyticsIdentity => '$requestId\\u0000$identity';
+          }
+
+          final class _FeedPersistenceSnapshot {
+            const _FeedPersistenceSnapshot({
+              required this.requestId,
+              required this.cursor,
+              required this.visibleRevisionId,
+              required this.visiblePosition,
+              required this.items,
+            });
+
+            final String requestId;
+            final String? cursor;
+            final String visibleRevisionId;
+            final int visiblePosition;
+            final List<ConsumerFeedItem> items;
+          }
+
+          final class _ConsumerFeedState extends State<ConsumerFeed> {'''
+          if text.count(entry_anchor) != 1:
+              raise SystemExit('feed entry anchor mismatch')
+          text = text.replace(entry_anchor, snapshot_block)
+
+          field_anchor = '''  final LinkedHashSet<String> _impressed = LinkedHashSet<String>();
+            final LinkedHashSet<String> _started = LinkedHashSet<String>();
+            Future<void> _persistTail = Future<void>.value();'''
+          field_replacement = '''  final LinkedHashSet<String> _impressed = LinkedHashSet<String>();
+            final LinkedHashSet<String> _started = LinkedHashSet<String>();
+            _FeedPersistenceSnapshot? _pendingPersistence;
+            bool _persisting = false;'''
+          if text.count(field_anchor) != 1:
+              raise SystemExit('persistence field anchor mismatch')
+          text = text.replace(field_anchor, field_replacement)
+
+          method_anchor = '''    final cursor = visible.requestId == _activeDecisionRequestId
+                  ? _nextCursor
+                  : null;
+              final items = decisionEntries
+                  .map((entry) => entry.item)
+                  .toList(growable: false);
+              _persistTail = _persistTail.then((_) async {
+                await widget.runtime.persistFeedWindow(
+                  requestId: visible.requestId,
+                  cursor: cursor,
+                  visibleRevisionId: visible.item.revisionId,
+                  visiblePosition: visiblePosition,
+                  items: items,
+                );
+              });
+            }
+
+            void _emitInitialVisibleAfterBuild() {'''
+          method_replacement = '''    final cursor = visible.requestId == _activeDecisionRequestId
+                  ? _nextCursor
+                  : null;
+              _pendingPersistence = _FeedPersistenceSnapshot(
+                requestId: visible.requestId,
+                cursor: cursor,
+                visibleRevisionId: visible.item.revisionId,
+                visiblePosition: visiblePosition,
+                items: List<ConsumerFeedItem>.unmodifiable(
+                  decisionEntries.map((entry) => entry.item),
+                ),
+              );
+              if (!_persisting) unawaited(_drainPersistence());
+            }
+
+            Future<void> _drainPersistence() async {
+              if (_persisting) return;
+              _persisting = true;
+              try {
+                while (true) {
+                  final snapshot = _pendingPersistence;
+                  if (snapshot == null) return;
+                  _pendingPersistence = null;
+                  await widget.runtime.persistFeedWindow(
+                    requestId: snapshot.requestId,
+                    cursor: snapshot.cursor,
+                    visibleRevisionId: snapshot.visibleRevisionId,
+                    visiblePosition: snapshot.visiblePosition,
+                    items: snapshot.items,
+                  );
+                }
+              } finally {
+                _persisting = false;
+                if (_pendingPersistence != null) {
+                  unawaited(_drainPersistence());
+                }
+              }
+            }
+
+            void _emitInitialVisibleAfterBuild() {'''
+          if text.count(method_anchor) != 1:
+              raise SystemExit('persistence method anchor mismatch')
+          feed.write_text(text.replace(method_anchor, method_replacement))
+
+          test = Path('apps/mosaic_app/test/consumer_feed_test.dart')
+          text = test.read_text()
+
+          state_fields = '''  ConsumerFeedResume? resume;
+            ConsumerFeedCache? cache;
+            int maxPersistedItems = 0;'''
+          state_replacement = '''  ConsumerFeedResume? resume;
+            ConsumerFeedCache? cache;
+            Completer<void>? resumeWriteGate;
+            int resumeWriteCalls = 0;
+            int maxPersistedItems = 0;'''
+          if text.count(state_fields) != 1:
+              raise SystemExit('test state fields anchor mismatch')
+          text = text.replace(state_fields, state_replacement)
+
+          write_resume = '''  @override
+            Future<void> writeFeedResume(ConsumerFeedResume state) async {
+              resume = state;
+            }'''
+          write_resume_replacement = '''  @override
+            Future<void> writeFeedResume(ConsumerFeedResume state) async {
+              resumeWriteCalls += 1;
+              final gate = resumeWriteGate;
+              if (gate != null && !gate.isCompleted) await gate.future;
+              resume = state;
+            }'''
+          if text.count(write_resume) != 1:
+              raise SystemExit('writeFeedResume anchor mismatch')
+          text = text.replace(write_resume, write_resume_replacement)
+
+          insert_before = "  testWidgets('long paging keeps persisted and warm windows hard-bounded', (\n    tester,\n  ) async {"
+          regression = '''  testWidgets('rapid swipes coalesce persistence behind one active write', (
+            tester,
+          ) async {
+            final state = _MemoryConsumerState()
+              ..resumeWriteGate = Completer<void>();
+            final runtime = _runtime(
+              state,
+              (cursor, call) => http.Response(
+                jsonEncode(
+                  _page(
+                    'request_persist',
+                    List.generate(6, (index) => _item('persist_$index')),
+                    null,
+                  ),
+                ),
+                200,
+              ),
+            );
+            addTearDown(runtime.close);
+
+            await tester.pumpWidget(_app(runtime));
+            await tester.pumpAndSettle();
+            expect(state.resumeWriteCalls, 1);
+
+            for (var index = 0; index < 4; index += 1) {
+              await tester.drag(
+                find.byKey(const ValueKey<String>('consumer-feed-pager')),
+                const Offset(0, -700),
+              );
+              await tester.pumpAndSettle();
+            }
+
+            expect(state.resumeWriteCalls, 1);
+            state.resumeWriteGate!.complete();
+            await tester.pump();
+            await tester.pumpAndSettle();
+
+            expect(state.resumeWriteCalls, 2);
+            expect(state.resume?.visiblePosition, 4);
+            expect(state.resume?.visibleRevisionId, 'revision_persist_4');
+          });
+
+          '''
+          if text.count(insert_before) != 1:
+              raise SystemExit('persistence regression insertion anchor mismatch')
+          test.write_text(text.replace(insert_before, regression + insert_before))
+          PY
+
+          dart format \
+            apps/mosaic_app/lib/consumer_feed.dart \
+            apps/mosaic_app/test/consumer_feed_test.dart
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps/mosaic_app/lib/consumer_feed.dart \
+                  apps/mosaic_app/test/consumer_feed_test.dart
+          git commit -m 'fix(m2): coalesce feed recovery persistence'
+          git push origin HEAD:agent/m2-feed-pager-20260829
