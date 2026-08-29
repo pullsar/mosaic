@@ -37,6 +37,7 @@ test(
     const pianoPlay = `play_piano_${suffix}`;
     const revisionId = `rev_${suffix}`;
     const requestId = `feed_${suffix}`;
+    const capabilityFingerprint = `cap_${suffix}`;
 
     try {
       await pool.query(
@@ -56,12 +57,7 @@ test(
           [
             playId,
             revisionId,
-            JSON.stringify({
-              schemaVersion: 1,
-              id: playId,
-              revisionId,
-              format,
-            }),
+            JSON.stringify({schemaVersion: 1, id: playId, revisionId, format}),
           ],
         );
       }
@@ -120,18 +116,38 @@ test(
         requestId,
         actorId,
         rankingConfigVersion: defaultConsumerRankingConfig.version,
+        capabilityFingerprint,
         fallback: false,
         ranked,
       });
 
-      const page = await repo.readFeedDecisionPage(requestId, actorId, 0, 1);
+      const page = await repo.readFeedDecisionPage(
+        requestId,
+        actorId,
+        capabilityFingerprint,
+        0,
+        1,
+      );
       assert.ok(page);
       assert.equal(page.candidateCount, 2);
       assert.equal(page.items.length, 1);
       assert.equal(page.items[0]?.playId, pianoPlay);
       assert.equal(page.items[0]?.sourceBucket, 'known');
       assert.equal(typeof page.items[0]?.featureContributions.learningAffinity, 'number');
-      assert.equal(await repo.readFeedDecisionPage(requestId, `other_${suffix}`, 0, 1), null);
+      assert.equal(
+        await repo.readFeedDecisionPage(requestId, actorId, `other_${suffix}`, 0, 1),
+        null,
+      );
+      assert.equal(
+        await repo.readFeedDecisionPage(
+          requestId,
+          `other_${suffix}`,
+          capabilityFingerprint,
+          0,
+          1,
+        ),
+        null,
+      );
     } finally {
       await pool.end();
     }
