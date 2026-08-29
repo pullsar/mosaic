@@ -1,5 +1,9 @@
 #!/usr/bin/env bats
 
+setup_file() {
+  bats_require_minimum_version 1.5.0
+}
+
 setup() {
   IMAGE="${MIXLI_POSTGRES_IMAGE:-mixli-postgres:test}"
   STAGED_CONFIG=/run/mixli-secrets/pgbackrest.conf
