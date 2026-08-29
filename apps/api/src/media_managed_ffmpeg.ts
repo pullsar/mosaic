@@ -26,10 +26,10 @@ export function compileFfmpegInvocation(
   paths: FfmpegInvocationPaths,
   options: FfmpegCompilerOptions = {},
 ): FfmpegInvocation {
-  const normalized = normalizeMediaDerivativePlan(plan);
-  if (normalized.processor !== FFMPEG_IMAGE_PROCESSOR) {
-    return compileBaseFfmpegInvocation(normalized, paths, options);
+  if (plan.processor !== FFMPEG_IMAGE_PROCESSOR) {
+    return compileBaseFfmpegInvocation(plan, paths, options);
   }
+  const normalized = normalizeMediaDerivativePlan(plan);
   return compileBaseFfmpegInvocation(imageExecutionPlan(normalized), paths, options);
 }
 
@@ -37,15 +37,13 @@ export function compileFfmpegInvocation(
  * Managed authored images have their own persisted purpose/processor/identity,
  * but intentionally reuse the already verified single-frame JPEG execution and
  * FFprobe policy. The adapter is ephemeral; no image row is ever persisted as a
- * video poster derivative.
+ * video poster derivative. Existing plans pass through by reference.
  */
 export function mediaOutputVerificationPlan(
   plan: MediaDerivativePlan,
 ): MediaDerivativePlan {
-  const normalized = normalizeMediaDerivativePlan(plan);
-  return normalized.processor === FFMPEG_IMAGE_PROCESSOR
-    ? imageExecutionPlan(normalized)
-    : normalized;
+  if (plan.processor !== FFMPEG_IMAGE_PROCESSOR) return plan;
+  return imageExecutionPlan(normalizeMediaDerivativePlan(plan));
 }
 
 function imageExecutionPlan(plan: MediaDerivativePlan): MediaDerivativePlan {
