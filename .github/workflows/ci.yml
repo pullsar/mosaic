@@ -2,39 +2,52 @@ name: ci
 
 on:
   push:
-    branches: ['agent/m2-managed-asset-delivery-20260829']
+    branches: ['**']
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  format-managed-assets:
+  flutter:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
-      - name: Checkout branch
+      - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: agent/m2-managed-asset-delivery-20260829
       - name: Flutter
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           flutter-version: '3.44.7'
           cache: true
-      - name: Format managed asset files
-        run: |
-          dart format \
-            apps/mosaic_app/lib/asset_delivery_client.dart \
-            apps/mosaic_app/test/asset_delivery_client_test.dart
-      - name: Commit product formatting
-        run: |
-          git add \
-            apps/mosaic_app/lib/asset_delivery_client.dart \
-            apps/mosaic_app/test/asset_delivery_client_test.dart
-          if git diff --cached --quiet; then
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "style(app): format invalidation fencing"
-          git push origin HEAD:agent/m2-managed-asset-delivery-20260829
+      - name: Resolve locked workspace
+        run: flutter pub get --enforce-lockfile
+      - name: Verify formatting
+        run: dart format --output=none --set-exit-if-changed .
+      - name: Analyze
+        run: flutter analyze
+      - name: Test play_schema
+        working-directory: packages/play_schema
+        run: dart test
+      - name: Test play_engine
+        working-directory: packages/play_engine
+        run: dart test
+      - name: Test analytics_contract
+        working-directory: packages/analytics_contract
+        run: dart test
+      - name: Test local_state
+        working-directory: packages/local_state
+        run: dart test
+      - name: Test event_delivery
+        working-directory: packages/event_delivery
+        run: dart test
+      - name: Test play_flutter
+        working-directory: packages/play_flutter
+        run: flutter test
+      - name: Test app shell
+        working-directory: apps/mosaic_app
+        run: flutter test
