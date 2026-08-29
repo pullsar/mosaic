@@ -32,7 +32,9 @@ MosaicEventEnvelope _event() => MosaicEventEnvelope(
 
 void main() {
   test('offline event survives SQLite reopen and drains when online', () async {
-    final directory = await Directory.systemTemp.createTemp('mosaic_event_restart_');
+    final directory = await Directory.systemTemp.createTemp(
+      'mosaic_event_restart_',
+    );
     final path = '${directory.path}${Platform.pathSeparator}state.sqlite3';
 
     try {
@@ -45,7 +47,9 @@ void main() {
       store = MosaicLocalStore.open(path);
       outbox = SqliteEventOutbox(store);
       final recovered = await outbox.due(now: DateTime.utc(2026, 8, 30));
-      expect(recovered.map((queued) => queued.envelope.eventId), ['evt_restart']);
+      expect(recovered.map((queued) => queued.envelope.eventId), [
+        'evt_restart',
+      ]);
 
       final transport = _AcceptedTransport();
       final drain = EventDrainController(outbox: outbox, transport: transport);

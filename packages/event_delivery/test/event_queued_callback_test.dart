@@ -50,7 +50,9 @@ void main() {
       onQueued: queued.complete,
     );
 
-    telemetry.event(MosaicEventName.mediaPlayback, const {'phase': 'playbackError'});
+    telemetry.event(MosaicEventName.mediaPlayback, const {
+      'phase': 'playbackError',
+    });
     await Future<void>.delayed(Duration.zero);
     expect(queued.isCompleted, isFalse);
 
@@ -62,24 +64,29 @@ void main() {
     expect(stored.event, MosaicEventName.mediaPlayback);
   });
 
-  test('queued callback failure is isolated and reported as event_drain', () async {
-    final outbox = _GatedOutbox();
-    final reported = Completer<String?>();
-    final telemetry = MosaicEventTelemetry(
-      outbox: outbox,
-      contextProvider: () =>
-          EventContext(actorId: 'actor_1', sessionId: 'session_1'),
-      eventIdFactory: () => 'evt_2',
-      onQueued: () => throw StateError('offline'),
-      onInternalError: (error, stackTrace, {operation}) {
-        if (!reported.isCompleted) reported.complete(operation);
-      },
-    );
+  test(
+    'queued callback failure is isolated and reported as event_drain',
+    () async {
+      final outbox = _GatedOutbox();
+      final reported = Completer<String?>();
+      final telemetry = MosaicEventTelemetry(
+        outbox: outbox,
+        contextProvider: () =>
+            EventContext(actorId: 'actor_1', sessionId: 'session_1'),
+        eventIdFactory: () => 'evt_2',
+        onQueued: () => throw StateError('offline'),
+        onInternalError: (error, stackTrace, {operation}) {
+          if (!reported.isCompleted) reported.complete(operation);
+        },
+      );
 
-    telemetry.event(MosaicEventName.mediaPlayback, const {'phase': 'playbackError'});
-    outbox.allowEnqueue.complete();
+      telemetry.event(MosaicEventName.mediaPlayback, const {
+        'phase': 'playbackError',
+      });
+      outbox.allowEnqueue.complete();
 
-    expect((await outbox.stored.future).eventId, 'evt_2');
-    expect(await reported.future, 'event_drain');
-  });
+      expect((await outbox.stored.future).eventId, 'evt_2');
+      expect(await reported.future, 'event_drain');
+    },
+  );
 }

@@ -173,7 +173,9 @@ void _reportEventRuntimeError(
       exception: error,
       stack: stackTrace,
       library: 'mosaic_app.events',
-      context: ErrorDescription(operation ?? 'while processing event telemetry'),
+      context: ErrorDescription(
+        operation ?? 'while processing event telemetry',
+      ),
     ),
   );
 }
