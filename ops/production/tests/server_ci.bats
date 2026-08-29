@@ -33,6 +33,24 @@ run_ci() {
     "$REPO_ROOT/ops/production/bin/server-ci.sh" "$@"
 }
 
+@test "ordinary CI isolates API test and production candidate images" {
+  run run_ci "$CHECKOUT" "$SHA"
+  [ "$status" -eq 0 ]
+  grep -Fxq "image rm --force mixli-api-ci:$SHA" "$COMMAND_LOG"
+  grep -Fq 'API_TEST_IMAGE="mixli-api-test:$SHA"' \
+    "$REPO_ROOT/ops/production/bin/server-ci.sh"
+  grep -Fq 'API_CI_IMAGE="mixli-api-ci:$SHA"' \
+    "$REPO_ROOT/ops/production/bin/server-ci.sh"
+  ! grep -Fq -- '-t "$API_IMAGE"' "$REPO_ROOT/ops/production/bin/server-ci.sh"
+}
+
+@test "authorized deployment retains both exact release candidates after success" {
+  MIXLI_CI_RETAIN_RELEASE_IMAGES=1 run run_ci "$CHECKOUT" "$SHA"
+  [ "$status" -eq 0 ]
+  ! grep -Fxq "image rm --force mixli-api-ci:$SHA" "$COMMAND_LOG"
+  ! grep -Fxq "image rm --force mixli-postgres-ci:$SHA" "$COMMAND_LOG"
+}
+
 @test "rejects an invalid SHA before running server CI" {
   run run_ci "$CHECKOUT" main
   [ "$status" -eq 64 ]

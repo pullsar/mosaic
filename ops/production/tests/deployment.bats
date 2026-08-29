@@ -59,7 +59,7 @@ elif [[ "$1 $2" == 'image tag' ]]; then
 elif [[ "$1 $2" == 'image rm' ]]; then
   ref="${@: -1}"
   if [[ "${MIXLI_TEST_REQUIRE_CI_LOCK_HELD:-0}" == '1' &&
-    "$ref" == mixli-postgres-ci:* ]]; then
+    "$ref" == mixli-*-ci:* ]]; then
     if (exec 7>"$MIXLI_CI_LOCK_FILE"; flock -n 7); then
       exit 45
     fi
@@ -80,6 +80,8 @@ SH
   chmod +x "$TEST_ROOT/bin/docker"
   printf '%s\n' 'sha256:ci-postgres-image' \
     >"$TEST_ROOT/images/mixli-postgres-ci__$SHA"
+  printf '%s\n' 'sha256:ci-api-image' \
+    >"$TEST_ROOT/images/mixli-api-ci__$SHA"
   printf '%s\n' "mixli-postgres:$OLD_SHA" >"$POSTGRES_RUNTIME_STATE"
   printf 'compose:%s\n' "$SHA" >"$TEST_ROOT/builds/$SHA/ops/production/compose.yaml"
   printf 'compose:%s\n' "$OLD_SHA" >"$TEST_ROOT/runtime/compose.yaml"
@@ -337,6 +339,38 @@ deploy() {
   grep -qx "MIXLI_POSTGRES_IMAGE=mixli-postgres:$SHA" "$TEST_ROOT/production.env"
   [ "$(cat "$TEST_ROOT/images/mixli-postgres__$SHA")" = 'sha256:ci-postgres-image' ]
   [ ! -e "$TEST_ROOT/images/mixli-postgres-ci__$SHA" ]
+}
+
+@test "deployment promotes the retained API image ID and removes only its CI tag" {
+  run deploy "$SHA"
+  [ "$status" -eq 0 ]
+
+  grep -Fxq "image tag sha256:ci-api-image mixli-api:$SHA" "$COMMAND_LOG"
+  grep -Fxq "image rm --force mixli-api-ci:$SHA" "$COMMAND_LOG"
+  [ "$(cat "$TEST_ROOT/images/mixli-api__$SHA")" = 'sha256:ci-api-image' ]
+  [ ! -e "$TEST_ROOT/images/mixli-api-ci__$SHA" ]
+}
+
+@test "deployment rejects a conflicting API SHA tag without overwriting it" {
+  printf '%s\n' 'sha256:conflicting-api-image' >"$TEST_ROOT/images/mixli-api__$SHA"
+
+  run deploy "$SHA"
+  [ "$status" -ne 0 ]
+  [ "$(cat "$TEST_ROOT/images/mixli-api__$SHA")" = 'sha256:conflicting-api-image' ]
+  [ ! -e "$TEST_ROOT/images/mixli-api-ci__$SHA" ]
+  grep -Fxq "image rm --force mixli-api-ci:$SHA" "$COMMAND_LOG"
+}
+
+@test "failure after old pool stop restores and health-checks it before traffic rollback" {
+  MIXLI_TEST_FAIL_STAGE=record run deploy "$SHA"
+  [ "$status" -ne 0 ]
+  stopped_line="$(grep -n '^old-pool-stopped:blue$' "$TEST_ROOT/log/deploy-events.log" | cut -d: -f1)"
+  healthy_line="$(grep -n '^old-pool-healthy:blue$' "$TEST_ROOT/log/deploy-events.log" | cut -d: -f1)"
+  rollback_line="$(grep -n "^rollback:$SHA$" "$TEST_ROOT/log/deploy-events.log" | cut -d: -f1)"
+  [ -n "$stopped_line" ] && [ -n "$healthy_line" ] && [ -n "$rollback_line" ]
+  [ "$stopped_line" -lt "$healthy_line" ]
+  [ "$healthy_line" -lt "$rollback_line" ]
+  grep -q "\"sha\":\"$OLD_SHA\"" "$TEST_ROOT/state/current.json"
 }
 
 @test "deployment accepts an existing identical PostgreSQL SHA tag without retagging" {

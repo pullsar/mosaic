@@ -20,11 +20,12 @@ setup() {
   [ "$output" = "$SHA" ]
 }
 
-@test "fetches branches and pull requests before requiring remote reachability" {
+@test "fetches protected main before requiring main ancestry" {
   script="$REPO_ROOT/ops/production/bin/ci-request.sh"
-  grep -Fq '+refs/heads/*:refs/remotes/origin/*' "$script"
-  grep -Fq '+refs/pull/*/head:refs/remotes/origin/pull/*' "$script"
-  grep -Fq 'merge-base --is-ancestor' "$script"
+  grep -Fq 'fetch --prune origin main' "$script"
+  grep -Fq 'merge-base --is-ancestor "$SHA" origin/main' "$script"
+  ! grep -Fq '+refs/heads/*:refs/remotes/origin/*' "$script"
+  ! grep -Fq '+refs/pull/*/head:refs/remotes/origin/pull/*' "$script"
 }
 
 @test "runs only the root-owned server CI helper against the exact checkout" {
