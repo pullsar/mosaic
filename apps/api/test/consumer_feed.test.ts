@@ -13,6 +13,7 @@ import type {
   TopicPreferences,
   TopicSummary,
 } from '../src/consumer_repository.js';
+import type {FeedAssetReadinessResolver} from '../src/feed_asset_readiness.js';
 import type {FeedCandidate, RankedFeedCandidate} from '../src/consumer_ranking.js';
 
 const capabilities = {
@@ -140,6 +141,19 @@ class MemoryConsumerRepository implements ConsumerRepository {
   }
 }
 
+class SelectiveAssetReadiness implements FeedAssetReadinessResolver {
+  calls = 0;
+
+  constructor(private readonly blockedPlayIds: ReadonlySet<string>) {}
+
+  async filterDeliverable(
+    candidates: readonly FeedCandidate[],
+  ): Promise<FeedCandidate[]> {
+    this.calls += 1;
+    return candidates.filter((item) => !this.blockedPlayIds.has(item.playId));
+  }
+}
+
 test('capability fingerprint is canonical but changes with supported surface', () => {
   const first = fingerprintCapabilities({
     ...capabilities,
@@ -204,6 +218,34 @@ test('feed filters incompatible revisions before persistence and paginates one d
       limit: 1,
     }),
     InvalidFeedCursorError,
+  );
+});
+
+test('compatible but known-undeliverable candidates are removed before ranking and persistence', async () => {
+  const repository = new MemoryConsumerRepository();
+  repository.preferences = {interestTopicIds: ['travel'], learningTopicIds: []};
+  repository.candidates = [
+    candidate('ready', 'r1', {topicIds: ['travel'], curatedOrder: 1}),
+    candidate('not_ready', 'r2', {topicIds: ['travel'], curatedOrder: 2}),
+  ];
+  const readiness = new SelectiveAssetReadiness(new Set(['not_ready']));
+  const service = new ConsumerFeedService(repository, {
+    windowSize: 2,
+    candidateLimit: 2,
+    requestIdFactory: () => 'readiness_request',
+    assetReadiness: readiness,
+  });
+
+  const page = await service.getFeed({
+    actorId: 'actor_ready',
+    capabilities,
+    limit: 2,
+  });
+  assert.equal(readiness.calls, 1);
+  assert.deepEqual(page.items.map((item) => item.playId), ['ready']);
+  assert.deepEqual(
+    repository.decisions.get('readiness_request')?.ranked.map((item) => item.playId),
+    ['ready'],
   );
 });
 
