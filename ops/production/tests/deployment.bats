@@ -180,7 +180,7 @@ deploy() {
     "$REPO_ROOT/ops/production/bin/deployment.sh")"
   ci_line="$(grep -n '^  run_repository_ci$' <<<"$main_body" | cut -d: -f1)"
   build_line="$(grep -n '^  build_release$' <<<"$main_body" | cut -d: -f1)"
-  promote_line="$(grep -n '^  promote_postgres_image$' <<<"$main_body" | cut -d: -f1)"
+  promote_line="$(grep -n '^  promote_release_images$' <<<"$main_body" | cut -d: -f1)"
   unlock_line="$(grep -n '^  release_ci_lock$' <<<"$main_body" | cut -d: -f1)"
   [ "$ci_line" -lt "$build_line" ]
   [ "$build_line" -lt "$promote_line" ]

@@ -171,7 +171,7 @@ production-builds" ]
   [ "$status" -eq 0 ]
   ! grep -Fxq "image rm --force mixli-postgres-ci:$SHA" "$COMMAND_LOG"
 
-  grep -Fq 'MIXLI_CI_RETAIN_POSTGRES_IMAGE=1' \
+  grep -Fq 'MIXLI_CI_RETAIN_RELEASE_IMAGES=1' \
     "$REPO_ROOT/ops/production/bin/deployment.sh"
 }
 
