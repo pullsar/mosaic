@@ -68,6 +68,6 @@ setup() {
   grep -Fq '"$previous_unit" == "$UNIT"' "$REQUEST"
   grep -Fq '"$previous_sha" == "$SHA"' "$REQUEST"
   grep -Fq 'systemctl is-active --quiet "$UNIT"' "$REQUEST"
-  grep -Fq 'printf '\''queued:%s\\n'\'' "$UNIT"' "$REQUEST"
+  grep -Fq 'printf '\''queued:%s\n'\'' "$UNIT"' "$REQUEST"
   grep -Fq 'return 0' "$REQUEST"
 }
