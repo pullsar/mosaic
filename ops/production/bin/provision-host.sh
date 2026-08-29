@@ -17,7 +17,7 @@ target() {
 }
 
 install_layout() {
-  local path
+  local path real_ip_config
   install -d -m 0755 "$(target /srv/mixli)"
   for path in \
     /srv/mixli/builds /srv/mixli/releases /srv/mixli/runtime \
@@ -51,8 +51,12 @@ install_layout() {
     "$(target /etc/mixli/nginx/nginx.conf)"
   install -m 0644 "$SOURCE_ROOT/ops/production/nginx/conf.d/mixli.conf" \
     "$(target /etc/mixli/nginx/conf.d/mixli.conf)"
-  install -m 0644 "$SOURCE_ROOT/ops/production/nginx/cloudflare-real-ip.conf.example" \
-    "$(target /etc/mixli/nginx/cloudflare-real-ip.conf)"
+  real_ip_config="$(target /etc/mixli/nginx/cloudflare-real-ip.conf)"
+  [[ ! -L "$real_ip_config" ]]
+  if [[ ! -e "$real_ip_config" ]]; then
+    install -m 0644 "$SOURCE_ROOT/ops/production/nginx/cloudflare-real-ip.conf.example" \
+      "$real_ip_config"
+  fi
   install -m 0644 "$SOURCE_ROOT"/ops/production/prometheus/* \
     "$(target /etc/mixli/prometheus/)"
   install -m 0644 "$SOURCE_ROOT/ops/production/alertmanager/alertmanager.yml" \
