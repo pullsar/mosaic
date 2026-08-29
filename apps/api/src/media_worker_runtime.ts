@@ -279,6 +279,8 @@ function normalizeTiming(options: MediaWorkerRuntimeOptions): {
 
 function outputFileName(purpose: MediaDerivativeClaim['derivative']['purpose']): string {
   switch (purpose) {
+    case 'image':
+      return 'output.jpg';
     case 'playback':
       return 'output.mp4';
     case 'poster':
