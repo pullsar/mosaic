@@ -1,5 +1,7 @@
 import {Pool} from 'pg';
 import {buildApp} from './app.js';
+import {PostgresCanvasAssetRepository} from './canvas_asset.js';
+import {registerCanvasAssetRoutes} from './canvas_asset_routes.js';
 import {loadConfig} from './config.js';
 import {PostgresConsumerRepository} from './consumer_repository.js';
 import {MediaDeliveryService} from './media_delivery.js';
@@ -20,6 +22,8 @@ const app = buildApp({
   logLevel: config.logLevel,
   allowedWebOrigins: config.allowedWebOrigins,
 });
+
+registerCanvasAssetRoutes(app, new PostgresCanvasAssetRepository(pool));
 
 const mediaDeliveryConfig = loadMediaDeliveryStorageConfig();
 if (mediaDeliveryConfig.storageMode !== 'disabled') {
