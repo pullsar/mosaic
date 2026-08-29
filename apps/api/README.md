@@ -1,6 +1,6 @@
 # Mosaic API
 
-Small Fastify/PostgreSQL foundation for identity, immutable Play revisions, idempotent interaction events, and asynchronous media processing.
+Small Fastify/PostgreSQL foundation for identity, immutable Play revisions, idempotent interaction events, an interpretable anonymous consumer feed, and asynchronous media processing.
 
 ## Local
 
@@ -28,7 +28,7 @@ npm run migrate:down
 
 Production migrations are forward-first. A migration that has reached production should normally be repaired by a new forward migration instead of editing the historical file. `down` exists for local/test rollback and emergency procedures whose data implications have been reviewed.
 
-Every migration runs transactionally when PostgreSQL permits it. CI applies migrations to a clean database and exercises the event/idempotency and media integration suites.
+Every migration runs transactionally when PostgreSQL permits it. CI applies migrations to a clean database and exercises identity/event, consumer-feed, and media integration suites, including ordered rollback/reapply coverage.
 
 ## API foundation
 
@@ -38,8 +38,40 @@ Every migration runs transactionally when PostgreSQL permits it. CI applies migr
 - `POST /v1/actors/:actorId/bind-user` — bind anonymous history to a durable user.
 - `POST /v1/events` — idempotent event ingestion keyed by `eventId`; server stores independent `received_at`.
 - `POST /v1/plays/:playId/revisions/:revisionId` — immutable revision retrieval after client capability eligibility check.
+- `GET /v1/topics?q=<query>&limit=<1..100>` — bounded topic search/catalog listing.
+- `GET /v1/actors/:actorId/preferences` — read separate explicit interest and learning topic selections.
+- `PUT /v1/actors/:actorId/preferences` — atomically replace explicit interest and learning selections.
+- `POST /v1/feed` — create or continue a bounded capability-compatible feed decision.
 
-The Play eligibility matcher mirrors `packages/play_schema` and `contracts/` from issue #18. Server and client must remain conformant through pinned fixtures.
+The Play eligibility matcher mirrors `packages/play_schema` and `contracts/` from issue #18. Server and client must remain conformant through pinned fixtures. The same capability parser is used for direct revision retrieval and feed selection.
+
+## Anonymous consumer feed
+
+The first M2 feed is intentionally rules-based and inspectable. Interest and learning intent remain separate inputs; `More Like This` is a distinct affinity, one dismissal is weak evidence, repeated dismissal is progressively stronger, explicit topic mute excludes a candidate, and ranking does not optimize raw session duration.
+
+Only revisions explicitly present in `feed_catalog_entries` with `state = 'eligible'` can enter the feed. Compatibility is checked before ranking, so a persisted decision never contains a Play the requesting client cannot render. Seed fixtures materialize their authored `topics` and `learningTopics` into role-specific revision links and receive deterministic curated ordering for development/test supply.
+
+A new feed request accepts:
+
+```json
+{
+  "actorId": "anonymous-actor-id",
+  "capabilities": {
+    "schemaVersions": [1],
+    "presentationTypes": ["text", "image", "canvas"],
+    "inputTypes": ["tap", "single_choice"],
+    "validatorTypes": ["none", "equals"],
+    "platformFlags": []
+  },
+  "limit": 8
+}
+```
+
+`limit` defaults to 8 and is capped at 20. The server considers at most 200 eligible candidates by default, persists at most a 64-item decision window by default, and hard-caps windows at 100. The response includes a server-generated `requestId`, ranking config version, whether curated fallback was used, Play documents, and an opaque `nextCursor` when more of the same decision remains.
+
+Feed decisions expire after 24 hours. Cursor reads are fenced to the original actor and a SHA-256 fingerprint of the canonical client capability set; an expired, malformed, cross-actor, or capability-mismatched cursor returns `invalid_feed_cursor`. Anonymous first-use is order-independent: preference or feed persistence creates the actor if `/v1/actors` delivery has not completed yet.
+
+Stage-1 ranking persists each selected revision's source bucket, score, and named feature contributions for reproducibility/debugging. A small exploration guarantee substitutes one wildcard only when a wildcard exists and the selected multi-item window otherwise contains none; there is no permanent fixed bucket split. If the ranking implementation/configuration throws, the service logs the failure and degrades to compatible curated ordering rather than trapping the client. Database/candidate-source failure is not hidden because no trustworthy fallback inventory exists in that case.
 
 ## Media workers
 
@@ -114,4 +146,4 @@ The workers never expose raw source object keys for consumer delivery. Publicati
 
 ## Scope boundary
 
-This service intentionally avoids ranking infrastructure, creator Studio, Redis/queue infrastructure without measured need, payments, and a generic ORM. Media processing is deliberately narrow: deterministic FFmpeg normalization, managed immutable storage, transcript/caption work, and compatibility-safe publication required by the launch media contract. Add broader infrastructure only when a concrete milestone requires it.
+The current consumer ranker is deliberately a small weighted rules baseline with persisted explainability, not learned ranking infrastructure. This service still avoids creator Studio, Redis/queue infrastructure without measured need, payments, a generic ORM, pgvector/semantic ranking, and opaque engagement optimization. Add broader infrastructure only when a concrete milestone and measured need justify it.
