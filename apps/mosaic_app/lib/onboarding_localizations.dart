@@ -55,8 +55,8 @@ final class _MosaicOnboardingStringsDelegate
   const _MosaicOnboardingStringsDelegate();
 
   @override
-  bool isSupported(Locale locale) => MosaicOnboardingStrings.supportedLocales
-      .any(
+  bool isSupported(Locale locale) =>
+      MosaicOnboardingStrings.supportedLocales.any(
         (supported) =>
             supported.languageCode == locale.languageCode &&
             (supported.countryCode == null ||

@@ -173,32 +173,35 @@ void main() {
     },
   );
 
-  test('local-only preference persistence does not touch the network', () async {
-    final local = _MemoryConsumerState();
-    var networkCalled = false;
-    final runtime = ConsumerRuntime(
-      api: _client(
-        MockClient((request) async {
-          networkCalled = true;
-          return http.Response('{}', 500);
-        }),
-      ),
-      localState: local,
-      capabilities: PlayCapabilityEnvelope.m1(),
-    );
-    final desired = ConsumerPreferences(
-      interestTopicIds: const ['science'],
-      learningTopicIds: const ['history'],
-    );
+  test(
+    'local-only preference persistence does not touch the network',
+    () async {
+      final local = _MemoryConsumerState();
+      var networkCalled = false;
+      final runtime = ConsumerRuntime(
+        api: _client(
+          MockClient((request) async {
+            networkCalled = true;
+            return http.Response('{}', 500);
+          }),
+        ),
+        localState: local,
+        capabilities: PlayCapabilityEnvelope.m1(),
+      );
+      final desired = ConsumerPreferences(
+        interestTopicIds: const ['science'],
+        learningTopicIds: const ['history'],
+      );
 
-    final persisted = await runtime.persistPreferencesLocally(desired);
+      final persisted = await runtime.persistPreferencesLocally(desired);
 
-    expect(persisted, isTrue);
-    expect(networkCalled, isFalse);
-    expect(local.preferences.interestTopicIds, const ['science']);
-    expect(local.preferences.learningTopicIds, const ['history']);
-    runtime.close();
-  });
+      expect(persisted, isTrue);
+      expect(networkCalled, isFalse);
+      expect(local.preferences.interestTopicIds, const ['science']);
+      expect(local.preferences.learningTopicIds, const ['history']);
+      runtime.close();
+    },
+  );
 
   test(
     'failed local preference persistence prevents remote mutation',

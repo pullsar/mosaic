@@ -18,8 +18,7 @@ final class ConsumerOnboardingGate extends StatefulWidget {
   final Widget child;
 
   @override
-  State<ConsumerOnboardingGate> createState() =>
-      _ConsumerOnboardingGateState();
+  State<ConsumerOnboardingGate> createState() => _ConsumerOnboardingGateState();
 }
 
 final class _ConsumerOnboardingGateState extends State<ConsumerOnboardingGate>
@@ -220,7 +219,9 @@ final class _ConsumerOnboardingState extends State<ConsumerOnboarding>
   Future<bool> _queueLocalPersistence(ConsumerPreferences snapshot) {
     final completer = Completer<bool>();
     _localWriteTail = _localWriteTail.then((_) async {
-      final persisted = await widget.runtime.persistPreferencesLocally(snapshot);
+      final persisted = await widget.runtime.persistPreferencesLocally(
+        snapshot,
+      );
       if (persisted) {
         _lastPersisted = snapshot;
         _scheduleRemoteSync(snapshot);
@@ -343,10 +344,11 @@ final class _ConsumerOnboardingState extends State<ConsumerOnboarding>
   Widget build(BuildContext context) {
     if (!_initialized) return const _OnboardingBootSurface();
     final strings = MosaicOnboardingStrings.of(context);
-    final selectedIds = (_step == _OnboardingStep.interests
-            ? _preferences.interestTopicIds
-            : _preferences.learningTopicIds)
-        .toSet();
+    final selectedIds =
+        (_step == _OnboardingStep.interests
+                ? _preferences.interestTopicIds
+                : _preferences.learningTopicIds)
+            .toSet();
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
@@ -492,9 +494,9 @@ final class _StepDot extends StatelessWidget {
     width: active ? 24 : 7,
     height: 7,
     decoration: BoxDecoration(
-      color: Theme.of(context).colorScheme.onSurface.withValues(
-        alpha: active ? 0.9 : 0.25,
-      ),
+      color: Theme.of(
+        context,
+      ).colorScheme.onSurface.withValues(alpha: active ? 0.9 : 0.25),
       borderRadius: BorderRadius.circular(99),
     ),
   );
@@ -710,7 +712,9 @@ final class _OnboardingFooter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final strings = MosaicOnboardingStrings.of(context);
-    final border = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.1);
+    final border = Theme.of(
+      context,
+    ).colorScheme.onSurface.withValues(alpha: 0.1);
     final primaryStyle = FilledButton.styleFrom(
       minimumSize: const Size(122, 52),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
