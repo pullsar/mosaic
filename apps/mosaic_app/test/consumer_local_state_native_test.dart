@@ -45,32 +45,47 @@ void main() {
     },
   );
 
-  test('onboarding completion survives native database reopen', () async {
-    final directory = await Directory.systemTemp.createTemp(
-      'mosaic_onboarding_',
-    );
-    addTearDown(() async {
-      if (await directory.exists()) await directory.delete(recursive: true);
-    });
-    final path = '${directory.path}/mosaic.sqlite3';
+  test(
+    'onboarding preferences and completion survive native database reopen',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'mosaic_onboarding_',
+      );
+      addTearDown(() async {
+        if (await directory.exists()) await directory.delete(recursive: true);
+      });
+      final path = '${directory.path}/mosaic.sqlite3';
 
-    var store = MosaicLocalStore.open(path);
-    var state = SqliteConsumerLocalState(store);
-    expect(await state.readOnboardingCompleted(), isFalse);
+      var store = MosaicLocalStore.open(path);
+      var state = SqliteConsumerLocalState(store);
+      expect(await state.readOnboardingCompleted(), isFalse);
 
-    await state.writeOnboardingCompleted(true);
-    store.close();
+      await state.writePreferences(
+        ConsumerPreferences(
+          interestTopicIds: const ['travel', 'science'],
+          learningTopicIds: const ['history'],
+        ),
+      );
+      await state.writeOnboardingCompleted(true);
+      store.close();
 
-    store = MosaicLocalStore.open(path);
-    state = SqliteConsumerLocalState(store);
-    expect(await state.readOnboardingCompleted(), isTrue);
+      store = MosaicLocalStore.open(path);
+      state = SqliteConsumerLocalState(store);
+      final restored = await state.readPreferences();
+      expect(await state.readOnboardingCompleted(), isTrue);
+      expect(restored.interestTopicIds, const ['science', 'travel']);
+      expect(restored.learningTopicIds, const ['history']);
 
-    await state.writeOnboardingCompleted(false);
-    store.close();
+      await state.writeOnboardingCompleted(false);
+      store.close();
 
-    store = MosaicLocalStore.open(path);
-    state = SqliteConsumerLocalState(store);
-    expect(await state.readOnboardingCompleted(), isFalse);
-    store.close();
-  });
+      store = MosaicLocalStore.open(path);
+      state = SqliteConsumerLocalState(store);
+      final reopened = await state.readPreferences();
+      expect(await state.readOnboardingCompleted(), isFalse);
+      expect(reopened.interestTopicIds, const ['science', 'travel']);
+      expect(reopened.learningTopicIds, const ['history']);
+      store.close();
+    },
+  );
 }
