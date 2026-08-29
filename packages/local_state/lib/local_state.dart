@@ -229,7 +229,9 @@ final class MosaicLocalStore {
         throw StateError('Actor ID factory returned an empty identifier.');
       }
       if (!_actorAccessTokenPattern.hasMatch(accessToken)) {
-        throw StateError('Actor access token factory returned an invalid token.');
+        throw StateError(
+          'Actor access token factory returned an invalid token.',
+        );
       }
       _setMetadata('actor_id', actorId);
       _setMetadata('actor_access_token', accessToken);

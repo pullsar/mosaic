@@ -27,10 +27,8 @@ final class AppEventResources {
   final String actorAccessToken;
   final Future<void> Function() close;
 
-  ActorAccessIdentity get actorAccess => ActorAccessIdentity(
-    actorId: actorId,
-    accessToken: actorAccessToken,
-  );
+  ActorAccessIdentity get actorAccess =>
+      ActorAccessIdentity(actorId: actorId, accessToken: actorAccessToken);
 }
 
 Future<void> _noopClose() async {}

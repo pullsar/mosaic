@@ -162,22 +162,22 @@ void main() {
     );
   });
 
-  test('actor access tokens are strict and secure generator matches wire shape', () {
-    final token = secureActorAccessToken();
-    expect(token, hasLength(43));
-    expect(RegExp(r'^[A-Za-z0-9_-]{43}$').hasMatch(token), isTrue);
-    expect(
-      actorAuthorizationHeaders(token, json: true),
-      {
+  test(
+    'actor access tokens are strict and secure generator matches wire shape',
+    () {
+      final token = secureActorAccessToken();
+      expect(token, hasLength(43));
+      expect(RegExp(r'^[A-Za-z0-9_-]{43}$').hasMatch(token), isTrue);
+      expect(actorAuthorizationHeaders(token, json: true), {
         'authorization': 'Bearer $token',
         'content-type': 'application/json',
-      },
-    );
-    expect(
-      () => ActorAccessIdentity(actorId: 'a', accessToken: 'weak'),
-      throwsArgumentError,
-    );
-  });
+      });
+      expect(
+        () => ActorAccessIdentity(actorId: 'a', accessToken: 'weak'),
+        throwsArgumentError,
+      );
+    },
+  );
 
   test('closed transport degrades to retryable failure', () async {
     final transport = HttpEventTransport(

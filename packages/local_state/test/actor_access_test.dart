@@ -34,44 +34,52 @@ void main() {
     }
   });
 
-  test('pre-credential actor rotates actor and secret together instead of being claimed', () {
-    final temp = Directory.systemTemp.createTempSync('mosaic-legacy-actor-');
-    final path = '${temp.path}/mosaic.db';
-    try {
-      var store = MosaicLocalStore.open(
-        path,
-        actorIdFactory: () => 'legacy_actor',
-        actorAccessTokenFactory: () => 'A' * 43,
+  test(
+    'pre-credential actor rotates actor and secret together instead of being claimed',
+    () {
+      final temp = Directory.systemTemp.createTempSync('mosaic-legacy-actor-');
+      final path = '${temp.path}/mosaic.db';
+      try {
+        var store = MosaicLocalStore.open(
+          path,
+          actorIdFactory: () => 'legacy_actor',
+          actorAccessTokenFactory: () => 'A' * 43,
+        );
+        expect(store.getOrCreateActorAccess().actorId, 'legacy_actor');
+        store.close();
+
+        final database = sqlite3.open(path);
+        database.execute(
+          "delete from metadata where key = 'actor_access_token'",
+        );
+        database.close();
+
+        store = MosaicLocalStore.open(
+          path,
+          actorIdFactory: () => 'rotated_actor',
+          actorAccessTokenFactory: () => 'B' * 43,
+        );
+        final rotated = store.getOrCreateActorAccess();
+        expect(rotated.actorId, 'rotated_actor');
+        expect(rotated.accessToken, 'B' * 43);
+        expect(rotated.actorId, isNot('legacy_actor'));
+        store.close();
+      } finally {
+        temp.deleteSync(recursive: true);
+      }
+    },
+  );
+
+  test(
+    'invalid actor access token factory fails without persisting a partial identity',
+    () {
+      final store = MosaicLocalStore.openInMemory(
+        actorIdFactory: () => 'actor_partial',
+        actorAccessTokenFactory: () => 'weak',
       );
-      expect(store.getOrCreateActorAccess().actorId, 'legacy_actor');
+      expect(store.getOrCreateActorAccess, throwsStateError);
+      expect(store.getOrCreateActorAccess, throwsStateError);
       store.close();
-
-      final database = sqlite3.open(path);
-      database.execute("delete from metadata where key = 'actor_access_token'");
-      database.close();
-
-      store = MosaicLocalStore.open(
-        path,
-        actorIdFactory: () => 'rotated_actor',
-        actorAccessTokenFactory: () => 'B' * 43,
-      );
-      final rotated = store.getOrCreateActorAccess();
-      expect(rotated.actorId, 'rotated_actor');
-      expect(rotated.accessToken, 'B' * 43);
-      expect(rotated.actorId, isNot('legacy_actor'));
-      store.close();
-    } finally {
-      temp.deleteSync(recursive: true);
-    }
-  });
-
-  test('invalid actor access token factory fails without persisting a partial identity', () {
-    final store = MosaicLocalStore.openInMemory(
-      actorIdFactory: () => 'actor_partial',
-      actorAccessTokenFactory: () => 'weak',
-    );
-    expect(store.getOrCreateActorAccess, throwsStateError);
-    expect(store.getOrCreateActorAccess, throwsStateError);
-    store.close();
-  });
+    },
+  );
 }

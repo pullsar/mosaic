@@ -88,7 +88,10 @@ final class HttpEventTransport implements EventTransport {
       final response = await _client
           .post(
             uri,
-            headers: actorAuthorizationHeaders(_actorAccess.accessToken, json: true),
+            headers: actorAuthorizationHeaders(
+              _actorAccess.accessToken,
+              json: true,
+            ),
             body: jsonEncode(body),
           )
           .timeout(requestTimeout);
