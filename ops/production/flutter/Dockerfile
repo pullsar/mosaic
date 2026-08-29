@@ -42,7 +42,7 @@ RUN yes | /opt/android-sdk/cmdline-tools/latest/bin/android \
       --sdk=/opt/android-sdk \
       sdk install \
       'platform-tools' \
-      'platforms/android-36.0' \
+      'platforms/android-36' \
       'platforms/android-37.0' \
       'build-tools/36.0.0' \
       'build-tools/37.0.0' \
