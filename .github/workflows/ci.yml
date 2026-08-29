@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   flutter:
@@ -26,27 +26,28 @@ jobs:
           cache: true
       - name: Resolve locked workspace
         run: flutter pub get --enforce-lockfile
-      - name: Format changed Dart files exactly
-        run: |
-          dart format \
-            apps/mosaic_app/lib/event_runtime_resources.dart \
-            packages/event_delivery/lib/src/http_event_transport.dart \
-            packages/event_delivery/test/http_event_transport_test.dart \
-            packages/event_delivery/test_web/indexed_db_actor_access_web_test.dart \
-            packages/local_state/lib/local_state.dart \
-            packages/local_state/test/actor_access_test.dart
-          if git diff --quiet; then
-            echo 'No formatting changes required.'
-            exit 0
-          fi
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add \
-            apps/mosaic_app/lib/event_runtime_resources.dart \
-            packages/event_delivery/lib/src/http_event_transport.dart \
-            packages/event_delivery/test/http_event_transport_test.dart \
-            packages/event_delivery/test_web/indexed_db_actor_access_web_test.dart \
-            packages/local_state/lib/local_state.dart \
-            packages/local_state/test/actor_access_test.dart
-          git commit -m 'style(actor): apply Dart 3.12 formatting [skip ci]'
-          git push origin HEAD:${GITHUB_REF_NAME}
+      - name: Verify formatting
+        run: dart format --output=none --set-exit-if-changed .
+      - name: Analyze
+        run: flutter analyze
+      - name: Test play_schema
+        working-directory: packages/play_schema
+        run: dart test
+      - name: Test play_engine
+        working-directory: packages/play_engine
+        run: dart test
+      - name: Test analytics_contract
+        working-directory: packages/analytics_contract
+        run: dart test
+      - name: Test local_state
+        working-directory: packages/local_state
+        run: dart test
+      - name: Test event_delivery
+        working-directory: packages/event_delivery
+        run: dart test
+      - name: Test play_flutter
+        working-directory: packages/play_flutter
+        run: flutter test
+      - name: Test app shell
+        working-directory: apps/mosaic_app
+        run: flutter test
