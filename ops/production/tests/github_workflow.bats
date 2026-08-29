@@ -56,3 +56,45 @@ setup() {
   grep -Fq 'workflow_dispatch:' "$workflow"
   ! grep -Eq '^[[:space:]]+(push|pull_request):' "$workflow"
 }
+
+@test "only PR dispatch main deploy and exceptional iOS workflows remain" {
+  [ -f "$REPO_ROOT/.github/workflows/review-dispatch.yml" ]
+  [ -f "$REPO_ROOT/.github/workflows/deploy-production.yml" ]
+  [ -f "$REPO_ROOT/.github/workflows/ios-release.yml" ]
+  [ ! -e "$REPO_ROOT/.github/workflows/server-ci.yml" ]
+  [ ! -e "$REPO_ROOT/.github/workflows/platform-ci.yml" ]
+  [ ! -e "$REPO_ROOT/.github/workflows/ci.yml" ]
+  [ ! -e "$REPO_ROOT/.github/workflows/api-ci.yml" ]
+  [ ! -e "$REPO_ROOT/.github/workflows/local-recovery-ci.yml" ]
+}
+
+@test "pull request workflow is trusted orchestration only" {
+  workflow="$REPO_ROOT/.github/workflows/review-dispatch.yml"
+  grep -Fq 'pull_request_target:' "$workflow"
+  grep -Fq 'types: [opened, synchronize, reopened, ready_for_review]' "$workflow"
+  grep -Fq 'github.event.pull_request.number' "$workflow"
+  grep -Fq 'github.event.pull_request.head.sha' "$workflow"
+  grep -Fq 'cancel-in-progress: true' "$workflow"
+  grep -Fq 'timeout-minutes: 2' "$workflow"
+  grep -Fq 'MIXLI_REVIEW_SSH_KEY' "$workflow"
+  ! grep -Eq 'actions/checkout|flutter-action|setup-node|npm (ci|test)|dart (test|analyze)|flutter (test|build)|pull_request\.head\.repo' "$workflow"
+  ! grep -Fq 'MIXLI_DEPLOY_SSH_KEY' "$workflow"
+  ! grep -Fq 'environment: production' "$workflow"
+}
+
+@test "main has exactly one automatic dispatcher" {
+  matches="$(grep -RFl 'branches: [main]' "$REPO_ROOT/.github/workflows" | sort)"
+  [ "$matches" = "$REPO_ROOT/.github/workflows/deploy-production.yml" ]
+  grep -Fq '"deploy ${GITHUB_SHA}"' "$matches"
+}
+
+@test "iOS runs only manually or for published releases" {
+  workflow="$REPO_ROOT/.github/workflows/ios-release.yml"
+  grep -Fq 'workflow_dispatch:' "$workflow"
+  grep -Fq 'release:' "$workflow"
+  grep -Fq 'types: [published]' "$workflow"
+  grep -Fq 'runs-on: macos-latest' "$workflow"
+  grep -Fq 'flutter build ios --simulator --no-codesign' "$workflow"
+  ! grep -Eq '^[[:space:]]+(push|pull_request|pull_request_target):' "$workflow"
+  ! grep -Fq 'environment: production' "$workflow"
+}

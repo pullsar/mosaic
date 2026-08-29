@@ -238,3 +238,14 @@ production-builds" ]
   [[ "$output" == *"Failed to remove exact CI image tag mixli-postgres-ci:$SHA."* ]]
   grep -Fxq "image rm --force mixli-postgres-ci:$SHA" "$COMMAND_LOG"
 }
+
+@test "review mode retains every release validation stage" {
+  script="$REPO_ROOT/ops/production/bin/server-ci.sh"
+  grep -Fq 'MIXLI_CI_ENGINE_MODE' "$script"
+  grep -Fq 'review' "$script"
+  for stage in source-integrity infrastructure-contracts \
+    api-postgres-integration flutter-workspace platform-declarations \
+    production-builds; do
+    grep -Fq "run_stage $stage" "$script"
+  done
+}
