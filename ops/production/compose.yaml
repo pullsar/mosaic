@@ -1,0 +1,394 @@
+name: ${COMPOSE_PROJECT_NAME:-mixli}
+
+x-api: &api
+  env_file:
+    - path: ${MIXLI_API_ENV_FILE:-/etc/mixli/secrets/api.env}
+      required: false
+  environment: &api-environment
+    HOST: 0.0.0.0
+    PORT: "8080"
+    LOG_LEVEL: ${MIXLI_LOG_LEVEL:-info}
+  expose:
+    - "8080"
+  read_only: true
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,nodev,size=64m
+  security_opt:
+    - no-new-privileges:true
+  init: true
+  restart: unless-stopped
+  stop_grace_period: 90s
+  healthcheck:
+    test:
+      - CMD
+      - node
+      - -e
+      - fetch('http://127.0.0.1:8080/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+    interval: 5s
+    timeout: 3s
+    retries: 6
+    start_period: 15s
+  deploy:
+    resources:
+      limits:
+        memory: 1G
+        cpus: "2.0"
+      reservations:
+        cpus: "0.75"
+        memory: 256M
+  depends_on:
+    postgres:
+      condition: service_healthy
+  networks:
+    - backend
+    - egress
+
+services:
+  postgres:
+    image: ${MIXLI_POSTGRES_IMAGE:-mixli-postgres:bootstrap-required}
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-mixli}
+      POSTGRES_USER: ${POSTGRES_USER:-mixli}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres-password
+      MIXLI_PGBACKREST_REQUIRE_REPO2_S3: "1"
+    volumes:
+      - type: bind
+        source: ${MIXLI_RELEASE_ROOT:-/srv/mixli}/data/postgres
+        target: /var/lib/postgresql
+      - type: bind
+        source: ${MIXLI_RELEASE_ROOT:-/srv/mixli}/backups/pgbackrest
+        target: /var/lib/pgbackrest
+      - type: bind
+        source: ${MIXLI_POSTGRES_CONFIG:-/etc/mixli/postgres/postgresql.conf}
+        target: /etc/postgresql/postgresql.conf
+        read_only: true
+      - type: bind
+        source: ${MIXLI_PGBACKREST_CONFIG:-/etc/mixli/postgres/pgbackrest.conf}
+        target: /run/mixli-secrets/pgbackrest.conf
+        read_only: true
+      - type: bind
+        source: ${MIXLI_POSTGRES_PASSWORD_FILE:-/etc/mixli/secrets/postgres-password}
+        target: /run/secrets/postgres-password
+        read_only: true
+    shm_size: 2G
+    restart: unless-stopped
+    stop_grace_period: 120s
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 16G
+          cpus: "6.0"
+        reservations:
+          memory: 8G
+          cpus: "2.0"
+    networks:
+      - backend
+      - egress
+
+  api-blue-1:
+    <<: *api
+    image: ${MIXLI_API_BLUE_IMAGE:-mixli-api:bootstrap}
+    hostname: api-blue-1
+    environment:
+      <<: *api-environment
+      MIXLI_RELEASE_SHA: ${MIXLI_API_BLUE_RELEASE_SHA:-unknown}
+
+  api-blue-2:
+    <<: *api
+    image: ${MIXLI_API_BLUE_IMAGE:-mixli-api:bootstrap}
+    hostname: api-blue-2
+    environment:
+      <<: *api-environment
+      MIXLI_RELEASE_SHA: ${MIXLI_API_BLUE_RELEASE_SHA:-unknown}
+
+  api-green-1:
+    <<: *api
+    image: ${MIXLI_API_GREEN_IMAGE:-mixli-api:bootstrap}
+    hostname: api-green-1
+    environment:
+      <<: *api-environment
+      MIXLI_RELEASE_SHA: ${MIXLI_API_GREEN_RELEASE_SHA:-unknown}
+
+  api-green-2:
+    <<: *api
+    image: ${MIXLI_API_GREEN_IMAGE:-mixli-api:bootstrap}
+    hostname: api-green-2
+    environment:
+      <<: *api-environment
+      MIXLI_RELEASE_SHA: ${MIXLI_API_GREEN_RELEASE_SHA:-unknown}
+
+  nginx:
+    image: ${MIXLI_NGINX_IMAGE:-nginx:1.28.0-alpine}
+    command: ["nginx", "-c", "/etc/nginx/mixli/nginx.conf", "-g", "daemon off;"]
+    ports:
+      - target: 80
+        published: "80"
+        protocol: tcp
+        mode: host
+      - target: 443
+        published: "443"
+        protocol: tcp
+        mode: host
+    expose:
+      - "8081"
+    volumes:
+      - type: bind
+        source: ${MIXLI_RELEASE_ROOT:-/srv/mixli}
+        target: /srv/mixli
+        read_only: true
+      - type: bind
+        source: ${MIXLI_NGINX_CONFIG_DIR:-/etc/mixli/nginx}
+        target: /etc/nginx/mixli
+        read_only: true
+      - type: bind
+        source: ${MIXLI_RELEASE_ROOT:-/srv/mixli}/runtime
+        target: /etc/nginx/runtime
+        read_only: true
+      - type: bind
+        source: ${MIXLI_CLOUDFLARE_CONFIG_DIR:-/etc/mixli/cloudflare}
+        target: /etc/nginx/tls
+        read_only: true
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx:rw,noexec,nosuid,nodev,size=128m
+      - /var/run:rw,noexec,nosuid,nodev,size=8m
+      - /tmp:rw,noexec,nosuid,nodev,size=32m
+    security_opt:
+      - no-new-privileges:true
+    # The systemd stack unit starts this published edge only after the
+    # fail-closed Cloudflare firewall unit succeeds. Docker must not revive it
+    # early during daemon startup.
+    restart: "no"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/nginx-health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "2.0"
+        reservations:
+          memory: 128M
+          cpus: "0.25"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - backend
+      - monitoring
+
+  prometheus:
+    image: ${MIXLI_PROMETHEUS_IMAGE:-prom/prometheus:v3.5.5}
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+      - --storage.tsdb.retention.size=20GB
+      - --web.enable-lifecycle
+    volumes:
+      - type: bind
+        source: ${MIXLI_PROMETHEUS_CONFIG_DIR:-/etc/mixli/prometheus}
+        target: /etc/prometheus
+        read_only: true
+      - type: bind
+        source: ${MIXLI_RELEASE_ROOT:-/srv/mixli}/data/monitoring/prometheus
+        target: /prometheus
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "2.0"
+    networks:
+      - backend
+      - monitoring
+
+  alertmanager:
+    image: ${MIXLI_ALERTMANAGER_IMAGE:-prom/alertmanager:v0.32.1}
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    volumes:
+      - type: bind
+        source: ${MIXLI_ALERTMANAGER_CONFIG:-/etc/mixli/alertmanager/alertmanager.yml}
+        target: /etc/alertmanager/alertmanager.yml
+        read_only: true
+      - type: bind
+        source: ${MIXLI_ALERTMANAGER_WEBHOOK_FILE:-/run/mixli/container-secrets/alertmanager-webhook-url}
+        target: /etc/alertmanager/secrets/webhook-url
+        read_only: true
+      - type: bind
+        source: ${MIXLI_RELEASE_ROOT:-/srv/mixli}/data/monitoring/alertmanager
+        target: /alertmanager
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+    networks:
+      - monitoring
+
+  grafana:
+    image: ${MIXLI_GRAFANA_IMAGE:-grafana/grafana:13.1.0}
+    environment:
+      GF_SERVER_DOMAIN: ${MIXLI_OPS_DOMAIN:-ops.mixli.app}
+      GF_SERVER_ROOT_URL: https://${MIXLI_OPS_DOMAIN:-ops.mixli.app}/
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana-admin-password
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - type: bind
+        source: ${MIXLI_RELEASE_ROOT:-/srv/mixli}/data/monitoring/grafana
+        target: /var/lib/grafana
+      - type: bind
+        source: ${MIXLI_GRAFANA_PROVISIONING_DIR:-/etc/mixli/grafana/provisioning}
+        target: /etc/grafana/provisioning
+        read_only: true
+      - type: bind
+        source: ${MIXLI_GRAFANA_DASHBOARD_DIR:-/etc/mixli/grafana/dashboards}
+        target: /var/lib/grafana-dashboards
+        read_only: true
+      - type: bind
+        source: ${MIXLI_GRAFANA_ADMIN_PASSWORD_FILE:-/run/mixli/container-secrets/grafana-admin-password}
+        target: /run/secrets/grafana-admin-password
+        read_only: true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "1.0"
+    networks:
+      - monitoring
+
+  node-exporter:
+    image: ${MIXLI_NODE_EXPORTER_IMAGE:-quay.io/prometheus/node-exporter:v1.12.1}
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/host/root
+      - --collector.textfile.directory=/var/lib/node_exporter/textfile
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+    volumes:
+      - type: bind
+        source: /proc
+        target: /host/proc
+        read_only: true
+      - type: bind
+        source: /sys
+        target: /host/sys
+        read_only: true
+      - type: bind
+        source: /
+        target: /host/root
+        read_only: true
+      - type: bind
+        source: ${MIXLI_RELEASE_ROOT:-/srv/mixli}/metrics
+        target: /var/lib/node_exporter/textfile
+        read_only: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.25"
+    networks:
+      - monitoring
+
+  cadvisor:
+    image: ${MIXLI_CADVISOR_IMAGE:-ghcr.io/google/cadvisor:v0.57.0}
+    privileged: true
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    read_only: true
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"
+    networks:
+      - monitoring
+
+  nginx-exporter:
+    image: ${MIXLI_NGINX_EXPORTER_IMAGE:-nginx/nginx-prometheus-exporter:1.5.3}
+    command:
+      - --nginx.scrape-uri=http://nginx:8081/stub_status
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    depends_on:
+      - nginx
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.25"
+    networks:
+      - monitoring
+
+  postgres-exporter:
+    image: ${MIXLI_POSTGRES_EXPORTER_IMAGE:-quay.io/prometheuscommunity/postgres-exporter:v0.20.1}
+    env_file:
+      - path: ${MIXLI_POSTGRES_EXPORTER_ENV_FILE:-/etc/mixli/secrets/postgres-exporter.env}
+        required: false
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+    networks:
+      - backend
+      - monitoring
+
+networks:
+  backend:
+    internal: true
+  monitoring:
+    internal: true
+  egress:
+    driver: bridge

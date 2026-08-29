@@ -1,4 +1,5 @@
 import 'capability.dart';
+import 'interaction_defaults.dart';
 import 'model.dart';
 
 enum PlayValidationSeverity { error, warning }
@@ -117,16 +118,8 @@ final class PlaySchemaValidator {
         );
       }
 
-      if (state.validation.type == PlayValidatorType.equals &&
-          state.validation.value == null) {
-        issues.add(
-          PlayValidationIssue(
-            code: 'validator_value',
-            path: 'states.$stateId.validation.value',
-            message: 'equals validation requires a value.',
-          ),
-        );
-      }
+      _validateValidator(stateId, state.validation, issues);
+      _validateInput(stateId, state, issues);
 
       for (final layer in state.presentation) {
         if (layer.assetId != null && !play.assets.contains(layer.assetId)) {
@@ -195,6 +188,222 @@ final class PlaySchemaValidator {
     return issues;
   }
 
+  void _validateValidator(
+    String stateId,
+    PlayValidationDefinition validation,
+    List<PlayValidationIssue> issues,
+  ) {
+    final path = 'states.$stateId.validation.value';
+    if (validation.type == PlayValidatorType.equals &&
+        validation.value == null) {
+      issues.add(
+        PlayValidationIssue(
+          code: 'validator_value',
+          path: path,
+          message: 'equals validation requires a value.',
+        ),
+      );
+      return;
+    }
+
+    if (validation.type == PlayValidatorType.orderedSequence) {
+      final value = validation.value;
+      final valid =
+          value is List &&
+          value.isNotEmpty &&
+          value.length <= 16 &&
+          value.every((item) => item is String && item.trim().isNotEmpty);
+      if (!valid) {
+        issues.add(
+          PlayValidationIssue(
+            code: 'validator_value',
+            path: path,
+            message: 'ordered_sequence requires 1–16 non-empty string values.',
+          ),
+        );
+      }
+      return;
+    }
+
+    if (validation.type == PlayValidatorType.targetRegion &&
+        _nonEmptyString(validation.value) == null) {
+      issues.add(
+        PlayValidationIssue(
+          code: 'validator_value',
+          path: path,
+          message: 'target_region requires a non-empty target id.',
+        ),
+      );
+    }
+  }
+
+  void _validateInput(
+    String stateId,
+    PlayStateDefinition state,
+    List<PlayValidationIssue> issues,
+  ) {
+    switch (state.input.type) {
+      case PlayInputType.pianoKey:
+        _validatePianoInput(stateId, state, issues);
+      case PlayInputType.drag:
+        _validateDragInput(stateId, state, issues);
+      default:
+        break;
+    }
+  }
+
+  void _validatePianoInput(
+    String stateId,
+    PlayStateDefinition state,
+    List<PlayValidationIssue> issues,
+  ) {
+    final path = 'states.$stateId.input';
+    if (state.validation.type != PlayValidatorType.orderedSequence) {
+      issues.add(
+        PlayValidationIssue(
+          code: 'piano_validator',
+          path: '$path.type',
+          message: 'piano_key requires ordered_sequence validation.',
+        ),
+      );
+      return;
+    }
+
+    final expectedRaw = state.validation.value;
+    if (expectedRaw is! List ||
+        expectedRaw.isEmpty ||
+        expectedRaw.length > 16 ||
+        expectedRaw.any((item) => item is! String || item.trim().isEmpty)) {
+      return;
+    }
+    final expected = expectedRaw.cast<String>();
+
+    final keysRaw = state.input.properties['keys'];
+    final parsedKeys = keysRaw == null
+        ? MosaicPianoInputDefaults.keys.toSet()
+        : _uniqueStrings(keysRaw);
+    Set<String>? keys;
+    if (parsedKeys == null || parsedKeys.isEmpty) {
+      issues.add(
+        PlayValidationIssue(
+          code: 'piano_keys',
+          path: '$path.keys',
+          message: 'piano_key keys must be unique non-empty strings.',
+        ),
+      );
+    } else {
+      keys = parsedKeys;
+    }
+
+    final lengthRaw = state.input.properties['sequenceLength'];
+    if (lengthRaw != null &&
+        (lengthRaw is! int || lengthRaw < 1 || lengthRaw > 16)) {
+      issues.add(
+        PlayValidationIssue(
+          code: 'piano_sequence_length',
+          path: '$path.sequenceLength',
+          message: 'piano_key sequenceLength must be an integer from 1 to 16.',
+        ),
+      );
+    } else if (lengthRaw is int && lengthRaw != expected.length) {
+      issues.add(
+        PlayValidationIssue(
+          code: 'piano_sequence_length',
+          path: '$path.sequenceLength',
+          message: 'piano_key sequenceLength must match the ordered sequence.',
+        ),
+      );
+    }
+
+    final availableKeys = keys;
+    if (availableKeys != null &&
+        expected.any((note) => !availableKeys.contains(note))) {
+      issues.add(
+        PlayValidationIssue(
+          code: 'piano_expected_key_missing',
+          path: '$path.keys',
+          message: 'Every expected piano note must exist in the rendered keys.',
+        ),
+      );
+    }
+  }
+
+  void _validateDragInput(
+    String stateId,
+    PlayStateDefinition state,
+    List<PlayValidationIssue> issues,
+  ) {
+    final path = 'states.$stateId.input';
+    if (state.validation.type != PlayValidatorType.targetRegion) {
+      issues.add(
+        PlayValidationIssue(
+          code: 'drag_validator',
+          path: '$path.type',
+          message: 'drag requires target_region validation.',
+        ),
+      );
+      return;
+    }
+
+    final origin = _point(state.input.properties['dragOrigin']);
+    final size = _size(state.input.properties['dragSize']);
+    if (origin == null ||
+        size == null ||
+        origin.$1 + size.$1 > 1 ||
+        origin.$2 + size.$2 > 1) {
+      issues.add(
+        PlayValidationIssue(
+          code: 'drag_geometry',
+          path: path,
+          message:
+              'drag requires an in-bounds normalized dragOrigin and dragSize.',
+        ),
+      );
+    }
+
+    final targetsRaw = state.input.properties['targets'];
+    final parsedTargets = _targets(targetsRaw);
+    if (parsedTargets == null || parsedTargets.isEmpty) {
+      issues.add(
+        PlayValidationIssue(
+          code: 'drag_targets',
+          path: '$path.targets',
+          message:
+              'drag targets must be unique, normalized, in-bounds rectangles.',
+        ),
+      );
+      return;
+    }
+
+    for (var left = 0; left < parsedTargets.length; left += 1) {
+      for (var right = left + 1; right < parsedTargets.length; right += 1) {
+        if (_overlaps(parsedTargets[left].$2, parsedTargets[right].$2)) {
+          issues.add(
+            PlayValidationIssue(
+              code: 'drag_target_overlap',
+              path: '$path.targets',
+              message: 'drag targets must not overlap.',
+            ),
+          );
+          left = parsedTargets.length;
+          break;
+        }
+      }
+    }
+
+    final expectedTarget = _nonEmptyString(state.validation.value);
+    if (expectedTarget != null &&
+        !parsedTargets.any((target) => target.$1 == expectedTarget)) {
+      issues.add(
+        PlayValidationIssue(
+          code: 'drag_expected_target_missing',
+          path: '$path.targets',
+          message: 'The target_region id must reference an authored target.',
+        ),
+      );
+    }
+  }
+
   void _validateCopy(
     String stateId,
     PresentationLayer layer,
@@ -223,4 +432,84 @@ final class PlaySchemaValidator {
       );
     }
   }
+}
+
+String? _nonEmptyString(Object? value) {
+  if (value is! String) return null;
+  final normalized = value.trim();
+  return normalized.isEmpty ? null : normalized;
+}
+
+Set<String>? _uniqueStrings(Object? raw) {
+  if (raw is! List) return null;
+  final result = <String>{};
+  for (final item in raw) {
+    final value = _nonEmptyString(item);
+    if (value == null || !result.add(value)) return null;
+  }
+  return result;
+}
+
+(double, double)? _point(Object? raw) {
+  if (raw is! Map) return null;
+  final x = _unit(raw['x']);
+  final y = _unit(raw['y']);
+  return x == null || y == null ? null : (x, y);
+}
+
+(double, double)? _size(Object? raw) {
+  if (raw is! Map) return null;
+  final width = _positiveUnit(raw['width']);
+  final height = _positiveUnit(raw['height']);
+  return width == null || height == null ? null : (width, height);
+}
+
+List<(String, (double, double, double, double))>? _targets(Object? raw) {
+  if (raw is! List) return null;
+  final ids = <String>{};
+  final targets = <(String, (double, double, double, double))>[];
+  for (final item in raw) {
+    if (item is! Map) return null;
+    final id = _nonEmptyString(item['id']);
+    final x = _unit(item['x']);
+    final y = _unit(item['y']);
+    final width = _positiveUnit(item['width']);
+    final height = _positiveUnit(item['height']);
+    if (id == null ||
+        !ids.add(id) ||
+        x == null ||
+        y == null ||
+        width == null ||
+        height == null ||
+        x + width > 1 ||
+        y + height > 1) {
+      return null;
+    }
+    targets.add((id, (x, y, width, height)));
+  }
+  return targets;
+}
+
+bool _overlaps(
+  (double, double, double, double) left,
+  (double, double, double, double) right,
+) {
+  final (leftX, leftY, leftWidth, leftHeight) = left;
+  final (rightX, rightY, rightWidth, rightHeight) = right;
+  return leftX < rightX + rightWidth &&
+      leftX + leftWidth > rightX &&
+      leftY < rightY + rightHeight &&
+      leftY + leftHeight > rightY;
+}
+
+double? _unit(Object? raw) {
+  if (raw is! num) return null;
+  final value = raw.toDouble();
+  if (!value.isFinite || value < 0 || value > 1) return null;
+  return value;
+}
+
+double? _positiveUnit(Object? raw) {
+  final value = _unit(raw);
+  return value == null || value <= 0 ? null : value;
 }

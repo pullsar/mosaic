@@ -1,0 +1,17 @@
+[Unit]
+Description=Mixli pgBackRest repository check
+Requires=docker.service
+After=docker.service mixli-stack.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/mixli/bin/backup.sh check
+TimeoutStartSec=30m
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=6
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

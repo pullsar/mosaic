@@ -1,0 +1,17 @@
+[Unit]
+Description=Mixli weekly full PostgreSQL backup
+Requires=docker.service
+After=docker.service mixli-stack.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/mixli/bin/backup.sh full
+TimeoutStartSec=6h
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=6
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,18 @@
+[Unit]
+Description=Mixli isolated R2 restore verification
+Requires=docker.service
+After=docker.service mixli-stack.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/mixli/env/production.env
+ExecStart=/opt/mixli/bin/restore-verify.sh
+TimeoutStartSec=6h
+Nice=15
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

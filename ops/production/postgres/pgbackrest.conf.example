@@ -1,0 +1,33 @@
+[global]
+repo1-path=/var/lib/pgbackrest
+repo1-retention-full=2
+repo1-bundle=y
+repo1-block=y
+process-max=4
+start-fast=y
+spool-path=/var/spool/pgbackrest
+log-path=/var/log/pgbackrest
+log-level-console=info
+
+# Production repo2 settings. Provisioning intentionally installs only this
+# non-secret example and never creates the live configuration. An operator must
+# copy it to the protected root-owned runtime file and replace every
+# angle-bracket placeholder through a no-echo channel before starting PostgreSQL.
+# repo2-type=s3
+# repo2-path=/mixli/postgres
+# repo2-s3-region=auto
+# repo2-s3-uri-style=path
+# repo2-s3-endpoint=<cloudflare-account-id>.r2.cloudflarestorage.com
+# repo2-s3-bucket=<r2-bucket-name>
+# repo2-s3-key=<r2-access-key-id>
+# repo2-s3-key-secret=<r2-secret-access-key>
+# repo2-cipher-type=aes-256-cbc
+# repo2-cipher-pass=<generated-repository-passphrase>
+# repo2-bundle=y
+# repo2-block=y
+# repo2-retention-full=2
+
+[mixli]
+pg1-path=/var/lib/postgresql/18/docker
+pg1-database=mixli
+pg1-user=mixli

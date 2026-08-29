@@ -1,0 +1,423 @@
+import {
+  compileFfmpegInvocation,
+  MediaPlanCompileError,
+  supportsFfmpegPlan,
+  type FfmpegExpectedOutput,
+} from './media_ffmpeg.js';
+import {
+  MediaProcessError,
+  runMediaProcess,
+  type MediaProcessInvocation,
+  type MediaProcessResult,
+  type MediaProcessRunOptions,
+} from './media_process.js';
+import {
+  MediaIdentityConflictError,
+  type MediaDerivativeClaim,
+  type MediaDerivativeOutput,
+  type MediaDerivativeRecord,
+  type PostgresMediaRepository,
+} from './media_repository.js';
+import {type MediaDerivativePlan, type MediaDerivativePurpose} from './media.js';
+
+export type MediaFfmpegWorkerRepository = Pick<
+  PostgresMediaRepository,
+  'getDerivative' | 'claimDerivative' | 'markDerivativeReady' | 'markDerivativeFailed'
+>;
+
+export type VerifiedMediaOutput = Omit<MediaDerivativeOutput, 'storageKey'>;
+
+export interface MediaOutputVerificationRequest {
+  outputPath: string;
+  plan: MediaDerivativePlan;
+  expectedOutput: Readonly<FfmpegExpectedOutput>;
+  signal?: AbortSignal;
+}
+
+export type MediaOutputVerifier = (
+  request: MediaOutputVerificationRequest,
+) => Promise<VerifiedMediaOutput>;
+
+export interface MediaOutputPublicationRequest {
+  assetId: string;
+  derivativeKey: string;
+  claimToken: string;
+  outputPath: string;
+  storageKey: string;
+  plan: MediaDerivativePlan;
+  verifiedOutput: VerifiedMediaOutput;
+  signal?: AbortSignal;
+}
+
+/// Publishes a verified local artifact to the claim-scoped immutable key.
+/// Implementations must use create-only/idempotent semantics for that exact key;
+/// a stale worker may then leave only a sweepable orphan, never overwrite the
+/// object referenced by a replacement claim.
+export type MediaOutputPublisher = (
+  request: MediaOutputPublicationRequest,
+) => Promise<void>;
+
+export type MediaProcessRunner = (
+  invocation: MediaProcessInvocation,
+  options: MediaProcessRunOptions,
+) => Promise<MediaProcessResult>;
+
+export interface MediaFfmpegJob {
+  assetId: string;
+  derivativeKey: string;
+  inputPath: string;
+  outputPath: string;
+}
+
+export interface MediaClaimedFfmpegJob {
+  inputPath: string;
+  outputPath: string;
+}
+
+export interface MediaFfmpegWorkerOptions {
+  leaseMs?: number;
+  timeoutMs?: number;
+  signal?: AbortSignal;
+  ffmpegExecutable?: string;
+  runProcess?: MediaProcessRunner;
+}
+
+export type MediaFfmpegWorkerStatus =
+  | 'missing'
+  | 'unsupported'
+  | 'aborted'
+  | 'not_claimed'
+  | 'ready'
+  | 'failed'
+  | 'stale';
+
+export interface MediaFfmpegWorkerResult {
+  status: MediaFfmpegWorkerStatus;
+  derivative: MediaDerivativeRecord | null;
+  errorCode?: string;
+}
+
+export class MediaOutputVerificationError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'MediaOutputVerificationError';
+  }
+}
+
+export class MediaOutputPublicationError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'MediaOutputPublicationError';
+  }
+}
+
+class MediaClaimLeaseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'MediaClaimLeaseError';
+  }
+}
+
+const DEFAULT_LEASE_MS = 15 * 60 * 1000;
+const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
+const MAX_LEASE_MS = 60 * 60 * 1000;
+const CLAIM_COMPLETION_MARGIN_MS = 30_000;
+const MAX_STORAGE_SEGMENT_CHARS = 256;
+
+export async function processFfmpegDerivative(
+  repository: MediaFfmpegWorkerRepository,
+  job: MediaFfmpegJob,
+  verifyOutput: MediaOutputVerifier,
+  publishOutput: MediaOutputPublisher,
+  options: MediaFfmpegWorkerOptions = {},
+): Promise<MediaFfmpegWorkerResult> {
+  const assetId = requiredText(job.assetId, 'assetId');
+  const derivativeKey = requiredText(job.derivativeKey, 'derivativeKey');
+  const leaseMs = boundedPositiveInteger(
+    options.leaseMs ?? DEFAULT_LEASE_MS,
+    'leaseMs',
+    MAX_LEASE_MS,
+  );
+  const timeoutMs = workerTimeout(options.timeoutMs);
+  if (timeoutMs + CLAIM_COMPLETION_MARGIN_MS >= leaseMs) {
+    throw new TypeError(
+      `timeoutMs must leave at least ${CLAIM_COMPLETION_MARGIN_MS} ms before the derivative lease expires`,
+    );
+  }
+  if (options.signal?.aborted) {
+    return {status: 'aborted', derivative: null};
+  }
+
+  const existing = await repository.getDerivative(assetId, derivativeKey);
+  if (existing === null) return {status: 'missing', derivative: null};
+  if (existing.state === 'ready') return {status: 'ready', derivative: existing};
+  if (!supportsFfmpegPlan(existing.plan)) {
+    return {status: 'unsupported', derivative: existing};
+  }
+
+  const claim = await repository.claimDerivative(assetId, derivativeKey, leaseMs);
+  if (claim === null) {
+    return {
+      status: 'not_claimed',
+      derivative: await repository.getDerivative(assetId, derivativeKey),
+    };
+  }
+
+  return await processClaimedFfmpegDerivative(
+    repository,
+    claim,
+    {inputPath: job.inputPath, outputPath: job.outputPath},
+    verifyOutput,
+    publishOutput,
+    {...options, timeoutMs},
+  );
+}
+
+export async function processClaimedFfmpegDerivative(
+  repository: MediaFfmpegWorkerRepository,
+  claim: MediaDerivativeClaim,
+  job: MediaClaimedFfmpegJob,
+  verifyOutput: MediaOutputVerifier,
+  publishOutput: MediaOutputPublisher,
+  options: Omit<MediaFfmpegWorkerOptions, 'leaseMs'> = {},
+): Promise<MediaFfmpegWorkerResult> {
+  const assetId = requiredText(claim.derivative.assetId, 'claim.derivative.assetId');
+  const derivativeKey = requiredText(
+    claim.derivative.derivativeKey,
+    'claim.derivative.derivativeKey',
+  );
+  const claimToken = requiredText(claim.claimToken, 'claimToken');
+  const timeoutMs = workerTimeout(options.timeoutMs);
+  const storageKey = mediaAttemptStorageKey(
+    assetId,
+    derivativeKey,
+    claimToken,
+    claim.derivative.purpose,
+  );
+
+  try {
+    assertClaimUsable(claim, timeoutMs);
+    if (options.signal?.aborted) {
+      throw new MediaProcessError('aborted', 'Media process was aborted before execution');
+    }
+    if (!supportsFfmpegPlan(claim.derivative.plan)) {
+      throw new MediaPlanCompileError(
+        `Unsupported claimed media processor ${claim.derivative.plan.processor}`,
+      );
+    }
+
+    const invocation = compileFfmpegInvocation(
+      claim.derivative.plan,
+      {inputPath: job.inputPath, outputPath: job.outputPath},
+      options.ffmpegExecutable === undefined
+        ? {}
+        : {executable: options.ffmpegExecutable},
+    );
+    const runner = options.runProcess ?? runMediaProcess;
+    await runner(
+      invocation,
+      options.signal === undefined
+        ? {timeoutMs}
+        : {timeoutMs, signal: options.signal},
+    );
+
+    const verified = await verifyOutput({
+      outputPath: job.outputPath,
+      plan: claim.derivative.plan,
+      expectedOutput: invocation.expectedOutput,
+      ...(options.signal === undefined ? {} : {signal: options.signal}),
+    });
+    assertVerifiedOutput(invocation.expectedOutput, verified);
+
+    try {
+      await publishOutput({
+        assetId,
+        derivativeKey,
+        claimToken,
+        outputPath: job.outputPath,
+        storageKey,
+        plan: claim.derivative.plan,
+        verifiedOutput: verified,
+        ...(options.signal === undefined ? {} : {signal: options.signal}),
+      });
+    } catch (error) {
+      if (error instanceof MediaOutputPublicationError) throw error;
+      throw new MediaOutputPublicationError(
+        `Failed to publish verified media output to ${storageKey}`,
+        {cause: error},
+      );
+    }
+
+    try {
+      const ready = await repository.markDerivativeReady(
+        assetId,
+        derivativeKey,
+        claimToken,
+        {storageKey, ...verified},
+      );
+      return {status: 'ready', derivative: ready};
+    } catch (error) {
+      if (error instanceof MediaIdentityConflictError) {
+        return {
+          status: 'stale',
+          derivative: await repository.getDerivative(assetId, derivativeKey),
+        };
+      }
+      throw error;
+    }
+  } catch (error) {
+    const errorCode = mediaWorkerErrorCode(error);
+    try {
+      const failed = await repository.markDerivativeFailed(
+        assetId,
+        derivativeKey,
+        claimToken,
+        errorCode,
+      );
+      return {status: 'failed', derivative: failed, errorCode};
+    } catch (claimError) {
+      if (claimError instanceof MediaIdentityConflictError) {
+        return {
+          status: 'stale',
+          derivative: await repository.getDerivative(assetId, derivativeKey),
+          errorCode,
+        };
+      }
+      throw claimError;
+    }
+  }
+}
+
+export function mediaAttemptStorageKey(
+  assetId: string,
+  derivativeKey: string,
+  claimToken: string,
+  purpose: MediaDerivativePurpose,
+): string {
+  const extension = mediaPurposeExtension(purpose);
+  return [
+    'media',
+    storageSegment(assetId, 'assetId'),
+    'derivatives',
+    storageSegment(derivativeKey, 'derivativeKey'),
+    'attempts',
+    `${storageSegment(claimToken, 'claimToken')}${extension}`,
+  ].join('/');
+}
+
+function mediaPurposeExtension(purpose: MediaDerivativePurpose): string {
+  switch (purpose) {
+    case 'playback':
+      return '.mp4';
+    case 'poster':
+      return '.jpg';
+    case 'audio':
+      return '.m4a';
+    case 'captions':
+      return '.vtt';
+  }
+}
+
+export function mediaWorkerErrorCode(error: unknown): string {
+  if (error instanceof MediaProcessError) {
+    switch (error.kind) {
+      case 'timeout':
+        return 'ffmpeg_timeout';
+      case 'aborted':
+        return 'ffmpeg_aborted';
+      case 'spawn':
+        return 'ffmpeg_spawn_failed';
+      case 'exit':
+        return 'ffmpeg_exit_nonzero';
+      case 'output_limit':
+        return 'ffmpeg_output_limit';
+    }
+  }
+  if (error instanceof MediaPlanCompileError) return 'media_plan_invalid';
+  if (error instanceof MediaOutputVerificationError) return 'media_output_invalid';
+  if (error instanceof MediaOutputPublicationError) return 'media_publish_failed';
+  if (error instanceof MediaClaimLeaseError) return 'media_claim_invalid';
+  return 'media_worker_failed';
+}
+
+function assertClaimUsable(claim: MediaDerivativeClaim, timeoutMs: number): void {
+  if (claim.derivative.state !== 'processing') {
+    throw new MediaClaimLeaseError(
+      `Claimed derivative is ${claim.derivative.state}, not processing`,
+    );
+  }
+  const leaseExpiresAt = claim.derivative.leaseExpiresAt;
+  if (leaseExpiresAt === null || !Number.isFinite(leaseExpiresAt.getTime())) {
+    throw new MediaClaimLeaseError('Claimed derivative has no valid lease expiry');
+  }
+  const remainingMs = leaseExpiresAt.getTime() - Date.now();
+  if (remainingMs <= timeoutMs + CLAIM_COMPLETION_MARGIN_MS) {
+    throw new MediaClaimLeaseError(
+      `Claim lease has only ${remainingMs} ms remaining for ${timeoutMs} ms timeout`,
+    );
+  }
+}
+
+function assertVerifiedOutput(
+  expected: Readonly<FfmpegExpectedOutput>,
+  verified: VerifiedMediaOutput,
+): void {
+  if (verified.mimeType !== expected.mimeType) {
+    throw new MediaOutputVerificationError(
+      `Output MIME ${verified.mimeType} does not match ${expected.mimeType}`,
+    );
+  }
+  expectedString(verified.container, expected.container, 'container');
+  expectedString(verified.videoCodec, expected.videoCodec, 'videoCodec');
+  expectedString(verified.videoProfile, expected.videoProfile, 'videoProfile');
+  expectedString(verified.audioCodec, expected.audioCodec, 'audioCodec');
+  expectedString(verified.colorSpace, expected.colorSpace, 'colorSpace');
+  if (expected.dynamicRange !== undefined && verified.dynamicRange !== expected.dynamicRange) {
+    throw new MediaOutputVerificationError(
+      `Output dynamicRange ${String(verified.dynamicRange)} does not match ${expected.dynamicRange}`,
+    );
+  }
+}
+
+function expectedString(
+  actual: string | undefined,
+  expected: string | undefined,
+  field: string,
+): void {
+  if (expected !== undefined && actual !== expected) {
+    throw new MediaOutputVerificationError(
+      `Output ${field} ${String(actual)} does not match ${expected}`,
+    );
+  }
+}
+
+function storageSegment(value: string, name: string): string {
+  const normalized = requiredText(value, name);
+  if (normalized.length > MAX_STORAGE_SEGMENT_CHARS) {
+    throw new TypeError(`${name} must be <= ${MAX_STORAGE_SEGMENT_CHARS} characters`);
+  }
+  return encodeURIComponent(normalized);
+}
+
+function requiredText(value: string, name: string): string {
+  const normalized = value.trim();
+  if (!normalized || normalized.includes('\u0000')) {
+    throw new TypeError(`${name} must be non-empty and contain no NUL bytes`);
+  }
+  return normalized;
+}
+
+function boundedPositiveInteger(value: number, name: string, maximum: number): number {
+  if (!Number.isSafeInteger(value) || value <= 0 || value > maximum) {
+    throw new TypeError(`${name} must be a positive safe integer <= ${maximum}`);
+  }
+  return value;
+}
+
+function workerTimeout(value: number | undefined): number {
+  return boundedPositiveInteger(
+    value ?? DEFAULT_TIMEOUT_MS,
+    'timeoutMs',
+    MAX_LEASE_MS,
+  );
+}

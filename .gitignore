@@ -2,6 +2,8 @@
 .packages
 build/
 coverage/
+**/dist/
+**/node_modules/
 .flutter-plugins
 .flutter-plugins-dependencies
 .metadata
@@ -13,3 +15,8 @@ coverage/
 **/android/local.properties
 **/ios/Flutter/ephemeral/
 **/macos/Flutter/ephemeral/
+ops/production/env/production.env
+ops/production/secrets/
+ops/production/runtime/*
+!ops/production/runtime/*.example.conf
+ops/production/images.lock.env

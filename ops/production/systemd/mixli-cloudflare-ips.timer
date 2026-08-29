@@ -1,0 +1,11 @@
+[Unit]
+Description=Schedule Cloudflare origin allowlist refresh
+
+[Timer]
+OnBootSec=0
+OnUnitActiveSec=12h
+Persistent=true
+Unit=mixli-cloudflare-ips.service
+
+[Install]
+WantedBy=timers.target

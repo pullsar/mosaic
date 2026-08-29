@@ -1,18 +1,19 @@
 {
   "schemaVersion": 1,
   "id": "play_four_day_getaway",
-  "revisionId": "rev_1",
+  "revisionId": "rev_2",
   "format": "choose",
   "classification": "preference",
   "topics": ["travel", "food", "city-breaks"],
   "learningTopics": [],
   "estimatedDurationSec": 20,
-  "assets": [],
+  "assets": ["getaway_mood_01"],
   "sources": [],
   "entryState": "choice",
   "states": {
     "choice": {
       "presentation": {"layers": [
+        {"type": "canvas", "role": "media", "assetId": "getaway_mood_01"},
         {"type": "text", "role": "scenario", "value": "Four days. Cheap food. Warm nights. Lots of walking."}
       ]},
       "input": {"type": "single_choice", "options": [

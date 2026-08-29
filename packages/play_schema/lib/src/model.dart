@@ -63,12 +63,38 @@ List<String> _strings(Object? raw, String field) {
   if (raw is! List) throw FormatException('$field must be an array');
   return raw
       .map((value) {
-        if (value is! String)
+        if (value is! String) {
           throw FormatException('$field must contain strings');
+        }
         return value;
       })
       .toList(growable: false);
 }
+
+Object? _freezeJsonValue(Object? value) {
+  if (value is Map) {
+    return Map<String, Object?>.unmodifiable(
+      value.map(
+        (key, nested) => MapEntry(key.toString(), _freezeJsonValue(nested)),
+      ),
+    );
+  }
+  if (value is List) {
+    return List<Object?>.unmodifiable(value.map(_freezeJsonValue));
+  }
+  return value;
+}
+
+Map<String, Object?> _freezeJsonMap(Map<String, Object?> value) =>
+    Map<String, Object?>.unmodifiable(
+      value.map((key, nested) => MapEntry(key, _freezeJsonValue(nested))),
+    );
+
+Map<String, Map<String, Object?>> _freezeResponseMap(
+  Map<String, Map<String, Object?>> value,
+) => Map<String, Map<String, Object?>>.unmodifiable(
+  value.map((key, response) => MapEntry(key, _freezeJsonMap(response))),
+);
 
 final class PlayOption {
   const PlayOption({required this.id, required this.label, this.assetId});
@@ -91,13 +117,13 @@ final class PlayOption {
 }
 
 final class PresentationLayer {
-  const PresentationLayer({
+  PresentationLayer({
     required this.type,
     this.role,
     this.value,
     this.assetId,
-    this.properties = const {},
-  });
+    Map<String, Object?> properties = const {},
+  }) : properties = _freezeJsonMap(properties);
 
   final String type;
   final String? role;
@@ -116,32 +142,39 @@ final class PresentationLayer {
       role: json['role'] as String?,
       value: json['value'] as String?,
       assetId: json['assetId'] as String?,
-      properties: Map.unmodifiable(properties),
+      properties: properties,
     );
   }
 
   Map<String, Object?> toJson() => {
+    ...properties,
     'type': type,
     if (role != null) 'role': role,
     if (value != null) 'value': value,
     if (assetId != null) 'assetId': assetId,
-    ...properties,
   };
 }
 
 final class PlayInputDefinition {
-  const PlayInputDefinition({
+  PlayInputDefinition({
     required this.type,
     this.label,
-    this.options = const [],
-  });
+    List<PlayOption> options = const [],
+    Map<String, Object?> properties = const {},
+  }) : options = List<PlayOption>.unmodifiable(options),
+       properties = _freezeJsonMap(properties);
 
   final PlayInputType type;
   final String? label;
   final List<PlayOption> options;
+  final Map<String, Object?> properties;
 
   factory PlayInputDefinition.fromJson(Map<String, Object?> json) {
     final rawOptions = json['options'];
+    final properties = Map<String, Object?>.from(json)
+      ..remove('type')
+      ..remove('label')
+      ..remove('options');
     return PlayInputDefinition(
       type: _enumFromWire(PlayInputType.values, json['type'], 'input.type'),
       label: json['label'] as String?,
@@ -153,10 +186,12 @@ final class PlayInputDefinition {
                       PlayOption.fromJson(_map(value, 'input.options[]')),
                 )
                 .toList(growable: false),
+      properties: properties,
     );
   }
 
   Map<String, Object?> toJson() => {
+    ...properties,
     'type': _wireName(type),
     if (label != null) 'label': label,
     if (options.isNotEmpty)
@@ -165,7 +200,8 @@ final class PlayInputDefinition {
 }
 
 final class PlayValidationDefinition {
-  const PlayValidationDefinition({required this.type, this.value});
+  PlayValidationDefinition({required this.type, Object? value})
+    : value = _freezeJsonValue(value);
 
   final PlayValidatorType type;
   final Object? value;
@@ -187,13 +223,15 @@ final class PlayValidationDefinition {
 }
 
 final class PlayStateDefinition {
-  const PlayStateDefinition({
-    required this.presentation,
+  PlayStateDefinition({
+    required List<PresentationLayer> presentation,
     required this.input,
     required this.validation,
-    required this.transitions,
-    this.responses = const {},
-  });
+    required Map<String, String> transitions,
+    Map<String, Map<String, Object?>> responses = const {},
+  }) : presentation = List<PresentationLayer>.unmodifiable(presentation),
+       transitions = Map<String, String>.unmodifiable(transitions),
+       responses = _freezeResponseMap(responses);
 
   final List<PresentationLayer> presentation;
   final PlayInputDefinition input;
@@ -211,10 +249,10 @@ final class PlayStateDefinition {
     final rawResponses = json['responses'];
     final responseMap = rawResponses == null
         ? const <String, Map<String, Object?>>{}
-        : _map(
-            rawResponses,
-            'responses',
-          ).map((key, value) => MapEntry(key, _map(value, 'responses.$key')));
+        : _map(rawResponses, 'responses').map((key, value) {
+            final response = _map(value, 'responses.$key');
+            return MapEntry(key, response);
+          });
 
     return PlayStateDefinition(
       presentation: rawLayers
@@ -234,7 +272,7 @@ final class PlayStateDefinition {
         }
         return MapEntry(key, value);
       }),
-      responses: Map.unmodifiable(responseMap),
+      responses: responseMap,
     );
   }
 
@@ -270,20 +308,24 @@ final class PlaySource {
 }
 
 final class PlayDocument {
-  const PlayDocument({
+  PlayDocument({
     required this.schemaVersion,
     required this.id,
     required this.revisionId,
     required this.format,
     required this.classification,
-    required this.topics,
-    required this.learningTopics,
+    required List<String> topics,
+    required List<String> learningTopics,
     required this.estimatedDurationSec,
-    required this.assets,
-    required this.sources,
+    required List<String> assets,
+    required List<PlaySource> sources,
     required this.entryState,
-    required this.states,
-  });
+    required Map<String, PlayStateDefinition> states,
+  }) : topics = List<String>.unmodifiable(topics),
+       learningTopics = List<String>.unmodifiable(learningTopics),
+       assets = List<String>.unmodifiable(assets),
+       sources = List<PlaySource>.unmodifiable(sources),
+       states = Map<String, PlayStateDefinition>.unmodifiable(states);
 
   final int schemaVersion;
   final String id;
@@ -311,24 +353,20 @@ final class PlayDocument {
         json['classification'],
         'classification',
       ),
-      topics: List.unmodifiable(_strings(json['topics'], 'topics')),
-      learningTopics: List.unmodifiable(
-        _strings(json['learningTopics'], 'learningTopics'),
-      ),
+      topics: _strings(json['topics'], 'topics'),
+      learningTopics: _strings(json['learningTopics'], 'learningTopics'),
       estimatedDurationSec: json['estimatedDurationSec'] as int,
-      assets: List.unmodifiable(_strings(json['assets'], 'assets')),
+      assets: _strings(json['assets'], 'assets'),
       sources: rawSources == null
           ? const []
           : (rawSources as List)
                 .map((source) => PlaySource.fromJson(_map(source, 'sources[]')))
                 .toList(growable: false),
       entryState: json['entryState'] as String,
-      states: Map.unmodifiable(
-        rawStates.map(
-          (key, value) => MapEntry(
-            key,
-            PlayStateDefinition.fromJson(_map(value, 'states.$key')),
-          ),
+      states: rawStates.map(
+        (key, value) => MapEntry(
+          key,
+          PlayStateDefinition.fromJson(_map(value, 'states.$key')),
         ),
       ),
     );

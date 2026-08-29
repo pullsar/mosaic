@@ -142,6 +142,10 @@ final class ActiveMediaCoordinator {
   String? get ownerId => _ownerId;
   bool get hasActiveMedia => _active != null;
 
+  /// True only when [handle] is the exact current native resource for [ownerId].
+  bool owns(String ownerId, ManagedMediaHandle handle) =>
+      _ownerId == ownerId && identical(_active, handle);
+
   Future<void> activate(String ownerId, ManagedMediaHandle handle) =>
       _operations.run(() async {
         if (identical(_active, handle)) {

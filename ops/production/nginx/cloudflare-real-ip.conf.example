@@ -1,0 +1,6 @@
+# Provisioning replaces this file with Cloudflare's current published proxy
+# networks. Loopback is trusted only so container-local health tests can set a
+# synthetic client address without broadening the production trust boundary.
+set_real_ip_from 127.0.0.1;
+real_ip_header CF-Connecting-IP;
+real_ip_recursive on;

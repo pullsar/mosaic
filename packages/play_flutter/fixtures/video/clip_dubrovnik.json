@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "clip_dubrovnik",
+  "semanticLabel": "Travel clip",
+  "autoplay": true,
+  "muted": true,
+  "source": {
+    "type": "network",
+    "uri": "https://cdn.example.com/mosaic/clip_dubrovnik.mp4"
+  }
+}

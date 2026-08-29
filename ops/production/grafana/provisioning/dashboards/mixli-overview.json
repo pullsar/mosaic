@@ -1,0 +1,23 @@
+{
+  "annotations": {"list": []},
+  "editable": false,
+  "graphTooltip": 1,
+  "panels": [
+    {"type": "stat", "title": "API replicas up", "datasource": {"type": "prometheus", "uid": "mixli-prometheus"}, "targets": [{"expr": "sum(up{job=\"mixli-api\"})", "refId": "A"}], "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0}},
+    {"type": "stat", "title": "Active release", "datasource": {"type": "prometheus", "uid": "mixli-prometheus"}, "targets": [{"expr": "mixli_release_info", "legendFormat": "{{sha}}", "refId": "A"}], "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0}},
+    {"type": "timeseries", "title": "API request rate", "datasource": {"type": "prometheus", "uid": "mixli-prometheus"}, "targets": [{"expr": "sum(rate(mixli_http_requests_total[5m]))", "refId": "A"}], "gridPos": {"h": 8, "w": 8, "x": 0, "y": 4}},
+    {"type": "timeseries", "title": "API error ratio", "datasource": {"type": "prometheus", "uid": "mixli-prometheus"}, "targets": [{"expr": "sum(rate(mixli_http_requests_total{status_class=\"5xx\"}[5m])) / clamp_min(sum(rate(mixli_http_requests_total[5m])), 0.001)", "refId": "A"}], "gridPos": {"h": 8, "w": 8, "x": 8, "y": 4}},
+    {"type": "timeseries", "title": "API latency quantiles", "datasource": {"type": "prometheus", "uid": "mixli-prometheus"}, "targets": [{"expr": "histogram_quantile(0.50, sum by (le) (rate(mixli_http_request_duration_seconds_bucket[5m])))", "legendFormat": "p50", "refId": "A"}, {"expr": "histogram_quantile(0.95, sum by (le) (rate(mixli_http_request_duration_seconds_bucket[5m])))", "legendFormat": "p95", "refId": "B"}, {"expr": "histogram_quantile(0.99, sum by (le) (rate(mixli_http_request_duration_seconds_bucket[5m])))", "legendFormat": "p99", "refId": "C"}], "gridPos": {"h": 8, "w": 8, "x": 16, "y": 4}},
+    {"type": "timeseries", "title": "Host CPU and memory", "datasource": {"type": "prometheus", "uid": "mixli-prometheus"}, "targets": [{"expr": "1 - avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))", "legendFormat": "CPU", "refId": "A"}, {"expr": "1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes", "legendFormat": "Memory", "refId": "B"}], "gridPos": {"h": 8, "w": 8, "x": 0, "y": 12}},
+    {"type": "timeseries", "title": "PostgreSQL connections", "datasource": {"type": "prometheus", "uid": "mixli-prometheus"}, "targets": [{"expr": "sum(pg_stat_database_numbackends)", "refId": "A"}], "gridPos": {"h": 8, "w": 8, "x": 8, "y": 12}},
+    {"type": "stat", "title": "Backup and restore freshness", "datasource": {"type": "prometheus", "uid": "mixli-prometheus"}, "targets": [{"expr": "time() - mixli_pgbackrest_last_backup_success_timestamp", "legendFormat": "backup age", "refId": "A"}, {"expr": "time() - mixli_pgbackrest_last_restore_verify_success_timestamp", "legendFormat": "restore age", "refId": "B"}], "gridPos": {"h": 8, "w": 8, "x": 16, "y": 12}}
+  ],
+  "refresh": "30s",
+  "schemaVersion": 41,
+  "tags": ["mixli", "production"],
+  "templating": {"list": []},
+  "time": {"from": "now-6h", "to": "now"},
+  "title": "Mixli Production Overview",
+  "uid": "mixli-production-overview",
+  "version": 1
+}

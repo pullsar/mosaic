@@ -1,0 +1,15 @@
+[Unit]
+Description=Refresh Cloudflare origin allowlists
+Before=mixli-stack.service
+After=network-online.target nftables.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/mixli/bin/update-cloudflare-ips.sh
+TimeoutStartSec=2m
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

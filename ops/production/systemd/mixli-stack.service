@@ -1,0 +1,18 @@
+[Unit]
+Description=Mixli production Compose stack
+Requires=docker.service mixli-cloudflare-ips.service
+After=docker.service mixli-cloudflare-ips.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+WorkingDirectory=/srv/mixli/runtime
+ExecStartPre=/opt/mixli/bin/stage-container-secrets.sh
+ExecStart=/usr/bin/docker compose --env-file /etc/mixli/env/production.env -f /srv/mixli/runtime/compose.yaml up -d
+ExecStop=/usr/bin/docker compose --env-file /etc/mixli/env/production.env -f /srv/mixli/runtime/compose.yaml down
+TimeoutStartSec=15m
+TimeoutStopSec=5m
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,17 @@
+.git
+.worktrees
+**/.dart_tool
+**/.idea
+**/.vscode
+**/build
+**/coverage
+**/dist
+**/node_modules
+**/android/.gradle
+**/android/local.properties
+**/ios/Flutter/ephemeral
+ops/production/env/production.env
+ops/production/images.lock.env
+ops/production/runtime
+ops/production/secrets
+mixli-brand-kit-v2
