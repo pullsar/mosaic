@@ -40,7 +40,8 @@ validate_lists() {
 }
 
 render_contract() {
-  local v4="$1" v6="$2" destination="$3" temporary="$destination.$$.tmp"
+  local v4="$1" v6="$2" destination="$3" temporary
+  temporary="$destination.$$.tmp"
   {
     printf '%s\n' '[ipv4]'
     sort -u "$v4"

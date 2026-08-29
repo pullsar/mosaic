@@ -7,6 +7,14 @@ setup_file() {
   export NGINX_CONTAINER="mixli-nginx-${SUFFIX}"
   export TLS_DIR
   TLS_DIR="$(mktemp -d /tmp/mixli-nginx-tls.XXXXXX)"
+  export NGINX_CONFIG_DIR
+  NGINX_CONFIG_DIR="$(mktemp -d /tmp/mixli-nginx-config.XXXXXX)"
+  mkdir -p "$NGINX_CONFIG_DIR/conf.d"
+  cp "$MIXLI_HOST_REPO/ops/production/nginx/nginx.conf" "$NGINX_CONFIG_DIR/nginx.conf"
+  cp "$MIXLI_HOST_REPO/ops/production/nginx/conf.d/mixli.conf" \
+    "$NGINX_CONFIG_DIR/conf.d/mixli.conf"
+  cp "$MIXLI_HOST_REPO/ops/production/nginx/cloudflare-real-ip.conf.example" \
+    "$NGINX_CONFIG_DIR/cloudflare-real-ip.conf"
   export WEB_VOLUME="mixli-nginx-web-${SUFFIX}"
   export BLUE1="mixli-blue1-${SUFFIX}"
   export BLUE2="mixli-blue2-${SUFFIX}"
@@ -28,8 +36,7 @@ setup_file() {
   docker run -d --name "$GRAFANA" --network "$NETWORK" --network-alias grafana nginx:1.28.0-alpine >/dev/null
 
   docker run -d --name "$NGINX_CONTAINER" --network "$NETWORK" \
-    -v "$MIXLI_HOST_REPO/ops/production/nginx:/etc/nginx/mixli:ro" \
-    -v "$MIXLI_HOST_REPO/ops/production/nginx/cloudflare-real-ip.conf.example:/etc/nginx/mixli/cloudflare-real-ip.conf:ro" \
+    -v "$NGINX_CONFIG_DIR:/etc/nginx/mixli:ro" \
     -v "$MIXLI_HOST_REPO/ops/production/runtime/api-upstream.example.conf:/etc/nginx/runtime/api-upstream.conf:ro" \
     -v "$TLS_DIR:/etc/nginx/tls:ro" \
     -v "$WEB_VOLUME:/srv/mixli/current/web:ro" \
@@ -49,6 +56,9 @@ teardown_file() {
   docker volume rm -f "$WEB_VOLUME" >/dev/null 2>&1 || true
   if [[ "$TLS_DIR" == /tmp/mixli-nginx-tls.* && -d "$TLS_DIR" ]]; then
     rm -rf -- "$TLS_DIR"
+  fi
+  if [[ "$NGINX_CONFIG_DIR" == /tmp/mixli-nginx-config.* && -d "$NGINX_CONFIG_DIR" ]]; then
+    rm -rf -- "$NGINX_CONFIG_DIR"
   fi
 }
 
