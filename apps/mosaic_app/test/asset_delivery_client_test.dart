@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -152,6 +153,39 @@ void main() {
       expect(requests, 3);
     },
   );
+
+  test('invalidation fences stale in-flight cache writes and permits a fresh request', () async {
+    final first = Completer<http.Response>();
+    var requests = 0;
+    final client = AssetDeliveryClient(
+      baseUri: Uri.parse('https://api.example.test/'),
+      client: MockClient((request) async {
+        requests += 1;
+        if (requests == 1) return first.future;
+        return http.Response(
+          jsonEncode(_descriptor('image_a', 'image')),
+          200,
+        );
+      }),
+    );
+
+    final stale = client.describe('image_a');
+    await Future<void>.delayed(Duration.zero);
+    expect(requests, 1);
+    client.invalidate('image_a');
+
+    final fresh = client.describe('image_a');
+    expect(await fresh, isNotNull);
+    expect(requests, 2);
+    first.complete(
+      http.Response(jsonEncode(_descriptor('image_a', 'image')), 200),
+    );
+    expect(await stale, isNotNull);
+    expect(client.descriptorCacheSize, 1);
+
+    await client.describe('image_a');
+    expect(requests, 2);
+  });
 
   test(
     'managed adapters validate identity, kind and same-origin HTTPS URLs',
