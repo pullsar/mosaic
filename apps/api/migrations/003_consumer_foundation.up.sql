@@ -47,13 +47,19 @@ create table if not exists feed_decisions (
   request_id text primary key,
   actor_id text not null references actors(id) on delete cascade,
   ranking_config_version text not null,
+  capability_fingerprint text not null,
   fallback boolean not null default false,
   candidate_count integer not null check (candidate_count >= 0),
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null default (now() + interval '24 hours'),
+  check (expires_at > created_at)
 );
 
 create index if not exists feed_decisions_actor_created_idx
   on feed_decisions(actor_id, created_at desc, request_id);
+
+create index if not exists feed_decisions_expiry_idx
+  on feed_decisions(expires_at);
 
 create table if not exists feed_decision_items (
   request_id text not null references feed_decisions(request_id) on delete cascade,
