@@ -332,11 +332,22 @@ void main() {
 
     final context = tester.element(find.byType(ConsumerOnboarding));
     expect(Directionality.of(context), TextDirection.rtl);
+    expect(find.text('What are you into?'), findsNothing);
+    expect(find.text('Surprise me'), findsNothing);
+    expect(find.text('Continue'), findsNothing);
     expect(tester.takeException(), isNull);
+
+    await tester.enterText(find.byType(TextField), 'sci');
+    await tester.pumpAndSettle();
+    expect(find.text('Science'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey<String>('topic-science')));
+    await tester.pumpAndSettle();
+    expect(state.preferences.interestTopicIds, const ['science']);
 
     await tester.tap(find.byKey(const ValueKey<String>('interests-continue')));
     await tester.pumpAndSettle();
     expect(Directionality.of(context), TextDirection.rtl);
+    expect(state.preferences.interestTopicIds, const ['science']);
     expect(tester.takeException(), isNull);
   });
 }
