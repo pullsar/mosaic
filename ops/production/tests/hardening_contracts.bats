@@ -30,11 +30,17 @@ setup() { setup_repo_root; }
 }
 
 @test "build account has no production Docker secret or data authority" {
-  run runuser -u mixli-build -- /usr/bin/docker info
+  if [[ "$(id -u)" -eq 0 ]]; then
+    prefix=(runuser -u mixli-build --)
+  else
+    prefix=()
+    [ "$(id -un)" = 'mixli-build' ]
+  fi
+  run "${prefix[@]}" /usr/bin/docker info
   [ "$status" -ne 0 ]
-  run runuser -u mixli-build -- test -r /etc/mixli/secrets
+  run "${prefix[@]}" test -r /etc/mixli/secrets
   [ "$status" -ne 0 ]
-  run runuser -u mixli-build -- test -w /srv/mixli/data
+  run "${prefix[@]}" test -w /srv/mixli/data
   [ "$status" -ne 0 ]
   ! id -nG mixli-build | grep -Eq '(^|[[:space:]])(docker|sudo)([[:space:]]|$)'
 }

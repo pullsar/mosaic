@@ -43,6 +43,7 @@ previous_postgres_image=''
 ci_lock_held=0
 old_pool_stopped=0
 stopped_pool=''
+previous_release_sha=''
 
 builder_git() {
   runuser -u mixli-build -- git "$@"
@@ -97,12 +98,37 @@ switch_web() {
   mv -fT "$temporary" "$ROOT/current"
 }
 
+rollback_fail_if_requested() {
+  local stage="$1"
+  if [[ "$TEST_MODE" == '1' && "${MIXLI_TEST_FAIL_ROLLBACK_STAGE:-}" == "$stage" ]]; then
+    return 1
+  fi
+}
+
 reload_nginx() {
-  fail_if_requested nginx
+  local context="${1:-deploy}"
+  if [[ "$context" == 'rollback' ]]; then
+    rollback_fail_if_requested nginx
+  else
+    fail_if_requested nginx
+  fi
   [[ "$TEST_MODE" == '1' ]] && return 0
   compose up -d --no-deps nginx
   compose exec -T nginx nginx -t
   compose exec -T nginx nginx -s reload
+}
+
+verify_rollback_traffic() {
+  [[ -n "$stopped_pool" && -n "$previous_release_sha" ]] || return 0
+  rollback_fail_if_requested traffic
+  if [[ "$TEST_MODE" == '1' ]]; then
+    log_event "rollback-traffic-verified:$stopped_pool"
+    return 0
+  fi
+  curl --fail --silent --show-error --max-time 10 \
+    --cacert "$ORIGIN_CA" --resolve api.mixli.app:443:127.0.0.1 \
+    https://api.mixli.app/ready >/dev/null
+  log_event "rollback-traffic-verified:$stopped_pool"
 }
 
 env_field() {
@@ -264,43 +290,63 @@ persist_runtime_compose() {
 
 rollback_switches() {
   [[ "$switched" == '1' ]] || return 0
-  set +e
   if ! restart_old_pool; then
-    log_event "old-pool-rollback-failed:$stopped_pool"
+    log_event "old-pool-rollback-failed:$stopped_pool" || true
     return 1
   fi
+  rollback_fail_if_requested upstream || return 1
   if [[ -n "$upstream_backup" && -f "$upstream_backup" ]]; then
-    cp "$upstream_backup" "$RUNTIME/.api-upstream.rollback.$$.conf"
-    mv -fT "$RUNTIME/.api-upstream.rollback.$$.conf" "$RUNTIME/api-upstream.conf"
+    cp "$upstream_backup" "$RUNTIME/.api-upstream.rollback.$$.conf" || return 1
+    mv -fT "$RUNTIME/.api-upstream.rollback.$$.conf" \
+      "$RUNTIME/api-upstream.conf" || return 1
   elif [[ "$had_upstream" == '0' ]]; then
-    rm -f -- "$RUNTIME/api-upstream.conf"
+    rm -f -- "$RUNTIME/api-upstream.conf" || return 1
   fi
+  rollback_fail_if_requested web || return 1
   if [[ -n "$previous_web" && -d "$previous_web" ]]; then
-    switch_web "$previous_web"
+    switch_web "$previous_web" || return 1
   else
-    rm -f -- "$ROOT/current"
+    rm -f -- "$ROOT/current" || return 1
   fi
-  reload_nginx
-  log_event "rollback:$SHA"
+  reload_nginx rollback || return 1
+  verify_rollback_traffic || return 1
+  log_event "rollback:$SHA" || return 1
 }
 
 on_error() {
-  local status="$1" line="$2"
+  local status="$1" line="$2" rollback_failed=0
+  trap - ERR
   set +e
-  cleanup_release_ci_images
-  release_ci_lock
+  if ! cleanup_release_ci_images; then
+    rollback_failed=1
+  fi
+  if ! release_ci_lock; then
+    rollback_failed=1
+  fi
   if ! rollback_switches; then
     printf 'Failed to restore the prior API pool after deployment error.\n' >&2
+    log_event "api-runtime-rollback-failed:$SHA" || true
+    rollback_failed=1
   fi
-  restore_runtime_compose
-  restore_runtime_env
+  if ! restore_runtime_compose; then
+    rollback_failed=1
+  fi
+  if ! restore_runtime_env; then
+    rollback_failed=1
+  fi
   if restore_postgres_runtime; then
-    finalize_runtime_compose_rollback
+    if ! finalize_runtime_compose_rollback; then
+      rollback_failed=1
+    fi
   else
     printf 'Failed to restore the prior PostgreSQL runtime after deployment error.\n' >&2
-    log_event "postgres-runtime-rollback-failed:$SHA"
+    log_event "postgres-runtime-rollback-failed:$SHA" || true
+    rollback_failed=1
   fi
-  log_event "deploy-failed:$SHA:line-$line:status-$status"
+  if [[ "$rollback_failed" == '1' ]]; then
+    log_event "deploy-rollback-failed:$SHA" || true
+  fi
+  log_event "deploy-failed:$SHA:line-$line:status-$status" || true
   exit "$status"
 }
 
@@ -614,6 +660,7 @@ main() {
   prepare_checkout
   run_repository_ci
   current_sha="$(json_field "$STATE/current.json" sha)"
+  previous_release_sha="$current_sha"
   current_pool="$(json_field "$STATE/current.json" pool)"
   previous_postgres_image="$(env_field MIXLI_POSTGRES_IMAGE)"
   if [[ "$current_pool" == 'blue' ]]; then

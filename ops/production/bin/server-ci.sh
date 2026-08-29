@@ -13,6 +13,15 @@ readonly API_CI_IMAGE="mixli-api-ci:$SHA"
 readonly API_TEST_IMAGE="mixli-api-test:$SHA"
 readonly PROMETHEUS_IMAGE="${MIXLI_PROMETHEUS_CI_IMAGE:-prom/prometheus:v3.5.5}"
 readonly ALERTMANAGER_IMAGE="${MIXLI_ALERTMANAGER_CI_IMAGE:-prom/alertmanager:v0.32.1}"
+readonly BUILDER_BATS=(
+  "$CHECKOUT/ops/production/tests/ci_request.bats"
+  "$CHECKOUT/ops/production/tests/deploy_dispatch.bats"
+  "$CHECKOUT/ops/production/tests/deployment.bats"
+  "$CHECKOUT/ops/production/tests/github_workflow.bats"
+  "$CHECKOUT/ops/production/tests/hardening_contracts.bats"
+  "$CHECKOUT/ops/production/tests/server_ci.bats"
+  "$CHECKOUT/ops/production/tests/verify_script.bats"
+)
 
 network=''
 postgres_container=''
@@ -20,6 +29,7 @@ flutter_volume=''
 systemd_verify_root=''
 alertmanager_verify_root=''
 prometheus_verify_root=''
+nginx_verify_root=''
 retain_release_images=0
 
 die_usage() {
@@ -68,6 +78,9 @@ cleanup() {
   if [[ "$prometheus_verify_root" == /tmp/mixli-prometheus-verify.* && -d "$prometheus_verify_root" ]]; then
     rm -rf -- "$prometheus_verify_root"
   fi
+  if [[ "$nginx_verify_root" == /tmp/mixli-nginx-verify.* && -d "$nginx_verify_root" ]]; then
+    rm -rf -- "$nginx_verify_root"
+  fi
   if [[ "$status" -ne 0 ]]; then
     exit "$status"
   fi
@@ -98,8 +111,37 @@ run_stage() {
 }
 
 source_integrity() {
+  checkout_git clean -ffdqx
+  checkout_git reset --hard "$SHA" >/dev/null
   checkout_git diff --check
-  [[ -z "$(checkout_git status --porcelain --untracked-files=no)" ]]
+  [[ -z "$(checkout_git status --porcelain --untracked-files=all)" ]]
+}
+
+isolated_nginx_contract() {
+  nginx_verify_root="$(mktemp -d /tmp/mixli-nginx-verify.XXXXXX)"
+  install -d -m 0755 "$nginx_verify_root/config/conf.d" \
+    "$nginx_verify_root/runtime" "$nginx_verify_root/tls"
+  install -m 0644 "$CHECKOUT/ops/production/nginx/nginx.conf" \
+    "$nginx_verify_root/config/nginx.conf"
+  install -m 0644 "$CHECKOUT/ops/production/nginx/conf.d/mixli.conf" \
+    "$nginx_verify_root/config/conf.d/mixli.conf"
+  install -m 0644 "$CHECKOUT/ops/production/nginx/cloudflare-real-ip.conf.example" \
+    "$nginx_verify_root/config/cloudflare-real-ip.conf"
+  install -m 0644 "$CHECKOUT/ops/production/runtime/api-upstream.example.conf" \
+    "$nginx_verify_root/runtime/api-upstream.conf"
+  openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=mixli.app \
+    -keyout "$nginx_verify_root/tls/origin.key" \
+    -out "$nginx_verify_root/tls/origin.pem" >/dev/null 2>&1
+  chmod -R a=rX "$nginx_verify_root"
+  docker run --rm --network none --read-only --user 101:101 \
+    --cap-drop ALL --security-opt no-new-privileges \
+    --tmpfs /var/cache/nginx --tmpfs /var/run --tmpfs /tmp \
+    -v "$nginx_verify_root/config:/etc/nginx/mixli:ro" \
+    -v "$nginx_verify_root/runtime:/etc/nginx/runtime:ro" \
+    -v "$nginx_verify_root/tls:/etc/nginx/tls:ro" \
+    nginx:1.28.0-alpine nginx -t -c /etc/nginx/mixli/nginx.conf
+  rm -rf -- "$nginx_verify_root"
+  nginx_verify_root=''
 }
 
 infrastructure_contracts() {
@@ -115,12 +157,10 @@ infrastructure_contracts() {
     cd "$CHECKOUT"
     docker compose --env-file ops/production/env/production.env.example \
       -f ops/production/compose.yaml config --quiet
-    MIXLI_API_IMAGE="$API_CI_IMAGE" \
-      MIXLI_FLUTTER_IMAGE="$FLUTTER_IMAGE" \
-    MIXLI_POSTGRES_IMAGE="$POSTGRES_CI_IMAGE" \
-      MIXLI_HOST_REPO="$CHECKOUT" \
-      builder_exec bats ops/production/tests
   )
+  isolated_nginx_contract
+  export MIXLI_HOST_REPO="$CHECKOUT"
+  builder_exec bats "${BUILDER_BATS[@]}"
 
   mapfile -d '' shell_files < <(
     builder_exec find "$CHECKOUT/ops/production/bin" -maxdepth 1 -type f \

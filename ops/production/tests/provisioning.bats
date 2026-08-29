@@ -135,7 +135,9 @@ run_ip_refresh() {
 @test "Cloudflare Docker policy does not intercept container egress" {
   script="$REPO_ROOT/ops/production/bin/update-cloudflare-ips.sh"
   grep -Fq "ip -4 route show default" "$script"
-  grep -Fq 'iifname \"$interface\"' "$script"
+  grep -Fq "ip -6 route show default" "$script"
+  grep -Fq 'iifname \"$interface_v4\"' "$script"
+  grep -Fq 'iifname \"$interface_v6\"' "$script"
   ! grep -Fq 'hook output' "$script"
 }
 

@@ -81,7 +81,8 @@ production-builds" ]
   for required in \
     'git diff --check' \
     'docker compose' \
-    'bats ops/production/tests' \
+    'builder_exec bats "${BUILDER_BATS[@]}"' \
+    'docker run --rm --network none --read-only --user 101:101' \
     'MIXLI_HOST_REPO="$CHECKOUT"' \
     'shellcheck' \
     'systemd-analyze verify' \
