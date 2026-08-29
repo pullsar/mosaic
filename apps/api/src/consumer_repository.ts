@@ -263,63 +263,56 @@ export class PostgresConsumerRepository implements ConsumerRepository {
     const normalizedFingerprint = requiredText(capabilityFingerprint, 'capabilityFingerprint');
     const boundedOffset = boundedInteger(offset, 0, Number.MAX_SAFE_INTEGER, 'offset');
     const boundedLimit = boundedInteger(limit, 1, MAX_PAGE_SIZE, 'limit');
-    const decision = await this.pool.query<{
+    const result = await this.pool.query<{
       ranking_config_version: string;
       fallback: boolean;
       candidate_count: number;
+      items: StoredFeedDecisionItem[];
     }>(
-      `select ranking_config_version, fallback, candidate_count
-         from feed_decisions
-        where request_id = $1
-          and actor_id = $2
-          and capability_fingerprint = $3
-          and expires_at > now()`,
-      [normalizedRequestId, normalizedActorId, normalizedFingerprint],
+      `select decision.ranking_config_version,
+              decision.fallback,
+              decision.candidate_count,
+              coalesce((
+                select jsonb_agg(to_jsonb(page) order by page.position)
+                  from (
+                    select item.position as position,
+                           item.play_id as "playId",
+                           item.revision_id as "revisionId",
+                           item.source_bucket as "sourceBucket",
+                           item.score as score,
+                           item.feature_contributions as "featureContributions",
+                           revision.document as document
+                      from feed_decision_items item
+                      join play_revisions revision
+                        on revision.play_id = item.play_id
+                       and revision.revision_id = item.revision_id
+                     where item.request_id = decision.request_id
+                       and item.position >= $4
+                     order by item.position
+                     limit $5
+                  ) page
+              ), '[]'::jsonb) as items
+         from feed_decisions decision
+        where decision.request_id = $1
+          and decision.actor_id = $2
+          and decision.capability_fingerprint = $3
+          and decision.expires_at > now()`,
+      [
+        normalizedRequestId,
+        normalizedActorId,
+        normalizedFingerprint,
+        boundedOffset,
+        boundedLimit,
+      ],
     );
-    const row = decision.rows[0];
+    const row = result.rows[0];
     if (!row) return null;
-
-    const items = await this.pool.query<{
-      position: number;
-      play_id: string;
-      revision_id: string;
-      source_bucket: FeedSourceBucket;
-      score: number;
-      feature_contributions: Record<string, number>;
-      document: unknown;
-    }>(
-      `select item.position,
-              item.play_id,
-              item.revision_id,
-              item.source_bucket,
-              item.score,
-              item.feature_contributions,
-              revision.document
-         from feed_decision_items item
-         join play_revisions revision
-           on revision.play_id = item.play_id
-          and revision.revision_id = item.revision_id
-        where item.request_id = $1
-          and item.position >= $2
-        order by item.position
-        limit $3`,
-      [normalizedRequestId, boundedOffset, boundedLimit],
-    );
-
     return {
       requestId: normalizedRequestId,
       rankingConfigVersion: row.ranking_config_version,
       fallback: row.fallback,
       candidateCount: row.candidate_count,
-      items: items.rows.map((item) => ({
-        position: item.position,
-        playId: item.play_id,
-        revisionId: item.revision_id,
-        sourceBucket: item.source_bucket,
-        score: item.score,
-        featureContributions: item.feature_contributions,
-        document: item.document,
-      })),
+      items: row.items,
     };
   }
 
