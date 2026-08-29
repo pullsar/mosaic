@@ -188,9 +188,12 @@ production-builds" ]
 
 @test "rootless daemon receives exact candidate images independently of promotion" {
   script="$REPO_ROOT/ops/production/bin/server-ci.sh"
-  grep -Fq 'rootless_docker build --target ci' "$script"
-  grep -Fq 'rootless_docker build -f "$CHECKOUT/ops/production/flutter/Dockerfile"' "$script"
-  grep -Fq 'rootless_docker build -f "$CHECKOUT/ops/production/postgres/Dockerfile"' "$script"
+  grep -Fq 'docker save --output "$rootless_archive"' "$script"
+  grep -Fq 'rootless_docker load --input "$rootless_archive"' "$script"
+  grep -Fq 'rootful_id="$(docker image inspect --format' "$script"
+  grep -Fq 'rootless_id="$(rootless_docker image inspect --format' "$script"
+  grep -Fq '[[ "$rootful_id" == "$rootless_id" ]]' "$script"
+  ! grep -Fq 'rootless_docker build --target ci' "$script"
   grep -Fq 'MIXLI_API_IMAGE="$API_CI_IMAGE"' "$script"
   grep -Fq 'MIXLI_POSTGRES_IMAGE="$POSTGRES_CI_IMAGE"' "$script"
 }
