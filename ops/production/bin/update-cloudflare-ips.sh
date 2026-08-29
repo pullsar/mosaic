@@ -21,22 +21,22 @@ cleanup() {
 fetch_list() {
   local source="$1" destination="$2"
   if [[ "$TEST_MODE" == '1' ]]; then
-    cp -- "$source" "$destination"
+    cp -- "$source" "$destination" || return 1
   else
     curl --fail --silent --show-error --location --max-time 30 \
-      --retry 4 --retry-all-errors "$source" -o "$destination"
+      --retry 4 --retry-all-errors "$source" -o "$destination" || return 1
   fi
-  sed -i 's/\r$//' "$destination"
-  sed -i '/^[[:space:]]*$/d' "$destination"
+  sed -i 's/\r$//' "$destination" || return 1
+  sed -i '/^[[:space:]]*$/d' "$destination" || return 1
 }
 
 validate_lists() {
   local v4="$1" v6="$2"
-  [[ -s "$v4" && -s "$v6" ]]
-  ! grep -Evq '^([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]|[12][0-9]|3[0-2])$' "$v4"
-  ! grep -Evq '^[0-9A-Fa-f:]+/([0-9]|[1-9][0-9]|1[01][0-9]|12[0-8])$' "$v6"
-  grep -q '/' "$v4"
-  grep -q ':' "$v6"
+  [[ -s "$v4" && -s "$v6" ]] || return 1
+  ! grep -Evq '^([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]|[12][0-9]|3[0-2])$' "$v4" || return 1
+  ! grep -Evq '^[0-9A-Fa-f:]+/([0-9]|[1-9][0-9]|1[01][0-9]|12[0-8])$' "$v6" || return 1
+  grep -q '/' "$v4" || return 1
+  grep -q ':' "$v6" || return 1
 }
 
 render_contract() {
@@ -48,8 +48,8 @@ render_contract() {
     printf '%s\n' '[ipv6]'
     sort -u "$v6"
     printf '%s\n' '[policy]' 'ssh=allow' 'docker-ports=80,443' 'source=cloudflare-only'
-  } >"$temporary"
-  mv -fT "$temporary" "$destination"
+  } >"$temporary" || return 1
+  mv -fT "$temporary" "$destination" || return 1
 }
 
 render_nft() {
@@ -72,7 +72,7 @@ render_nft() {
       "    iifname \"$interface\" tcp dport { 80, 443 } ip6 saddr @cloudflare_v6 accept" \
       "    iifname \"$interface\" tcp dport { 80, 443 } reject" \
       '  }' '}'
-  } >"$destination"
+  } >"$destination" || return 1
 }
 
 render_real_ip() {
@@ -81,35 +81,35 @@ render_real_ip() {
     while IFS= read -r cidr; do printf 'set_real_ip_from %s;\n' "$cidr"; done < <(sort -u "$v4")
     while IFS= read -r cidr; do printf 'set_real_ip_from %s;\n' "$cidr"; done < <(sort -u "$v6")
     printf '%s\n' 'real_ip_header CF-Connecting-IP;' 'real_ip_recursive on;'
-  } >"$destination"
+  } >"$destination" || return 1
 }
 
 compose() { docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"; }
 
 install_real_ip() {
   local generated="$1" candidate_real_ip validation_config container_id previous=''
-  install -d -m 0755 "$(dirname "$REAL_IP_CONFIG")"
+  install -d -m 0755 "$(dirname "$REAL_IP_CONFIG")" || return 1
   candidate_real_ip="$(dirname "$REAL_IP_CONFIG")/.cloudflare-real-ip.candidate.$$"
   validation_config="$(dirname "$REAL_IP_CONFIG")/.cloudflare-real-ip-test.$$.conf"
-  install -m 0644 "$generated" "$candidate_real_ip"
+  install -m 0644 "$generated" "$candidate_real_ip" || return 1
   container_id="$(compose ps -q nginx 2>/dev/null || true)"
   if [[ -n "$container_id" ]]; then
     printf 'events {}\nhttp { include /etc/nginx/mixli/%s; }\n' \
-      "$(basename "$candidate_real_ip")" >"$validation_config"
-    compose exec -T nginx nginx -t -c "/etc/nginx/mixli/$(basename "$validation_config")"
+      "$(basename "$candidate_real_ip")" >"$validation_config" || return 1
+    compose exec -T nginx nginx -t -c "/etc/nginx/mixli/$(basename "$validation_config")" || return 1
   fi
   if [[ -f "$REAL_IP_CONFIG" ]]; then
-    previous="$(mktemp "$(dirname "$REAL_IP_CONFIG")/.cloudflare-real-ip.previous.XXXXXX")"
-    cp -- "$REAL_IP_CONFIG" "$previous"
+    previous="$(mktemp "$(dirname "$REAL_IP_CONFIG")/.cloudflare-real-ip.previous.XXXXXX")" || return 1
+    cp -- "$REAL_IP_CONFIG" "$previous" || return 1
   fi
-  mv -fT "$candidate_real_ip" "$(dirname "$REAL_IP_CONFIG")/cloudflare-real-ip.conf"
-  rm -f -- "$validation_config"
+  mv -fT "$candidate_real_ip" "$(dirname "$REAL_IP_CONFIG")/cloudflare-real-ip.conf" || return 1
+  rm -f -- "$validation_config" || return 1
   if [[ -n "$container_id" ]]; then
     if ! compose exec -T nginx nginx -t -c /etc/nginx/mixli/nginx.conf; then
       [[ -z "$previous" ]] || mv -fT "$previous" "$REAL_IP_CONFIG"
       return 1
     fi
-    compose exec -T nginx nginx -s reload
+    compose exec -T nginx nginx -s reload || return 1
   fi
   [[ -z "$previous" ]] || rm -f -- "$previous"
 }
@@ -117,23 +117,23 @@ install_real_ip() {
 refresh() {
   local v4="$work_dir/ips-v4" v6="$work_dir/ips-v6"
   local candidate="$work_dir/firewall.nft" real_ip="$work_dir/cloudflare-real-ip.conf" interface
-  fetch_list "$IPV4_SOURCE" "$v4"
-  fetch_list "$IPV6_SOURCE" "$v6"
-  validate_lists "$v4" "$v6"
+  fetch_list "$IPV4_SOURCE" "$v4" || return 1
+  fetch_list "$IPV6_SOURCE" "$v6" || return 1
+  validate_lists "$v4" "$v6" || return 1
   if [[ "$TEST_MODE" == '1' ]]; then
-    render_contract "$v4" "$v6" "$TEST_OUTPUT"
+    render_contract "$v4" "$v6" "$TEST_OUTPUT" || return 1
     return 0
   fi
   interface="$(ip -4 route show default | awk '$1 == "default" {print $5; exit}')"
-  [[ "$interface" =~ ^[A-Za-z0-9_.:-]+$ ]]
-  render_nft "$v4" "$v6" "$interface" "$candidate"
-  render_real_ip "$v4" "$v6" "$real_ip"
-  nft -c -f "$candidate"
-  nft -f "$candidate"
-  install_real_ip "$real_ip"
-  install -d -m 0750 "$(dirname "$LAST_KNOWN_GOOD")"
-  install -m 0600 "$candidate" "$LAST_KNOWN_GOOD.$$.tmp"
-  mv -fT "$LAST_KNOWN_GOOD.$$.tmp" "$LAST_KNOWN_GOOD"
+  [[ "$interface" =~ ^[A-Za-z0-9_.:-]+$ ]] || return 1
+  render_nft "$v4" "$v6" "$interface" "$candidate" || return 1
+  render_real_ip "$v4" "$v6" "$real_ip" || return 1
+  nft -c -f "$candidate" || return 1
+  nft -f "$candidate" || return 1
+  install_real_ip "$real_ip" || return 1
+  install -d -m 0750 "$(dirname "$LAST_KNOWN_GOOD")" || return 1
+  install -m 0600 "$candidate" "$LAST_KNOWN_GOOD.$$.tmp" || return 1
+  mv -fT "$LAST_KNOWN_GOOD.$$.tmp" "$LAST_KNOWN_GOOD" || return 1
 }
 
 main() {
@@ -152,7 +152,11 @@ main() {
   work_dir="$(mktemp -d /tmp/mixli-cloudflare-ips.XXXXXX)"
   trap cleanup EXIT
   if ! refresh; then
-    [[ "$TEST_MODE" != '1' && -s "$LAST_KNOWN_GOOD" ]] && return 0
+    if [[ "$TEST_MODE" != '1' && -s "$LAST_KNOWN_GOOD" ]]; then
+      nft -c -f "$LAST_KNOWN_GOOD" || return 1
+      nft -f "$LAST_KNOWN_GOOD" || return 1
+      return 0
+    fi
     return 1
   fi
 }
