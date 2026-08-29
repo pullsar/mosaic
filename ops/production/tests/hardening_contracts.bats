@@ -4,14 +4,10 @@ load test_helper
 
 setup() { setup_repo_root; }
 
-@test "production SSH CI is main-only and manual dispatch requires an exact SHA" {
+@test "production SSH CI is push-main only" {
   workflow="$REPO_ROOT/.github/workflows/server-ci.yml"
   grep -Fq 'branches: [main]' "$workflow"
-  grep -Fq 'sha:' "$workflow"
-  grep -Fq 'required: true' "$workflow"
-  grep -Fq 'github.event.inputs.sha' "$workflow"
-  grep -Eq '\[0-9a-f\].*40' "$workflow"
-  ! grep -Eq 'branches-ignore:|pull_request:' "$workflow"
+  ! grep -Eq 'workflow_dispatch:|branches-ignore:|pull_request:' "$workflow"
 }
 
 @test "server CI requests accept only protected main ancestry" {
@@ -31,6 +27,16 @@ setup() { setup_repo_root; }
   done
   ! grep -Eq 'usermod.*mixli-build.*docker|mixli-build.*NOPASSWD' \
     "$REPO_ROOT/ops/production/bin/provision-host.sh"
+}
+
+@test "build account has no production Docker secret or data authority" {
+  run runuser -u mixli-build -- /usr/bin/docker info
+  [ "$status" -ne 0 ]
+  run runuser -u mixli-build -- test -r /etc/mixli/secrets
+  [ "$status" -ne 0 ]
+  run runuser -u mixli-build -- test -w /srv/mixli/data
+  [ "$status" -ne 0 ]
+  ! id -nG mixli-build | grep -Eq '(^|[[:space:]])(docker|sudo)([[:space:]]|$)'
 }
 
 @test "release web is nginx-readable without broadening secrets" {
@@ -84,6 +90,15 @@ setup() { setup_repo_root; }
   grep -Fq 'hook forward priority -10' "$script"
   grep -Fq 'tcp dport { 80, 443 } reject' "$script"
   ! grep -Eq 'iptables|ip6tables|ipset| -F ' "$script"
+}
+
+@test "Cloudflare refresh discovers both ingress families and rolls back both planes" {
+  script="$REPO_ROOT/ops/production/bin/update-cloudflare-ips.sh"
+  grep -Fq 'ip -4 route show default' "$script"
+  grep -Fq 'ip -6 route show default' "$script"
+  grep -Fq 'render_nft "$v4" "$v6" "$interface_v4" "$interface_v6"' "$script"
+  grep -Fq 'rollback_real_ip' "$script"
+  grep -Fq 'nft -f "$LAST_KNOWN_GOOD"' "$script"
 }
 
 @test "stack cannot start before fail-closed firewall activation" {

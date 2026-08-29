@@ -118,6 +118,7 @@ deploy() {
     MIXLI_ENV_FILE="$TEST_ROOT/production.env" \
     MIXLI_TEST_SHA_ALLOWED="${MIXLI_TEST_SHA_ALLOWED:-1}" \
     MIXLI_TEST_FAIL_STAGE="${MIXLI_TEST_FAIL_STAGE:-}" \
+    MIXLI_TEST_FAIL_ROLLBACK_STAGE="${MIXLI_TEST_FAIL_ROLLBACK_STAGE:-}" \
     MIXLI_TEST_DOCKER_RM_FAIL_REF="${MIXLI_TEST_DOCKER_RM_FAIL_REF:-}" \
     MIXLI_TEST_DOCKER_RM_FAIL_ATTEMPTS="${MIXLI_TEST_DOCKER_RM_FAIL_ATTEMPTS:-0}" \
     MIXLI_TEST_DOCKER_LOOKUP_FAIL_REF="${MIXLI_TEST_DOCKER_LOOKUP_FAIL_REF:-}" \
@@ -367,10 +368,23 @@ deploy() {
   stopped_line="$(grep -n '^old-pool-stopped:blue$' "$TEST_ROOT/log/deploy-events.log" | cut -d: -f1)"
   healthy_line="$(grep -n '^old-pool-healthy:blue$' "$TEST_ROOT/log/deploy-events.log" | cut -d: -f1)"
   rollback_line="$(grep -n "^rollback:$SHA$" "$TEST_ROOT/log/deploy-events.log" | cut -d: -f1)"
-  [ -n "$stopped_line" ] && [ -n "$healthy_line" ] && [ -n "$rollback_line" ]
+  traffic_line="$(grep -n '^rollback-traffic-verified:blue$' "$TEST_ROOT/log/deploy-events.log" | cut -d: -f1)"
+  [ -n "$stopped_line" ] && [ -n "$healthy_line" ] && [ -n "$traffic_line" ] && [ -n "$rollback_line" ]
   [ "$stopped_line" -lt "$healthy_line" ]
-  [ "$healthy_line" -lt "$rollback_line" ]
+  [ "$healthy_line" -lt "$traffic_line" ]
+  [ "$traffic_line" -lt "$rollback_line" ]
   grep -q "\"sha\":\"$OLD_SHA\"" "$TEST_ROOT/state/current.json"
+}
+
+@test "rollback restore failure is propagated and never logged as success" {
+  MIXLI_TEST_FAIL_STAGE=record MIXLI_TEST_FAIL_ROLLBACK_STAGE=nginx \
+    run deploy "$SHA"
+  [ "$status" -ne 0 ]
+  ! grep -qx "rollback:$SHA" "$TEST_ROOT/log/deploy-events.log"
+  grep -qx "api-runtime-rollback-failed:$SHA" "$TEST_ROOT/log/deploy-events.log"
+  rollback="$(sed -n '/^rollback_switches()/,/^}/p' \
+    "$REPO_ROOT/ops/production/bin/deployment.sh")"
+  [[ "$rollback" != *'set +e'* ]]
 }
 
 @test "deployment accepts an existing identical PostgreSQL SHA tag without retagging" {

@@ -9,7 +9,7 @@ setup() {
 }
 
 @test "hosted workflows only dispatch exact SHA work to the server" {
-  grep -Fq '"ci ${REQUESTED_SHA}"' "$CI_WORKFLOW"
+  grep -Fq '"ci ${GITHUB_SHA}"' "$CI_WORKFLOW"
   grep -Fq '"deploy ${GITHUB_SHA}"' "$DEPLOY_WORKFLOW"
   ! grep -Eq 'actions/checkout|flutter-action|setup-node|npm (ci|test)|flutter (test|build)' \
     "$CI_WORKFLOW" "$DEPLOY_WORKFLOW"
@@ -37,10 +37,14 @@ setup() {
 }
 
 @test "automatic production deploys originate only from main" {
-  grep -Fq 'workflow_dispatch:' "$DEPLOY_WORKFLOW"
   grep -Fq 'branches: [main]' "$DEPLOY_WORKFLOW"
   grep -Fq 'branches: [main]' "$CI_WORKFLOW"
   ! grep -Fq 'branches-ignore:' "$CI_WORKFLOW"
+}
+
+@test "production SSH secrets are unavailable to branch-controlled manual workflows" {
+  ! grep -Fq 'workflow_dispatch:' "$CI_WORKFLOW"
+  grep -Fq 'branches: [main]' "$CI_WORKFLOW"
 }
 
 @test "mobile platform CI is manual-only" {

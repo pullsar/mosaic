@@ -143,6 +143,26 @@ production-builds" ]
   ! grep -Fq 'safe.directory=*' "$script"
 }
 
+@test "exact CI checkout is cleaned including ignored and untracked inputs" {
+  integrity="$(sed -n '/^source_integrity()/,/^}/p' \
+    "$REPO_ROOT/ops/production/bin/server-ci.sh")"
+  [[ "$integrity" == *'checkout_git clean -ffdqx'* ]]
+  [[ "$integrity" == *'checkout_git reset --hard "$SHA"'* ]]
+}
+
+@test "checkout Bats avoid the production Docker and sudo boundaries" {
+  script="$REPO_ROOT/ops/production/bin/server-ci.sh"
+  grep -Fq 'BUILDER_BATS=(' "$script"
+  grep -Fq 'builder_exec bats "${BUILDER_BATS[@]}"' "$script"
+  ! grep -Fq 'builder_exec bats ops/production/tests' "$script"
+  for privileged_test in api_image.bats flutter_image.bats nginx_config.bats \
+    postgres_backup.bats postgres_entrypoint.bats compose_config.bats \
+    monitoring_config.bats provisioning.bats; do
+    ! grep -Fq "ops/production/tests/$privileged_test" \
+      <(sed -n '/^readonly BUILDER_BATS=(/,/^)/p' "$script")
+  done
+}
+
 @test "ordinary CI builds only an exact-SHA PostgreSQL CI tag and removes it" {
   run run_ci "$CHECKOUT" "$SHA"
   [ "$status" -eq 0 ]
