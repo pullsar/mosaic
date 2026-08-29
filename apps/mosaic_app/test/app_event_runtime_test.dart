@@ -4,6 +4,7 @@ import 'package:analytics_contract/analytics_contract.dart';
 import 'package:event_delivery/event_delivery.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mosaic_app/app_event_runtime.dart';
+import 'package:mosaic_app/consumer_local_state.dart';
 import 'package:mosaic_app/event_runtime_resources.dart';
 
 const _actorToken = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
@@ -52,6 +53,7 @@ final class _MemoryOutbox implements EventOutbox {
 
 AppEventResources _resources(_MemoryOutbox outbox) => AppEventResources(
   outbox: outbox,
+  consumerLocalState: const DisabledConsumerLocalState(),
   actorId: 'actor_app',
   actorAccessToken: _actorToken,
   close: outbox.close,

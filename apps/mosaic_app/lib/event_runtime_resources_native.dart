@@ -4,6 +4,7 @@ import 'package:event_delivery/event_delivery.dart';
 import 'package:local_state/local_state.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'consumer_local_state_native.dart';
 import 'event_runtime_resources.dart';
 
 Future<AppEventResources> openPlatformEventResources() async {
@@ -12,6 +13,7 @@ Future<AppEventResources> openPlatformEventResources() async {
       '${directory.path}${Platform.pathSeparator}mosaic_local_state.sqlite3';
   final store = MosaicLocalStore.open(databasePath);
   final outbox = SqliteEventOutbox(store);
+  final consumerLocalState = SqliteConsumerLocalState(store);
 
   try {
     final localAccess = store.getOrCreateActorAccess();
@@ -22,6 +24,7 @@ Future<AppEventResources> openPlatformEventResources() async {
     var closed = false;
     return AppEventResources(
       outbox: outbox,
+      consumerLocalState: consumerLocalState,
       actorId: actorAccess.actorId,
       actorAccessToken: actorAccess.accessToken,
       close: () async {
