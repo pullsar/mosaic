@@ -58,7 +58,7 @@ setup() {
 
 @test "production deployment synchronously preempts review units" {
   request="$REPO_ROOT/ops/production/bin/deployment-request.sh"
-  stop_line="$(grep -n "systemctl stop 'mixli-review-*'" "$request" | cut -d: -f1)"
+  stop_line="$(grep -Fn "systemctl stop 'mixli-review-*'" "$request" | cut -d: -f1)"
   queue_line="$(grep -n 'systemd-run --quiet' "$request" | cut -d: -f1)"
   [ -n "$stop_line" ]
   [ -n "$queue_line" ]
