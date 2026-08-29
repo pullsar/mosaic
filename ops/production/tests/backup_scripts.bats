@@ -15,6 +15,21 @@ printf '%s\n' "$*" >>"$COMMAND_LOG"
 [[ "${MIXLI_TEST_COMMAND_FAIL:-0}" != '1' ]]
 SH
   chmod +x "$TEST_ROOT/bin/pgbackrest-shim"
+
+  cat >"$TEST_ROOT/bin/docker" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$COMMAND_LOG"
+if [[ "$1" == 'run' && " $* " == *' -d '* ]]; then
+  printf '%s\n' 'synthetic-container-id'
+fi
+SH
+  cat >"$TEST_ROOT/bin/chown" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+  chmod +x "$TEST_ROOT/bin/docker" "$TEST_ROOT/bin/chown"
+  printf '%s\n' '[global]' >"$TEST_ROOT/pgbackrest.conf"
+  chmod 0600 "$TEST_ROOT/pgbackrest.conf"
 }
 
 teardown() {
@@ -39,6 +54,17 @@ restore_verify() {
     MIXLI_RESTORE_TARGET="${MIXLI_RESTORE_TARGET:-}" \
     MIXLI_TEST_COMMAND_FAIL="${MIXLI_TEST_COMMAND_FAIL:-0}" \
     "$REPO_ROOT/ops/production/bin/restore-verify.sh" "$@"
+}
+
+restore_verify_with_container_shims() {
+  env \
+    PATH="$TEST_ROOT/bin:$PATH" \
+    MIXLI_ROOT="$TEST_ROOT" \
+    MIXLI_BACKUP_LOCK_FILE="$TEST_ROOT/locks/backup.lock" \
+    MIXLI_RESTORE_TARGET="$1" \
+    MIXLI_PGBACKREST_CONFIG="$TEST_ROOT/pgbackrest.conf" \
+    MIXLI_POSTGRES_IMAGE='mixli-postgres:test' \
+    "$REPO_ROOT/ops/production/bin/restore-verify.sh"
 }
 
 @test "backup type is limited to full, incr, or check" {
@@ -101,4 +127,32 @@ restore_verify() {
   [ "$status" -ne 0 ]
   [ -d "$target" ]
   [ ! -e "$TEST_ROOT/metrics/restore-verify.prom" ]
+}
+
+@test "repo2 restore stages root-only pgBackRest config before dropping to postgres" {
+  local target="$TEST_ROOT/restore-tests/staged-restore"
+  run restore_verify_with_container_shims "$target"
+  [ "$status" -eq 0 ]
+
+  local restore_command
+  restore_command="$(sed -n '1p' "$COMMAND_LOG")"
+  [[ "$restore_command" != *'--user'* ]]
+  [[ "$restore_command" == *"$TEST_ROOT/pgbackrest.conf:/run/mixli-secrets/pgbackrest.conf:ro"* ]]
+  [[ "$restore_command" != *':/etc/pgbackrest/pgbackrest.conf'* ]]
+  [[ "$restore_command" == *'-e MIXLI_PGBACKREST_REQUIRE_REPO2_S3=1'* ]]
+  [[ "$restore_command" == *'mixli-postgres:test gosu postgres pgbackrest --stanza=mixli --repo=2 --pg1-path=/var/lib/postgresql/18/docker restore'* ]]
+}
+
+@test "isolated PostgreSQL boot keeps staged pgBackRest config and strict S3 validation" {
+  local target="$TEST_ROOT/restore-tests/staged-boot"
+  run restore_verify_with_container_shims "$target"
+  [ "$status" -eq 0 ]
+
+  local boot_command
+  boot_command="$(grep '^run -d ' "$COMMAND_LOG")"
+  [[ "$boot_command" == *'--network none'* ]]
+  [[ "$boot_command" == *"$TEST_ROOT/pgbackrest.conf:/run/mixli-secrets/pgbackrest.conf:ro"* ]]
+  [[ "$boot_command" != *':/etc/pgbackrest/pgbackrest.conf'* ]]
+  [[ "$boot_command" == *'-e MIXLI_PGBACKREST_REQUIRE_REPO2_S3=1'* ]]
+  [[ "$boot_command" == *'mixli-postgres:test -c archive_mode=off -c shared_buffers=128MB'* ]]
 }

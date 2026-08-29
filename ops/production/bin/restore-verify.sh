@@ -11,6 +11,7 @@ readonly METRICS_FILE="$METRICS_DIR/restore-verify.prom"
 readonly TEST_MODE="${MIXLI_RESTORE_TEST_MODE:-0}"
 readonly POSTGRES_IMAGE="${MIXLI_POSTGRES_IMAGE:-mixli-postgres:18.3}"
 readonly PGBACKREST_CONFIG="${MIXLI_PGBACKREST_CONFIG:-/etc/mixli/postgres/pgbackrest.conf}"
+readonly PGBACKREST_STAGED_CONFIG=/run/mixli-secrets/pgbackrest.conf
 readonly LOCAL_REPO="$ROOT/backups/pgbackrest"
 readonly REQUESTED_TARGET="${MIXLI_RESTORE_TARGET:-$RESTORE_ROOT/$(date -u +%Y%m%dT%H%M%SZ)}"
 
@@ -33,11 +34,12 @@ if [[ "$TEST_MODE" == '1' ]]; then
   [[ "${MIXLI_TEST_COMMAND_FAIL:-0}" != '1' ]]
 else
   chown -R 999:999 "$target"
-  docker run --rm --user postgres \
+  docker run --rm \
     -v "$target:/var/lib/postgresql" \
     -v "$LOCAL_REPO:/var/lib/pgbackrest:ro" \
-    -v "$PGBACKREST_CONFIG:/etc/pgbackrest/pgbackrest.conf:ro" \
-    "$POSTGRES_IMAGE" pgbackrest --stanza=mixli --repo=2 \
+    -v "$PGBACKREST_CONFIG:$PGBACKREST_STAGED_CONFIG:ro" \
+    -e MIXLI_PGBACKREST_REQUIRE_REPO2_S3=1 \
+    "$POSTGRES_IMAGE" gosu postgres pgbackrest --stanza=mixli --repo=2 \
       --pg1-path=/var/lib/postgresql/18/docker restore
 
   container="mixli-restore-verify-$(date -u +%Y%m%d%H%M%S)-$$"
@@ -47,6 +49,8 @@ else
   trap cleanup_container EXIT
   docker run -d --name "$container" --network none \
     -v "$target:/var/lib/postgresql" \
+    -v "$PGBACKREST_CONFIG:$PGBACKREST_STAGED_CONFIG:ro" \
+    -e MIXLI_PGBACKREST_REQUIRE_REPO2_S3=1 \
     "$POSTGRES_IMAGE" -c archive_mode=off -c shared_buffers=128MB >/dev/null
 
   ready=0

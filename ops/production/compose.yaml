@@ -50,6 +50,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-mixli}
       POSTGRES_USER: ${POSTGRES_USER:-mixli}
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres-password
+      MIXLI_PGBACKREST_REQUIRE_REPO2_S3: "1"
     volumes:
       - type: bind
         source: ${MIXLI_RELEASE_ROOT:-/srv/mixli}/data/postgres
@@ -63,7 +64,7 @@ services:
         read_only: true
       - type: bind
         source: ${MIXLI_PGBACKREST_CONFIG:-/etc/mixli/postgres/pgbackrest.conf}
-        target: /etc/pgbackrest/pgbackrest.conf
+        target: /run/mixli-secrets/pgbackrest.conf
         read_only: true
       - type: bind
         source: ${MIXLI_POSTGRES_PASSWORD_FILE:-/etc/mixli/secrets/postgres-password}
