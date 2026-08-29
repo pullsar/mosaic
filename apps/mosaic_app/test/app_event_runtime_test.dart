@@ -49,60 +49,66 @@ final class _MemoryOutbox implements EventOutbox {
 }
 
 void main() {
-  test('queue-only runtime still persists actor session and revision context', () async {
-    final outbox = _MemoryOutbox();
-    final resources = AppEventResources(
-      outbox: outbox,
-      actorId: 'actor_app',
-      close: outbox.close,
-    );
-    final runtime = AppEventRuntime.create(
-      resources: resources,
-      playRevisionId: 'rev_app',
-    );
-
-    runtime.telemetry.event(MosaicEventName.mediaPlayback, const {
-      'browser': 'safari',
-      'videoCodec': 'h264',
-    });
-    await outbox.enqueued.future;
-
-    final event = outbox.queued.single.envelope;
-    expect(runtime.deliveryConfigured, isFalse);
-    expect(event.actorId, 'actor_app');
-    expect(event.sessionId, runtime.sessionId);
-    expect(event.playRevisionId, 'rev_app');
-    expect(event.payload['browser'], 'safari');
-
-    await runtime.close();
-    expect(outbox.closed, isTrue);
-  });
-
-  test('invalid production API degrades to queue-only and reports config error', () async {
-    final outbox = _MemoryOutbox();
-    final errors = <String>[];
-    final runtime = AppEventRuntime.create(
-      resources: AppEventResources(
+  test(
+    'queue-only runtime still persists actor session and revision context',
+    () async {
+      final outbox = _MemoryOutbox();
+      final resources = AppEventResources(
         outbox: outbox,
         actorId: 'actor_app',
         close: outbox.close,
-      ),
-      playRevisionId: 'rev_app',
-      apiBaseUrl: 'http://api.example.test/',
-      onError: (error, stackTrace, {operation}) {
-        errors.add(operation ?? 'unknown');
-      },
-    );
+      );
+      final runtime = AppEventRuntime.create(
+        resources: resources,
+        playRevisionId: 'rev_app',
+      );
 
-    expect(runtime.deliveryConfigured, isFalse);
-    expect(errors, ['event_transport_config']);
+      runtime.telemetry.event(MosaicEventName.mediaPlayback, const {
+        'browser': 'safari',
+        'videoCodec': 'h264',
+      });
+      await outbox.enqueued.future;
 
-    runtime.telemetry.event(MosaicEventName.mediaPlayback, const {
-      'phase': 'playbackError',
-    });
-    await outbox.enqueued.future;
-    expect(outbox.queued, hasLength(1));
+      final event = outbox.queued.single.envelope;
+      expect(runtime.deliveryConfigured, isFalse);
+      expect(event.actorId, 'actor_app');
+      expect(event.sessionId, runtime.sessionId);
+      expect(event.playRevisionId, 'rev_app');
+      expect(event.payload['browser'], 'safari');
 
-    await runtime.close();
-  });
+      await runtime.close();
+      expect(outbox.closed, isTrue);
+    },
+  );
+
+  test(
+    'invalid production API degrades to queue-only and reports config error',
+    () async {
+      final outbox = _MemoryOutbox();
+      final errors = <String>[];
+      final runtime = AppEventRuntime.create(
+        resources: AppEventResources(
+          outbox: outbox,
+          actorId: 'actor_app',
+          close: outbox.close,
+        ),
+        playRevisionId: 'rev_app',
+        apiBaseUrl: 'http://api.example.test/',
+        onError: (error, stackTrace, {operation}) {
+          errors.add(operation ?? 'unknown');
+        },
+      );
+
+      expect(runtime.deliveryConfigured, isFalse);
+      expect(errors, ['event_transport_config']);
+
+      runtime.telemetry.event(MosaicEventName.mediaPlayback, const {
+        'phase': 'playbackError',
+      });
+      await outbox.enqueued.future;
+      expect(outbox.queued, hasLength(1));
+
+      await runtime.close();
+    },
+  );
 }
