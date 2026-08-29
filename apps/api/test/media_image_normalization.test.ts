@@ -24,14 +24,14 @@ test('opaque still images receive one deterministic bounded managed JPEG plan', 
   assert.equal(plan.purpose, 'image');
   assert.equal(plan.processor, FFMPEG_IMAGE_PROCESSOR);
   assert.equal(plan.version, 1);
-  assert.deepEqual(plan.parameters.output, {
-    format: 'jpeg',
-    quality: 82,
-    dynamicRange: 'sdr',
+  assert.deepEqual({...plan.parameters.output as Record<string, unknown>}, {
     colorSpace: 'srgb',
-    maxLongEdge: 1280,
+    dynamicRange: 'sdr',
     evenDimensions: true,
+    format: 'jpeg',
+    maxLongEdge: 1280,
     orientation: 'pixels-normalized',
+    quality: 82,
   });
   assert.equal(Object.isFrozen(plan), true);
   assert.equal(Object.isFrozen(plan.parameters), true);
@@ -61,16 +61,16 @@ test('execution-relevant image orientation and HDR traits participate in derivat
     mediaDerivativeKey(sourceSha256, base),
     mediaDerivativeKey(sourceSha256, hdr),
   );
-  assert.deepEqual(hdr.parameters.source, {
-    width: 2400,
-    height: 1600,
-    rotationDegrees: 0,
+  assert.deepEqual({...hdr.parameters.source as Record<string, unknown>}, {
+    colorMatrix: 'bt2020nc',
+    colorPrimaries: 'bt2020',
+    colorRange: 'limited',
+    colorTransfer: 'smpte2084',
     dynamicRange: 'hdr',
     hasAlpha: false,
-    colorPrimaries: 'bt2020',
-    colorTransfer: 'smpte2084',
-    colorMatrix: 'bt2020nc',
-    colorRange: 'limited',
+    height: 1600,
+    rotationDegrees: 0,
+    width: 2400,
   });
 });
 
