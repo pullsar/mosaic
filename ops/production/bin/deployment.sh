@@ -151,10 +151,8 @@ persist_runtime_images() {
 }
 
 cleanup_ci_image() {
-  local image="$1" flag_name="$2" cleanup_status
-  [[ "${!flag_name}" == '1' ]] || return 0
+  local image="$1" cleanup_status
   if docker image rm --force "$image" >/dev/null 2>&1; then
-    printf -v "$flag_name" '%s' 0
     return 0
   else
     cleanup_status=$?
@@ -168,12 +166,24 @@ cleanup_ci_image() {
   return "$cleanup_status"
 }
 
+cleanup_api_ci_image() {
+  [[ "$api_ci_retained" == '1' ]] || return 0
+  cleanup_ci_image "$API_CI_IMAGE" || return $?
+  api_ci_retained=0
+}
+
+cleanup_postgres_ci_image() {
+  [[ "$postgres_ci_retained" == '1' ]] || return 0
+  cleanup_ci_image "$POSTGRES_CI_IMAGE" || return $?
+  postgres_ci_retained=0
+}
+
 cleanup_release_ci_images() {
   local status=0 cleanup_status
-  if cleanup_ci_image "$API_CI_IMAGE" api_ci_retained; then :; else
+  if cleanup_api_ci_image; then :; else
     status=$?
   fi
-  if cleanup_ci_image "$POSTGRES_CI_IMAGE" postgres_ci_retained; then :; else
+  if cleanup_postgres_ci_image; then :; else
     cleanup_status=$?
     [[ "$status" -ne 0 ]] || status="$cleanup_status"
   fi
@@ -218,9 +228,9 @@ promote_release_image() {
 
 promote_release_images() {
   promote_release_image "$API_CI_IMAGE" "$API_IMAGE"
-  cleanup_ci_image "$API_CI_IMAGE" api_ci_retained
+  cleanup_api_ci_image
   promote_release_image "$POSTGRES_CI_IMAGE" "$POSTGRES_IMAGE"
-  cleanup_ci_image "$POSTGRES_CI_IMAGE" postgres_ci_retained
+  cleanup_postgres_ci_image
 }
 
 restore_runtime_compose() {
