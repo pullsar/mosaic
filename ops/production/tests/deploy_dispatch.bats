@@ -59,3 +59,11 @@ setup() {
   grep -Fq '/opt/mixli/bin/deployment-request.sh' \
     "$REPO_ROOT/ops/production/bin/deploy-dispatch"
 }
+
+@test "production dispatch cannot invoke the review endpoint" {
+  SHA=b5098ec72c804b6df97a7017681ea17b9843d73c
+  run env SSH_ORIGINAL_COMMAND="review 47 $SHA" MIXLI_DEPLOY_TEST_MODE=1 \
+    "$REPO_ROOT/ops/production/bin/deploy-dispatch"
+  [ "$status" -eq 64 ]
+  ! grep -Fq 'review-request.sh' "$REPO_ROOT/ops/production/bin/deploy-dispatch"
+}
