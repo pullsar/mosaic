@@ -1,12 +1,14 @@
 import 'dart:convert';
 
 import 'package:event_delivery/event_delivery.dart';
+import 'package:play_schema/play_schema.dart';
 
 import 'consumer_api_client.dart';
 import 'consumer_local_state.dart';
 
 const _preferencesKey = 'preferences.v1';
 const _feedResumeKey = 'feed_resume.v1';
+const _recentFeedKey = 'recent_feed.v1';
 
 final class IndexedDbConsumerLocalState implements ConsumerLocalState {
   const IndexedDbConsumerLocalState(this._store);
@@ -42,31 +44,10 @@ final class IndexedDbConsumerLocalState implements ConsumerLocalState {
     try {
       final value = jsonDecode(encoded);
       if (value is! Map) return null;
-      final cursor = value['cursor'];
-      final revisions = value['windowRevisionIds'];
-      final updatedAtRaw = value['updatedAt'];
-      if (cursor != null && (cursor is! String || cursor.length > 512)) {
-        return null;
-      }
-      if (revisions is! List || revisions.length > 64 || updatedAtRaw is! String) {
-        return null;
-      }
-      final revisionIds = <String>[];
-      final seen = <String>{};
-      for (final value in revisions) {
-        if (value is! String) return null;
-        final normalized = value.trim();
-        if (normalized.isEmpty || normalized.length > 200) return null;
-        if (seen.add(normalized)) revisionIds.add(normalized);
-      }
-      final updatedAt = DateTime.tryParse(updatedAtRaw)?.toUtc();
-      if (updatedAt == null) return null;
-      final result = ConsumerFeedResume(
-        cursor: cursor as String?,
-        windowRevisionIds: revisionIds,
-        updatedAt: updatedAt,
+      final state = ConsumerFeedResume.fromJson(
+        value.map((key, nested) => MapEntry(key.toString(), nested)),
       );
-      return result.isEmpty ? null : result;
+      return state.isEmpty ? null : state;
     } on Object {
       return null;
     }
@@ -74,15 +55,33 @@ final class IndexedDbConsumerLocalState implements ConsumerLocalState {
 
   @override
   Future<void> writeFeedResume(ConsumerFeedResume state) =>
-      _store.writeConsumerMetadata(
-        _feedResumeKey,
-        jsonEncode(<String, Object?>{
-          'cursor': state.cursor,
-          'windowRevisionIds': state.windowRevisionIds,
-          'updatedAt': state.updatedAt.toUtc().toIso8601String(),
-        }),
-      );
+      _store.writeConsumerMetadata(_feedResumeKey, jsonEncode(state.toJson()));
 
   @override
   Future<void> clearFeedResume() => _store.deleteConsumerMetadata(_feedResumeKey);
+
+  @override
+  Future<ConsumerFeedCache?> readRecentFeed({
+    required PlayCapabilityEnvelope capabilities,
+  }) async {
+    final encoded = await _store.readConsumerMetadata(_recentFeedKey);
+    if (encoded == null) return null;
+    try {
+      final value = jsonDecode(encoded);
+      if (value is! Map) return null;
+      return ConsumerFeedCache.fromJson(
+        value.map((key, nested) => MapEntry(key.toString(), nested)),
+        capabilities: capabilities,
+      );
+    } on Object {
+      return null;
+    }
+  }
+
+  @override
+  Future<void> writeRecentFeed(ConsumerFeedCache state) =>
+      _store.writeConsumerMetadata(_recentFeedKey, jsonEncode(state.toJson()));
+
+  @override
+  Future<void> clearRecentFeed() => _store.deleteConsumerMetadata(_recentFeedKey);
 }
