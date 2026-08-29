@@ -8,7 +8,8 @@ setup_file() {
   : >"$synthetic_api_env"
   : >"$synthetic_exporter_env"
   CONFIG_JSON="$(
-    MIXLI_API_ENV_FILE="$synthetic_api_env" \
+    env -u MIXLI_API_IMAGE -u MIXLI_POSTGRES_IMAGE \
+      MIXLI_API_ENV_FILE="$synthetic_api_env" \
       MIXLI_POSTGRES_EXPORTER_ENV_FILE="$synthetic_exporter_env" \
       docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" config --format json
   )"
