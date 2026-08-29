@@ -296,11 +296,8 @@ final class IndexedDbEventStore implements EventOutbox, ActorIdentityStore {
 
     records = await _readAllEventRecords();
     while (_overCapacity(records)) {
-      final candidates =
-          records
-              .where((record) => record.priority != EventPriority.critical)
-              .toList(growable: false)
-            ..sort(_compareEvictionOrder);
+      final candidates = records.toList(growable: false)
+        ..sort(_compareEvictionOrder);
       if (candidates.isEmpty) return;
       final victim = candidates.first;
       await _deleteEvent(victim.event.eventId);

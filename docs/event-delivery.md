@@ -44,7 +44,7 @@ Default outbox policy:
 - maximum 1 MiB of queued event payloads;
 - non-critical event maximum age of 14 days;
 - exponential retry backoff capped at 1 hour;
-- critical events are not evicted solely to satisfy count/byte pressure.
+- lower-priority events are evicted first; oldest critical events are evicted only as a last resort to enforce the hard count/byte cap.
 
 Storage failure degrades telemetry only. It must not prevent the app or a Play from starting.
 

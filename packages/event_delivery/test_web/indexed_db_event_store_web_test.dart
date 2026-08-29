@@ -99,27 +99,30 @@ void main() {
   );
 
   test(
-    'critical events are never evicted solely to meet the count cap',
+    'critical events are last-resort hard-cap eviction candidates',
     () async {
       final name = _databaseName('critical');
       final store = await IndexedDbEventStore.open(
         databaseName: name,
         policy: const EventOutboxPolicy(maxCount: 1, maxBytes: 100000),
       );
+      final now = DateTime.utc(2026, 8, 28, 18);
       try {
         await store.enqueue(
           _event('critical_a'),
           priority: EventPriority.critical,
+          createdAt: now,
         );
         await store.enqueue(
           _event('critical_b'),
           priority: EventPriority.critical,
+          createdAt: now.add(const Duration(seconds: 1)),
         );
 
         final ids = (await store.due(
           now: DateTime.utc(2026, 8, 29),
         )).map((queued) => queued.envelope.eventId).toSet();
-        expect(ids, {'critical_a', 'critical_b'});
+        expect(ids, {'critical_b'});
       } finally {
         await store.close();
         await IndexedDbEventStore.deleteDatabase(name);

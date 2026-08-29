@@ -587,9 +587,9 @@ PendingEvent _pendingEventFromRow(Row row) {
     priority: priority,
     attemptCount: row['attempt_count'] as int,
     createdAt: DateTime.parse(row['created_at'] as String),
-    nextAttemptAt: (row['next_attempt_at'] as String?) case final value?
-        ? DateTime.parse(value)
-        : null,
+    nextAttemptAt: row['next_attempt_at'] == null
+        ? null
+        : DateTime.parse(row['next_attempt_at'] as String),
   );
 }
 
