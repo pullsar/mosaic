@@ -3,7 +3,15 @@
 setup_file() {
   export COMPOSE_FILE="ops/production/compose.yaml"
   export ENV_FILE="ops/production/env/production.env.example"
-  CONFIG_JSON="$(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" config --format json)"
+  local synthetic_api_env="$BATS_FILE_TMPDIR/api.env"
+  local synthetic_exporter_env="$BATS_FILE_TMPDIR/postgres-exporter.env"
+  : >"$synthetic_api_env"
+  : >"$synthetic_exporter_env"
+  CONFIG_JSON="$(
+    MIXLI_API_ENV_FILE="$synthetic_api_env" \
+      MIXLI_POSTGRES_EXPORTER_ENV_FILE="$synthetic_exporter_env" \
+      docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" config --format json
+  )"
   export CONFIG_JSON
 }
 
