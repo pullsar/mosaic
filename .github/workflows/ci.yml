@@ -29,13 +29,30 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          path = Path('packages/event_delivery/lib/src/indexed_db_event_store.dart')
-          text = path.read_text()
-          old = "RegExp(r'^[a-z0-9][a-z0-9_.-]{0,79}\\\\$')"
+
+          indexed = Path('packages/event_delivery/lib/src/indexed_db_event_store.dart')
+          text = indexed.read_text()
+          old = "RegExp(r'^[a-z0-9][a-z0-9_.-]{0,79}\\$')"
           new = "RegExp(r'^[a-z0-9][a-z0-9_.-]{0,79}$')"
           if text.count(old) != 1:
               raise SystemExit('consumer metadata regex anchor not found exactly once')
-          path.write_text(text.replace(old, new, 1))
+          indexed.write_text(text.replace(old, new, 1))
+
+          fixes = {
+              Path('packages/event_delivery/test_web/indexed_db_consumer_metadata_web_test.dart'): (
+                  "'x' * (256 * 1024 + 1)",
+                  "List<String>.filled(256 * 1024 + 1, 'x').join()",
+              ),
+              Path('packages/local_state/test/consumer_recovery_v2_test.dart'): (
+                  "'x' * (100 * 1024)",
+                  "List<String>.filled(100 * 1024, 'x').join()",
+              ),
+          }
+          for path, (before, after) in fixes.items():
+              value = path.read_text()
+              if value.count(before) != 1:
+                  raise SystemExit(f'test fix anchor missing in {path}')
+              path.write_text(value.replace(before, after, 1))
           PY
           dart format \
             apps/mosaic_app/lib/consumer_local_state.dart \
