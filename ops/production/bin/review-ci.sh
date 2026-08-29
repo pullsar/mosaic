@@ -59,10 +59,11 @@ main() {
   trap 'cleanup $?' EXIT
   /opt/mixli/bin/review-status.sh update "$PR" "$SHA" in_progress
   install -d -o root -g root -m 0711 "$ROOT/review-builds"
-  git -c safe.directory="$REPO" clone --no-local --no-hardlinks --no-checkout \
+  install -d -o mixli-build -g mixli-build -m 0700 "$checkout"
+  trusted_git clone --no-local --no-hardlinks --no-checkout \
     "$REPO" "$checkout"
-  git -C "$checkout" checkout --detach "$SHA"
-  git -C "$checkout" remote remove origin
+  trusted_git -C "$checkout" checkout --detach "$SHA"
+  trusted_git -C "$checkout" remote remove origin
   chown -R mixli-review-build:mixli-review-build "$checkout"
   set +e
   timeout --signal=TERM --kill-after=30s 44m \

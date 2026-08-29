@@ -45,6 +45,7 @@ setup() {
 
 @test "review source runs from an isolated clone outside the trusted mirror owner" {
   grep -Fq 'clone --no-local --no-hardlinks --no-checkout' "$REVIEW"
+  grep -Fq 'install -d -o mixli-build -g mixli-build -m 0700 "$checkout"' "$REVIEW"
   grep -Fq 'chown -R mixli-review-build:mixli-review-build "$checkout"' "$REVIEW"
   grep -Fq 'remote remove origin' "$REVIEW"
   ! grep -Fq 'worktree add' "$REVIEW"
