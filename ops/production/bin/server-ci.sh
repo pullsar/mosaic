@@ -332,7 +332,10 @@ infrastructure_contracts() {
   export MIXLI_API_IMAGE="$API_CI_IMAGE"
   export MIXLI_FLUTTER_IMAGE="$FLUTTER_IMAGE"
   export MIXLI_POSTGRES_IMAGE="$POSTGRES_CI_IMAGE"
-  rootless_builder_exec bats "${ROOTLESS_HOST_BATS[@]}"
+  (
+    cd "$CHECKOUT"
+    rootless_builder_exec bats "${ROOTLESS_HOST_BATS[@]}"
+  )
   rootless_docker run --rm --network none \
     -v "$CHECKOUT:$CHECKOUT:ro" -w "$CHECKOUT" \
     "$ROOTLESS_BATS_IMAGE" "${ROOTLESS_CONTAINER_BATS[@]}"
