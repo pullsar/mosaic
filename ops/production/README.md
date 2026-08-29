@@ -155,11 +155,15 @@ modes passing.
 
 Direct deployment CI and queued branch/PR CI serialize on the same
 `/run/lock/mixli-ci.lock`; only the caller takes that lock, so invoking the CI
-runner cannot recursively deadlock. If a later deployment stage fails after
-PostgreSQL may have started from the candidate image, rollback restores the old
-Compose and environment files first and then force-recreates PostgreSQL from the
-prior exact image. Without a prior exact pin, rollback stops the candidate
-database instead of leaving runtime state divergent from the restored files.
+runner cannot recursively deadlock. Deployment holds the lock from the direct CI
+run through release creation, retained-tag validation, promotion, and exact CI
+tag removal. Error cleanup consumes or removes the retained tag before releasing
+the lock. If a later deployment stage fails after PostgreSQL may have started
+from the candidate image, rollback restores the old Compose and environment
+files first and then force-recreates PostgreSQL from the prior exact image.
+Without a prior Compose file or exact pin, rollback preserves the candidate
+Compose file just long enough to stop the candidate database, then removes it so
+runtime state cannot diverge from the restored bootstrap files.
 
 The deployer atomically pins the exact release's Compose file at
 `/srv/mixli/runtime/compose.yaml` and persists both pool image SHAs plus

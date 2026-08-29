@@ -36,6 +36,7 @@ had_upstream=0
 postgres_ci_retained=0
 postgres_runtime_changed=0
 previous_postgres_image=''
+ci_lock_held=0
 
 builder_git() {
   runuser -u mixli-build -- git "$@"
@@ -198,9 +199,14 @@ restore_runtime_compose() {
   if [[ "$compose_had_previous" == '1' && -f "$compose_backup" ]]; then
     cp --preserve=mode,ownership,timestamps "$compose_backup" "$temporary"
     mv -fT "$temporary" "$COMPOSE_FILE"
-  else
+  elif [[ "$postgres_runtime_changed" != '1' ]]; then
     rm -f -- "$COMPOSE_FILE"
   fi
+}
+
+finalize_runtime_compose_rollback() {
+  [[ "$compose_changed" == '1' && "$compose_had_previous" == '0' ]] || return 0
+  rm -f -- "$COMPOSE_FILE"
 }
 
 persist_runtime_compose() {
@@ -237,14 +243,17 @@ rollback_switches() {
 on_error() {
   local status="$1" line="$2"
   set +e
+  cleanup_postgres_ci_image
+  release_ci_lock
   rollback_switches
   restore_runtime_compose
   restore_runtime_env
-  if ! restore_postgres_runtime; then
+  if restore_postgres_runtime; then
+    finalize_runtime_compose_rollback
+  else
     printf 'Failed to restore the prior PostgreSQL runtime after deployment error.\n' >&2
     log_event "postgres-runtime-rollback-failed:$SHA"
   fi
-  cleanup_postgres_ci_image
   log_event "deploy-failed:$SHA:line-$line:status-$status"
   exit "$status"
 }
@@ -277,6 +286,7 @@ run_repository_ci() {
     exec 6>&-
     return 75
   fi
+  ci_lock_held=1
   if [[ "$TEST_MODE" == '1' ]]; then
     log_event "ci-verified:$SHA"
     postgres_ci_retained=1
@@ -286,9 +296,23 @@ run_repository_ci() {
   else
     ci_status=$?
   fi
-  flock -u 6
-  exec 6>&-
+  if [[ "$ci_status" -ne 0 ]]; then
+    release_ci_lock || true
+  fi
   return "$ci_status"
+}
+
+release_ci_lock() {
+  local unlock_status=0
+  [[ "$ci_lock_held" == '1' ]] || return 0
+  if flock -u 6; then
+    :
+  else
+    unlock_status=$?
+  fi
+  exec 6>&-
+  ci_lock_held=0
+  return "$unlock_status"
 }
 
 prepare_checkout() {
@@ -513,6 +537,7 @@ main() {
 
   build_release
   promote_postgres_image
+  release_ci_lock
   persist_runtime_compose
   persist_runtime_images "$current_sha"
   validate_runtime_compose
