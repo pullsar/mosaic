@@ -29,6 +29,7 @@ run_ci() {
     MIXLI_CI_TEST_MODE=1 \
     MIXLI_CI_TEST_FAIL_STAGE="${MIXLI_CI_TEST_FAIL_STAGE:-}" \
     MIXLI_CI_RETAIN_POSTGRES_IMAGE="${MIXLI_CI_RETAIN_POSTGRES_IMAGE:-0}" \
+    MIXLI_CI_RETAIN_RELEASE_IMAGES="${MIXLI_CI_RETAIN_RELEASE_IMAGES:-}" \
     MIXLI_TEST_DOCKER_RM_FAIL_REF="${MIXLI_TEST_DOCKER_RM_FAIL_REF:-}" \
     "$REPO_ROOT/ops/production/bin/server-ci.sh" "$@"
 }
@@ -112,7 +113,7 @@ production-builds" ]
 @test "database integration reuses the image dependency layer" {
   script="$REPO_ROOT/ops/production/bin/server-ci.sh"
   integration="$(sed -n '/^api_postgres_integration()/,/^}/p' "$script")"
-  [[ "$integration" == *'"$API_CI_IMAGE"'* ]]
+  [[ "$integration" == *'"$API_TEST_IMAGE"'* ]]
   [[ "$integration" != *'npm ci'* ]]
   grep -Fq 'FROM build AS ci' "$REPO_ROOT/apps/api/Dockerfile"
 }

@@ -26,7 +26,8 @@ elif [[ ! "$POSTGRES_IMAGE" =~ ^mixli-postgres:[0-9a-f]{40}$ ]]; then
   exit 64
 fi
 
-install -d -m 0750 "$(dirname "$LOCK_FILE")" "$RESTORE_ROOT" "$METRICS_DIR"
+install -d -m 0750 "$(dirname "$LOCK_FILE")" "$RESTORE_ROOT"
+install -d -o 65534 -g 65534 -m 0750 "$METRICS_DIR"
 restore_root_resolved="$(realpath -m "$RESTORE_ROOT")"
 production_resolved="$(realpath -m "$PRODUCTION_DATA")"
 target="$(realpath -m "$REQUESTED_TARGET")"
@@ -81,6 +82,7 @@ fi
 
 now="$(date -u +%s)"
 temporary="$METRICS_DIR/.restore-verify.$$.tmp"
+install -o 65534 -g 65534 -m 0640 /dev/null "$temporary"
 {
   printf '%s\n' '# HELP mixli_pgbackrest_last_restore_verify_success_timestamp Unix time of the last successful isolated restore verification.'
   printf '%s\n' '# TYPE mixli_pgbackrest_last_restore_verify_success_timestamp gauge'

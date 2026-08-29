@@ -28,13 +28,12 @@ setup_file() {
   docker run -d --name "$GRAFANA" --network "$NETWORK" --network-alias grafana nginx:1.28.0-alpine >/dev/null
 
   docker run -d --name "$NGINX_CONTAINER" --network "$NETWORK" \
-    -v "$MIXLI_HOST_REPO/ops/production/nginx/nginx.conf:/etc/nginx/nginx.conf:ro" \
-    -v "$MIXLI_HOST_REPO/ops/production/nginx/conf.d/mixli.conf:/etc/nginx/conf.d/mixli.conf:ro" \
-    -v "$MIXLI_HOST_REPO/ops/production/nginx/cloudflare-real-ip.conf.example:/etc/nginx/cloudflare-real-ip.conf:ro" \
+    -v "$MIXLI_HOST_REPO/ops/production/nginx:/etc/nginx/mixli:ro" \
+    -v "$MIXLI_HOST_REPO/ops/production/nginx/cloudflare-real-ip.conf.example:/etc/nginx/mixli/cloudflare-real-ip.conf:ro" \
     -v "$MIXLI_HOST_REPO/ops/production/runtime/api-upstream.example.conf:/etc/nginx/runtime/api-upstream.conf:ro" \
     -v "$TLS_DIR:/etc/nginx/tls:ro" \
     -v "$WEB_VOLUME:/srv/mixli/current/web:ro" \
-    nginx:1.28.0-alpine >/dev/null
+    nginx:1.28.0-alpine nginx -c /etc/nginx/mixli/nginx.conf -g 'daemon off;' >/dev/null
 
   for _ in $(seq 1 30); do
     docker exec "$NGINX_CONTAINER" wget -qO- --header='Host: api.mixli.app' http://127.0.0.1/nginx-health >/dev/null 2>&1 && return 0

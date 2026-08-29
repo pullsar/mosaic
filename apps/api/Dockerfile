@@ -2,15 +2,18 @@ FROM node:24.7.0-bookworm-slim AS build
 
 WORKDIR /workspace/apps/api
 
-COPY apps/api/package.json apps/api/package-lock.json ./
+RUN chown node:node /workspace/apps/api
+
+COPY --chown=node:node apps/api/package.json apps/api/package-lock.json ./
+USER node
 RUN npm ci --ignore-scripts
 
-COPY apps/api/tsconfig.json apps/api/tsconfig.build.json ./
-COPY apps/api/src ./src
-COPY apps/api/test ./test
-COPY apps/api/migrations ./migrations
-COPY contracts /workspace/contracts
-COPY packages/play_schema/fixtures /workspace/packages/play_schema/fixtures
+COPY --chown=node:node apps/api/tsconfig.json apps/api/tsconfig.build.json ./
+COPY --chown=node:node apps/api/src ./src
+COPY --chown=node:node apps/api/test ./test
+COPY --chown=node:node apps/api/migrations ./migrations
+COPY --chown=node:node contracts /workspace/contracts
+COPY --chown=node:node packages/play_schema/fixtures /workspace/packages/play_schema/fixtures
 
 RUN npm run typecheck \
     && npm test \

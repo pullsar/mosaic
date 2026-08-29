@@ -2,9 +2,8 @@
 Description=Schedule Cloudflare origin allowlist refresh
 
 [Timer]
-OnBootSec=5m
+OnBootSec=0
 OnUnitActiveSec=12h
-RandomizedDelaySec=15m
 Persistent=true
 Unit=mixli-cloudflare-ips.service
 

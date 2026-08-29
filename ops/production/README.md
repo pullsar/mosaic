@@ -35,8 +35,8 @@ ssh.exe -i C:\keys\mixli-prod -o IdentitiesOnly=yes -o KexAlgorithms=curve25519-
    provisioner as root: `sudo ops/production/bin/provision-host.sh`.
 2. Run it a second time. Both runs must exit zero.
 3. Verify `sshd -t`, `systemctl is-active docker nftables fail2ban`,
-   `docker info`, `nft list table inet mixli_host_filter`, and both
-   `iptables -S MIXLI-CLOUDFLARE` and `ip6tables -S MIXLI-CLOUDFLARE`.
+   `docker info`, `nft list table inet mixli_host_filter`, and
+   `nft list table inet mixli_cloudflare`.
 4. Open a new administrator SSH session before closing the bootstrap session.
    Prove root/password login is rejected.
 5. Install the restricted public key in
@@ -66,6 +66,7 @@ encoded in `DATABASE_URL`.
 | `/etc/mixli/secrets/alertmanager-webhook-url` | Private notification receiver URL |
 | `/etc/mixli/cloudflare/origin.pem` | Origin CA certificate for apex and required subdomains |
 | `/etc/mixli/cloudflare/origin.key` | Origin CA private key |
+| `/etc/mixli/cloudflare/origin-ca.pem` | Public Cloudflare Origin CA root used only as the local origin-verification trust anchor |
 | `/etc/mixli/postgres/pgbackrest.conf` | Runtime copy with bucket-scoped R2 key, secret, endpoint, and an independent repository cipher passphrase |
 
 Check metadata without reading values:
@@ -719,10 +720,15 @@ container at `/srv/mixli/data/postgres` during validation.
   exec 8>&-
   exit 1
   ```
-- Origin certificate: create the replacement, install certificate and key as
-  new temporary files, validate key/certificate match and hostname coverage,
-  atomically rename them, run `nginx -t`, and gracefully reload Nginx. Revoke
-  the old certificate after public strict-TLS verification.
+- Origin certificate: create the replacement inside `/etc/mixli/cloudflare`,
+  validate key/certificate match and hostname coverage, and atomically rename
+  both files. Nginx mounts that parent directory, so `docker compose exec -T
+  nginx nginx -t -c /etc/nginx/mixli/nginx.conf` validates the replacement
+  inodes before `docker compose exec -T nginx nginx -s reload`. Verify the
+  origin with `curl --cacert /etc/mixli/cloudflare/origin-ca.pem --resolve
+  api.mixli.app:443:127.0.0.1 https://api.mixli.app/ready`; never use an
+  insecure TLS option. Revoke the old certificate only after public strict-TLS
+  verification.
 - Administrator key: append the new public key, prove a new independent session
   and sudo, then remove the old key. Never remove the only proven recovery key.
 - GitHub deploy key: append the new forced-command public key, update the GitHub

@@ -1,7 +1,7 @@
 [Unit]
 Description=Refresh Cloudflare origin allowlists
-Requires=docker.service
-After=docker.service network-online.target
+Before=mixli-stack.service
+After=network-online.target nftables.service
 Wants=network-online.target
 
 [Service]

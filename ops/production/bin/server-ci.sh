@@ -5,21 +5,22 @@ umask 027
 readonly CHECKOUT="${1-}"
 readonly SHA="${2-}"
 readonly TEST_MODE="${MIXLI_CI_TEST_MODE:-0}"
-readonly RETAIN_POSTGRES_IMAGE_REQUESTED="${MIXLI_CI_RETAIN_POSTGRES_IMAGE:-0}"
+readonly RETAIN_RELEASE_IMAGES_REQUESTED="${MIXLI_CI_RETAIN_RELEASE_IMAGES:-${MIXLI_CI_RETAIN_POSTGRES_IMAGE:-0}}"
 readonly SHORT_SHA="${SHA:0:12}"
 readonly FLUTTER_IMAGE="${MIXLI_FLUTTER_CI_IMAGE:-mixli-flutter-builder:3.44.7}"
 readonly POSTGRES_CI_IMAGE="mixli-postgres-ci:$SHA"
-readonly API_IMAGE="mixli-api:$SHA"
 readonly API_CI_IMAGE="mixli-api-ci:$SHA"
+readonly API_TEST_IMAGE="mixli-api-test:$SHA"
 readonly PROMETHEUS_IMAGE="${MIXLI_PROMETHEUS_CI_IMAGE:-prom/prometheus:v3.5.5}"
 readonly ALERTMANAGER_IMAGE="${MIXLI_ALERTMANAGER_CI_IMAGE:-prom/alertmanager:v0.32.1}"
 
 network=''
 postgres_container=''
+flutter_volume=''
 systemd_verify_root=''
 alertmanager_verify_root=''
 prometheus_verify_root=''
-retain_postgres_image=0
+retain_release_images=0
 
 die_usage() {
   printf '%s\n' 'server-ci.sh requires an absolute checkout and exact lowercase commit SHA.' >&2
@@ -30,24 +31,33 @@ checkout_git() {
   runuser -u mixli-build -- git -c safe.directory="$CHECKOUT" -C "$CHECKOUT" "$@"
 }
 
+builder_exec() {
+  runuser -u mixli-build -- "$@"
+}
+
 cleanup() {
-  local status="$1" cleanup_status=0
+  local status="$1" cleanup_status=0 image image_cleanup_status
   trap - EXIT
   set +e
-  docker image rm "$API_CI_IMAGE" >/dev/null 2>&1 || true
-  if [[ "$retain_postgres_image" != '1' ]]; then
-    docker image rm --force "$POSTGRES_CI_IMAGE" >/dev/null 2>&1
-    cleanup_status=$?
-    if [[ "$cleanup_status" -ne 0 ]]; then
-      printf 'Failed to remove exact CI image tag %s.\n' \
-        "$POSTGRES_CI_IMAGE" >&2
-    fi
+  docker image rm "$API_TEST_IMAGE" >/dev/null 2>&1 || true
+  if [[ "$retain_release_images" != '1' ]]; then
+    for image in "$API_CI_IMAGE" "$POSTGRES_CI_IMAGE"; do
+      docker image rm --force "$image" >/dev/null 2>&1
+      image_cleanup_status=$?
+      if [[ "$image_cleanup_status" -ne 0 ]]; then
+        printf 'Failed to remove exact CI image tag %s.\n' "$image" >&2
+        [[ "$cleanup_status" -ne 0 ]] || cleanup_status="$image_cleanup_status"
+      fi
+    done
   fi
   if [[ -n "$postgres_container" ]]; then
     docker rm -f "$postgres_container" >/dev/null 2>&1 || true
   fi
   if [[ -n "$network" ]]; then
     docker network rm "$network" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$flutter_volume" ]]; then
+    docker volume rm --force "$flutter_volume" >/dev/null 2>&1 || true
   fi
   if [[ "$systemd_verify_root" == /tmp/mixli-systemd-verify.* && -d "$systemd_verify_root" ]]; then
     rm -rf -- "$systemd_verify_root"
@@ -66,8 +76,8 @@ cleanup() {
 
 validate_inputs() {
   [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || die_usage
-  [[ "$RETAIN_POSTGRES_IMAGE_REQUESTED" == '0' ||
-    "$RETAIN_POSTGRES_IMAGE_REQUESTED" == '1' ]] || die_usage
+  [[ "$RETAIN_RELEASE_IMAGES_REQUESTED" == '0' ||
+    "$RETAIN_RELEASE_IMAGES_REQUESTED" == '1' ]] || die_usage
   [[ "$CHECKOUT" == /* && "$CHECKOUT" != '/' && -d "$CHECKOUT" ]] || die_usage
   [[ "$(readlink -f "$CHECKOUT")" == "$CHECKOUT" ]] || die_usage
 
@@ -94,8 +104,8 @@ source_integrity() {
 
 infrastructure_contracts() {
   docker build --target ci -f "$CHECKOUT/apps/api/Dockerfile" \
-    -t "$API_CI_IMAGE" "$CHECKOUT"
-  docker build -f "$CHECKOUT/apps/api/Dockerfile" -t "$API_IMAGE" "$CHECKOUT"
+    -t "$API_TEST_IMAGE" "$CHECKOUT"
+  docker build -f "$CHECKOUT/apps/api/Dockerfile" -t "$API_CI_IMAGE" "$CHECKOUT"
   docker build -f "$CHECKOUT/ops/production/flutter/Dockerfile" \
     -t "$FLUTTER_IMAGE" "$CHECKOUT"
   docker build -f "$CHECKOUT/ops/production/postgres/Dockerfile" \
@@ -105,35 +115,35 @@ infrastructure_contracts() {
     cd "$CHECKOUT"
     docker compose --env-file ops/production/env/production.env.example \
       -f ops/production/compose.yaml config --quiet
-    MIXLI_API_IMAGE="$API_IMAGE" \
+    MIXLI_API_IMAGE="$API_CI_IMAGE" \
       MIXLI_FLUTTER_IMAGE="$FLUTTER_IMAGE" \
-      MIXLI_POSTGRES_IMAGE="$POSTGRES_CI_IMAGE" \
+    MIXLI_POSTGRES_IMAGE="$POSTGRES_CI_IMAGE" \
       MIXLI_HOST_REPO="$CHECKOUT" \
-      bats ops/production/tests
+      builder_exec bats ops/production/tests
   )
 
   mapfile -d '' shell_files < <(
-    find "$CHECKOUT/ops/production/bin" -maxdepth 1 -type f \
+    builder_exec find "$CHECKOUT/ops/production/bin" -maxdepth 1 -type f \
       \( -name '*.sh' -o -name 'deploy-dispatch' \) -print0
   )
-  shellcheck "${shell_files[@]}"
+  builder_exec shellcheck "${shell_files[@]}"
 
-  systemd_verify_root="$(mktemp -d /tmp/mixli-systemd-verify.XXXXXX)"
-  install -d "$systemd_verify_root/opt/mixli/bin" \
+  systemd_verify_root="$(builder_exec mktemp -d /tmp/mixli-systemd-verify.XXXXXX)"
+  builder_exec install -d "$systemd_verify_root/opt/mixli/bin" \
     "$systemd_verify_root/etc/systemd/system" "$systemd_verify_root/usr/bin"
-  install -m 0755 "${shell_files[@]}" "$systemd_verify_root/opt/mixli/bin/"
-  install -m 0755 /usr/bin/true "$systemd_verify_root/usr/bin/docker"
-  install -m 0644 "$CHECKOUT"/ops/production/systemd/* \
+  builder_exec install -m 0755 "${shell_files[@]}" "$systemd_verify_root/opt/mixli/bin/"
+  builder_exec install -m 0755 /usr/bin/true "$systemd_verify_root/usr/bin/docker"
+  builder_exec install -m 0644 "$CHECKOUT"/ops/production/systemd/* \
     "$systemd_verify_root/etc/systemd/system/"
-  systemd-analyze verify --recursive-errors=no --root="$systemd_verify_root" \
+  builder_exec systemd-analyze verify --recursive-errors=no --root="$systemd_verify_root" \
     "$systemd_verify_root"/etc/systemd/system/*
   rm -rf -- "$systemd_verify_root"
   systemd_verify_root=''
 
   if [[ -f "$CHECKOUT/ops/production/prometheus/prometheus.yml" ]]; then
-    prometheus_verify_root="$(mktemp -d /tmp/mixli-prometheus-verify.XXXXXX)"
-    chmod 0755 "$prometheus_verify_root"
-    install -m 0644 "$CHECKOUT/ops/production/prometheus/prometheus.yml" \
+    prometheus_verify_root="$(builder_exec mktemp -d /tmp/mixli-prometheus-verify.XXXXXX)"
+    builder_exec chmod 0755 "$prometheus_verify_root"
+    builder_exec install -m 0644 "$CHECKOUT/ops/production/prometheus/prometheus.yml" \
       "$CHECKOUT/ops/production/prometheus/rules.yml" "$prometheus_verify_root/"
     docker run --rm -v "$prometheus_verify_root:/etc/prometheus:ro" \
       --entrypoint promtool "$PROMETHEUS_IMAGE" \
@@ -145,10 +155,10 @@ infrastructure_contracts() {
     prometheus_verify_root=''
   fi
   if [[ -f "$CHECKOUT/ops/production/alertmanager/alertmanager.yml" ]]; then
-    alertmanager_verify_root="$(mktemp -d /tmp/mixli-alertmanager-verify.XXXXXX)"
-    chmod 0755 "$alertmanager_verify_root"
-    install -d -m 0755 "$alertmanager_verify_root/secrets"
-    install -m 0644 "$CHECKOUT/ops/production/alertmanager/alertmanager.yml" \
+    alertmanager_verify_root="$(builder_exec mktemp -d /tmp/mixli-alertmanager-verify.XXXXXX)"
+    builder_exec chmod 0755 "$alertmanager_verify_root"
+    builder_exec install -d -m 0755 "$alertmanager_verify_root/secrets"
+    builder_exec install -m 0644 "$CHECKOUT/ops/production/alertmanager/alertmanager.yml" \
       "$alertmanager_verify_root/alertmanager.yml"
     printf '%s\n' 'https://example.invalid/hooks/ci' \
       >"$alertmanager_verify_root/secrets/webhook-url"
@@ -186,7 +196,7 @@ api_postgres_integration() {
 
   docker run --rm --network "$network" \
     -e DATABASE_URL=postgres://mosaic:mosaic@postgres:5432/mosaic \
-    -w /workspace/apps/api "$API_CI_IMAGE" bash -lc \
+    -w /workspace/apps/api "$API_TEST_IMAGE" bash -lc \
     'set -Eeuo pipefail
      npm run typecheck
      npm test
@@ -199,8 +209,15 @@ api_postgres_integration() {
 }
 
 flutter_workspace() {
-  docker run --rm --user 0:0 -e HOME=/tmp/flutter-home \
-    -v "$CHECKOUT:/workspace" -w /workspace "$FLUTTER_IMAGE" bash -c \
+  local builder_uid builder_gid
+  builder_uid="$(id -u mixli-build)"
+  builder_gid="$(id -g mixli-build)"
+  flutter_volume="mixli-flutter-workspace-$SHORT_SHA"
+  docker volume create "$flutter_volume" >/dev/null
+  docker run --rm -v "$CHECKOUT:/source:ro" -v "$flutter_volume:/workspace" \
+    alpine:3.22 sh -c 'cp -a /source/. /workspace/ && chown -R 1000:1000 /workspace'
+  docker run --rm -v "$flutter_volume:/workspace" -w /workspace \
+    "$FLUTTER_IMAGE" bash -c \
     'set -Eeuo pipefail
      flutter pub get --offline --enforce-lockfile
      dart format --output=none --set-exit-if-changed .
@@ -214,6 +231,13 @@ flutter_workspace() {
      (cd packages/platform_flutter && flutter test)
      (cd apps/mosaic_app && flutter test)
      (cd apps/mosaic_app && flutter build web --release --pwa-strategy=none)'
+  install -d -o mixli-build -g mixli-build \
+    "$CHECKOUT/apps/mosaic_app/build/web"
+  docker run --rm -v "$flutter_volume:/source:ro" \
+    -v "$CHECKOUT/apps/mosaic_app/build/web:/destination" alpine:3.22 sh -c \
+    "cp -a /source/apps/mosaic_app/build/web/. /destination/ && chown -R $builder_uid:$builder_gid /destination"
+  docker volume rm --force "$flutter_volume" >/dev/null
+  flutter_volume=''
 }
 
 platform_declarations() {
@@ -280,24 +304,24 @@ if any(android_en[key] == android_es[key] for key in purpose_keys):
 PY
 
   local manifest="$CHECKOUT/apps/mosaic_app/android/app/src/main/AndroidManifest.xml"
-  grep -q 'android.permission.INTERNET' "$manifest"
-  grep -q 'android.permission.CAMERA' "$manifest"
-  grep -q 'android.permission.RECORD_AUDIO' "$manifest"
-  grep -q 'android.permission.POST_NOTIFICATIONS' "$manifest"
-  grep -q 'android:label="@string/app_name"' "$manifest"
-  if grep -Eq 'READ_MEDIA_IMAGES|READ_MEDIA_VIDEO|READ_EXTERNAL_STORAGE|ACCESS_FINE_LOCATION|ACCESS_COARSE_LOCATION' "$manifest"; then
+  builder_exec grep -q 'android.permission.INTERNET' "$manifest"
+  builder_exec grep -q 'android.permission.CAMERA' "$manifest"
+  builder_exec grep -q 'android.permission.RECORD_AUDIO' "$manifest"
+  builder_exec grep -q 'android.permission.POST_NOTIFICATIONS' "$manifest"
+  builder_exec grep -q 'android:label="@string/app_name"' "$manifest"
+  if builder_exec grep -Eq 'READ_MEDIA_IMAGES|READ_MEDIA_VIDEO|READ_EXTERNAL_STORAGE|ACCESS_FINE_LOCATION|ACCESS_COARSE_LOCATION' "$manifest"; then
     return 1
   fi
-  grep -q 'PrivacyInfo.xcprivacy in Resources' "$CHECKOUT/apps/mosaic_app/ios/Runner.xcodeproj/project.pbxproj"
-  grep -q 'InfoPlist.strings in Resources' "$CHECKOUT/apps/mosaic_app/ios/Runner.xcodeproj/project.pbxproj"
-  grep -q '^STRIP_STYLE = non-global$' "$CHECKOUT/apps/mosaic_app/ios/Flutter/Release.xcconfig"
-  grep -q 'assets/packages/flutter_soloud/web/libflutter_soloud_plugin.js' "$CHECKOUT/apps/mosaic_app/web/index.html"
-  grep -q 'assets/packages/flutter_soloud/web/init_module.dart.js' "$CHECKOUT/apps/mosaic_app/web/index.html"
+  builder_exec grep -q 'PrivacyInfo.xcprivacy in Resources' "$CHECKOUT/apps/mosaic_app/ios/Runner.xcodeproj/project.pbxproj"
+  builder_exec grep -q 'InfoPlist.strings in Resources' "$CHECKOUT/apps/mosaic_app/ios/Runner.xcodeproj/project.pbxproj"
+  builder_exec grep -q '^STRIP_STYLE = non-global$' "$CHECKOUT/apps/mosaic_app/ios/Flutter/Release.xcconfig"
+  builder_exec grep -q 'assets/packages/flutter_soloud/web/libflutter_soloud_plugin.js' "$CHECKOUT/apps/mosaic_app/web/index.html"
+  builder_exec grep -q 'assets/packages/flutter_soloud/web/init_module.dart.js' "$CHECKOUT/apps/mosaic_app/web/index.html"
 }
 
 production_builds() {
-  docker image inspect "$API_IMAGE" "$FLUTTER_IMAGE" "$POSTGRES_CI_IMAGE" >/dev/null
-  [[ -f "$CHECKOUT/apps/mosaic_app/build/web/index.html" ]]
+  docker image inspect "$API_CI_IMAGE" "$FLUTTER_IMAGE" "$POSTGRES_CI_IMAGE" >/dev/null
+  builder_exec test -f "$CHECKOUT/apps/mosaic_app/build/web/index.html"
 }
 
 main() {
@@ -309,8 +333,8 @@ main() {
   run_stage flutter-workspace flutter_workspace
   run_stage platform-declarations platform_declarations
   run_stage production-builds production_builds
-  if [[ "$RETAIN_POSTGRES_IMAGE_REQUESTED" == '1' ]]; then
-    retain_postgres_image=1
+  if [[ "$RETAIN_RELEASE_IMAGES_REQUESTED" == '1' ]]; then
+    retain_release_images=1
   fi
 }
 

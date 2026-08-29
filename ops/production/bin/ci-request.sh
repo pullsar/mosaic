@@ -24,20 +24,9 @@ validate_sha() {
 }
 
 fetch_and_verify() {
-  local ref allowed=0
-  builder_git -C "$REPO" fetch --prune origin \
-    '+refs/heads/*:refs/remotes/origin/*' \
-    '+refs/pull/*/head:refs/remotes/origin/pull/*'
+  builder_git -C "$REPO" fetch --prune origin main
   builder_git -C "$REPO" cat-file -e "$SHA^{commit}" || exit 65
-
-  while IFS= read -r ref; do
-    if builder_git -C "$REPO" merge-base --is-ancestor "$SHA" "$ref"; then
-      allowed=1
-      break
-    fi
-  done < <(builder_git -C "$REPO" for-each-ref \
-    --format='%(refname)' refs/remotes/origin)
-  [[ "$allowed" == '1' ]] || exit 65
+  builder_git -C "$REPO" merge-base --is-ancestor "$SHA" origin/main || exit 65
 }
 
 prepare_checkout() {

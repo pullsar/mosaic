@@ -19,7 +19,8 @@ case "$OPERATION" in
     ;;
 esac
 
-install -d -m 0750 "$(dirname "$LOCK_FILE")" "$METRICS_DIR"
+install -d -m 0750 "$(dirname "$LOCK_FILE")"
+install -d -o 65534 -g 65534 -m 0750 "$METRICS_DIR"
 exec 8>"$LOCK_FILE"
 flock -n 8 || exit 75
 
@@ -49,6 +50,7 @@ if [[ "$OPERATION" != 'check' ]]; then
 fi
 
 temporary="$METRICS_DIR/.pgbackrest.$$.tmp"
+install -o 65534 -g 65534 -m 0640 /dev/null "$temporary"
 {
   printf '%s\n' '# HELP mixli_pgbackrest_last_backup_success_timestamp Unix time of the last successful backup to both repositories.'
   printf '%s\n' '# TYPE mixli_pgbackrest_last_backup_success_timestamp gauge'

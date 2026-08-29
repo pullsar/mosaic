@@ -460,6 +460,8 @@ deploy() {
 
   printf '%s\n' 'sha256:ci-postgres-image' \
     >"$TEST_ROOT/images/mixli-postgres-ci__$SHA"
+  printf '%s\n' 'sha256:ci-api-image' \
+    >"$TEST_ROOT/images/mixli-api-ci__$SHA"
   MIXLI_TEST_DOCKER_RM_FAIL_REF='' \
     MIXLI_TEST_DOCKER_RM_FAIL_ATTEMPTS=0 run deploy "$SHA"
   [ "$status" -eq 0 ]

@@ -125,6 +125,7 @@ services:
 
   nginx:
     image: ${MIXLI_NGINX_IMAGE:-nginx:1.28.0-alpine}
+    command: ["nginx", "-c", "/etc/nginx/mixli/nginx.conf", "-g", "daemon off;"]
     ports:
       - target: 80
         published: "80"
@@ -142,28 +143,16 @@ services:
         target: /srv/mixli
         read_only: true
       - type: bind
-        source: ${MIXLI_NGINX_CONFIG:-/etc/mixli/nginx/nginx.conf}
-        target: /etc/nginx/nginx.conf
+        source: ${MIXLI_NGINX_CONFIG_DIR:-/etc/mixli/nginx}
+        target: /etc/nginx/mixli
         read_only: true
       - type: bind
-        source: ${MIXLI_NGINX_SITE_CONFIG:-/etc/mixli/nginx/conf.d/mixli.conf}
-        target: /etc/nginx/conf.d/mixli.conf
+        source: ${MIXLI_RELEASE_ROOT:-/srv/mixli}/runtime
+        target: /etc/nginx/runtime
         read_only: true
       - type: bind
-        source: ${MIXLI_CLOUDFLARE_REAL_IP_CONFIG:-/etc/mixli/nginx/cloudflare-real-ip.conf}
-        target: /etc/nginx/cloudflare-real-ip.conf
-        read_only: true
-      - type: bind
-        source: ${MIXLI_RELEASE_ROOT:-/srv/mixli}/runtime/api-upstream.conf
-        target: /etc/nginx/runtime/api-upstream.conf
-        read_only: true
-      - type: bind
-        source: ${MIXLI_ORIGIN_CERT:-/etc/mixli/cloudflare/origin.pem}
-        target: /etc/nginx/tls/origin.pem
-        read_only: true
-      - type: bind
-        source: ${MIXLI_ORIGIN_KEY:-/etc/mixli/cloudflare/origin.key}
-        target: /etc/nginx/tls/origin.key
+        source: ${MIXLI_CLOUDFLARE_CONFIG_DIR:-/etc/mixli/cloudflare}
+        target: /etc/nginx/tls
         read_only: true
     read_only: true
     tmpfs:
@@ -236,7 +225,7 @@ services:
         target: /etc/alertmanager/alertmanager.yml
         read_only: true
       - type: bind
-        source: ${MIXLI_ALERTMANAGER_WEBHOOK_FILE:-/etc/mixli/secrets/alertmanager-webhook-url}
+        source: ${MIXLI_ALERTMANAGER_WEBHOOK_FILE:-/run/mixli/container-secrets/alertmanager-webhook-url}
         target: /etc/alertmanager/secrets/webhook-url
         read_only: true
       - type: bind
@@ -279,7 +268,7 @@ services:
         target: /var/lib/grafana-dashboards
         read_only: true
       - type: bind
-        source: ${MIXLI_GRAFANA_ADMIN_PASSWORD_FILE:-/etc/mixli/secrets/grafana-admin-password}
+        source: ${MIXLI_GRAFANA_ADMIN_PASSWORD_FILE:-/run/mixli/container-secrets/grafana-admin-password}
         target: /run/secrets/grafana-admin-password
         read_only: true
     read_only: true

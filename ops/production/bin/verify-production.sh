@@ -11,6 +11,7 @@ readonly METRICS_FILE="$ROOT/metrics/pgbackrest.prom"
 readonly COMPOSE_FILE="${MIXLI_COMPOSE_FILE:-/srv/mixli/runtime/compose.yaml}"
 readonly ENV_FILE="${MIXLI_ENV_FILE:-/etc/mixli/env/production.env}"
 readonly ORIGIN_CERT="${MIXLI_ORIGIN_CERT:-/etc/mixli/cloudflare/origin.pem}"
+readonly ORIGIN_CA="${MIXLI_ORIGIN_CA:-/etc/mixli/cloudflare/origin-ca.pem}"
 readonly ORIGIN_KEY="${MIXLI_ORIGIN_KEY:-/etc/mixli/cloudflare/origin.key}"
 
 passed=0
@@ -49,7 +50,7 @@ run_check() {
 
 check_commands() {
   local command_name
-  for command_name in curl openssl docker jq awk grep nft iptables ip6tables ipset sha256sum date; do
+  for command_name in curl openssl docker jq awk grep nft sha256sum date; do
     command -v "$command_name" >/dev/null
   done
   docker compose version >/dev/null
@@ -59,7 +60,7 @@ curl_endpoint() {
   local host="$1" path="$2"
   if [[ "$MODE" == '--origin' ]]; then
     curl --fail --silent --show-error --max-time 15 \
-      --cacert "$ORIGIN_CERT" --resolve "$host:443:127.0.0.1" \
+      --cacert "$ORIGIN_CA" --resolve "$host:443:127.0.0.1" \
       "https://$host$path"
   else
     curl --fail --silent --show-error --max-time 15 "https://$host$path"
@@ -70,7 +71,7 @@ curl_headers() {
   local host="$1" path="$2"
   if [[ "$MODE" == '--origin' ]]; then
     curl --fail --silent --show-error --max-time 15 \
-      --cacert "$ORIGIN_CERT" --resolve "$host:443:127.0.0.1" \
+      --cacert "$ORIGIN_CA" --resolve "$host:443:127.0.0.1" \
       --dump-header - --output /dev/null "https://$host$path"
   else
     curl --fail --silent --show-error --max-time 15 \
@@ -183,19 +184,12 @@ check_backup_wal() {
 }
 
 check_firewall() {
-  local interface_v4 interface_v6
-  interface_v4="$(ip -4 route show default | awk '$1 == "default" {print $5; exit}')"
-  interface_v6="$(ip -6 route show default | awk '$1 == "default" {print $5; exit}')"
-  [[ -n "$interface_v4" ]]
-  [[ -n "$interface_v6" ]] || interface_v6="$interface_v4"
   nft list table inet mixli_host_filter | grep -Fq 'policy drop'
   nft list table inet mixli_host_filter | grep -Eq 'tcp dport 22.*accept'
-  iptables -C DOCKER-USER -i "$interface_v4" -j MIXLI-CLOUDFLARE
-  ip6tables -C DOCKER-USER -i "$interface_v6" -j MIXLI-CLOUDFLARE
-  iptables -S MIXLI-CLOUDFLARE | grep -Fq -- '--dports 80,443'
-  ip6tables -S MIXLI-CLOUDFLARE | grep -Fq -- '--dports 80,443'
-  ipset list mixli_cloudflare_v4 | grep -Eq '^Number of entries: [1-9][0-9]*$'
-  ipset list mixli_cloudflare_v6 | grep -Eq '^Number of entries: [1-9][0-9]*$'
+  nft list table inet mixli_cloudflare | grep -Fq 'hook forward priority -10'
+  nft list set inet mixli_cloudflare cloudflare_v4 | grep -Fq 'elements = {'
+  nft list set inet mixli_cloudflare cloudflare_v6 | grep -Fq 'elements = {'
+  nft list chain inet mixli_cloudflare forward | grep -Fq 'reject'
 }
 
 main() {

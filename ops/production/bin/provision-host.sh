@@ -18,6 +18,7 @@ target() {
 
 install_layout() {
   local path
+  install -d -m 0755 "$(target /srv/mixli)"
   for path in \
     /srv/mixli/builds /srv/mixli/releases /srv/mixli/runtime \
     /srv/mixli/state /srv/mixli/log /srv/mixli/metrics /srv/mixli/data/postgres \
@@ -29,6 +30,9 @@ install_layout() {
     /etc/systemd/system; do
     install -d -m 0750 "$(target "$path")"
   done
+  install -d -m 0755 "$(target /srv/mixli/releases)"
+  install -d -m 0750 "$(target /etc/mixli/secrets)"
+  install -d -o 65534 -g 65534 -m 0750 "$(target /srv/mixli/metrics)"
 
   # Reassert the credential-directory boundary even when the directory already
   # exists with unsafe ownership or permissions.
@@ -75,7 +79,7 @@ install_packages() {
   apt-get update -qq
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
     ca-certificates curl git jq openssh-server sudo fail2ban unattended-upgrades \
-    nftables iptables ipset shellcheck bats python3-yaml
+    nftables shellcheck bats python3-yaml
 
   if ! command -v docker >/dev/null 2>&1; then
     install -d -m 0755 /etc/apt/keyrings

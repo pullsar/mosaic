@@ -2,8 +2,13 @@ name: server-ci
 
 on:
   push:
-    branches-ignore: [main]
+    branches: [main]
   workflow_dispatch:
+    inputs:
+      sha:
+        description: Exact protected-main commit SHA to verify
+        required: true
+        type: string
 
 concurrency:
   group: mixli-server-ci
@@ -29,10 +34,13 @@ jobs:
           printf '%s\n' "$DEPLOY_KEY" >"$HOME/.ssh/mixli-deploy"
           printf '%s\n' "$DEPLOY_KNOWN_HOST" >"$HOME/.ssh/known_hosts"
       - name: Trigger server CI
+        env:
+          REQUESTED_SHA: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.sha || github.sha }}
         run: >-
+          [[ "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]] &&
           ssh -i "$HOME/.ssh/mixli-deploy"
           -o BatchMode=yes
           -o IdentitiesOnly=yes
           -o StrictHostKeyChecking=yes
           -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
-          mixli-deploy@152.53.55.38 "ci ${GITHUB_SHA}"
+          mixli-deploy@152.53.55.38 "ci ${REQUESTED_SHA}"

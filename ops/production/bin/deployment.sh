@@ -20,6 +20,9 @@ readonly STATE="$ROOT/state"
 readonly LOG_DIR="$ROOT/log"
 readonly EVENTS="$LOG_DIR/deploy-events.log"
 readonly DRAIN_SECONDS="${MIXLI_DRAIN_SECONDS:-30}"
+readonly ORIGIN_CA="${MIXLI_ORIGIN_CA:-/etc/mixli/cloudflare/origin-ca.pem}"
+readonly API_CI_IMAGE="mixli-api-ci:$SHA"
+readonly API_IMAGE="mixli-api:$SHA"
 readonly POSTGRES_CI_IMAGE="mixli-postgres-ci:$SHA"
 readonly POSTGRES_IMAGE="mixli-postgres:$SHA"
 
@@ -34,9 +37,12 @@ compose_had_previous=0
 target_pool=''
 had_upstream=0
 postgres_ci_retained=0
+api_ci_retained=0
 postgres_runtime_changed=0
 previous_postgres_image=''
 ci_lock_held=0
+old_pool_stopped=0
+stopped_pool=''
 
 builder_git() {
   runuser -u mixli-build -- git "$@"
@@ -144,18 +150,34 @@ persist_runtime_images() {
   fi
 }
 
-cleanup_postgres_ci_image() {
-  local cleanup_status
-  [[ "$postgres_ci_retained" == '1' ]] || return 0
-  if docker image rm --force "$POSTGRES_CI_IMAGE" >/dev/null 2>&1; then
-    postgres_ci_retained=0
+cleanup_ci_image() {
+  local image="$1" flag_name="$2" cleanup_status
+  [[ "${!flag_name}" == '1' ]] || return 0
+  if docker image rm --force "$image" >/dev/null 2>&1; then
+    printf -v "$flag_name" '%s' 0
     return 0
   else
     cleanup_status=$?
   fi
-  printf 'Failed to remove exact CI image tag %s.\n' "$POSTGRES_CI_IMAGE" >&2
-  log_event "postgres-ci-cleanup-failed:$SHA" || true
+  printf 'Failed to remove exact CI image tag %s.\n' "$image" >&2
+  if [[ "$image" == "$POSTGRES_CI_IMAGE" ]]; then
+    log_event "postgres-ci-cleanup-failed:$SHA" || true
+  else
+    log_event "api-ci-cleanup-failed:$SHA" || true
+  fi
   return "$cleanup_status"
+}
+
+cleanup_release_ci_images() {
+  local status=0 cleanup_status
+  if cleanup_ci_image "$API_CI_IMAGE" api_ci_retained; then :; else
+    status=$?
+  fi
+  if cleanup_ci_image "$POSTGRES_CI_IMAGE" postgres_ci_retained; then :; else
+    cleanup_status=$?
+    [[ "$status" -ne 0 ]] || status="$cleanup_status"
+  fi
+  return "$status"
 }
 
 restore_postgres_runtime() {
@@ -177,20 +199,28 @@ restore_postgres_runtime() {
   return 0
 }
 
-promote_postgres_image() {
-  local ci_image_id production_image_id
-  ci_image_id="$(docker image inspect --format '{{.Id}}' "$POSTGRES_CI_IMAGE")"
+promote_release_image() {
+  local ci_image="$1" production_image="$2" ci_image_id production_image_id image_ids
+  ci_image_id="$(docker image inspect --format '{{.Id}}' "$ci_image")"
   [[ -n "$ci_image_id" ]]
 
-  if production_image_id="$(docker image inspect --format '{{.Id}}' "$POSTGRES_IMAGE" 2>/dev/null)"; then
+  image_ids="$(docker image ls --quiet --no-trunc "$production_image")"
+  if [[ -n "$image_ids" ]]; then
+    production_image_id="$(docker image inspect --format '{{.Id}}' "$production_image")"
     [[ "$production_image_id" == "$ci_image_id" ]]
   else
-    docker image tag "$ci_image_id" "$POSTGRES_IMAGE"
-    production_image_id="$(docker image inspect --format '{{.Id}}' "$POSTGRES_IMAGE")"
+    docker image tag "$ci_image_id" "$production_image"
+    production_image_id="$(docker image inspect --format '{{.Id}}' "$production_image")"
     [[ "$production_image_id" == "$ci_image_id" ]]
   fi
 
-  cleanup_postgres_ci_image
+}
+
+promote_release_images() {
+  promote_release_image "$API_CI_IMAGE" "$API_IMAGE"
+  cleanup_ci_image "$API_CI_IMAGE" api_ci_retained
+  promote_release_image "$POSTGRES_CI_IMAGE" "$POSTGRES_IMAGE"
+  cleanup_ci_image "$POSTGRES_CI_IMAGE" postgres_ci_retained
 }
 
 restore_runtime_compose() {
@@ -225,6 +255,10 @@ persist_runtime_compose() {
 rollback_switches() {
   [[ "$switched" == '1' ]] || return 0
   set +e
+  if ! restart_old_pool; then
+    log_event "old-pool-rollback-failed:$stopped_pool"
+    return 1
+  fi
   if [[ -n "$upstream_backup" && -f "$upstream_backup" ]]; then
     cp "$upstream_backup" "$RUNTIME/.api-upstream.rollback.$$.conf"
     mv -fT "$RUNTIME/.api-upstream.rollback.$$.conf" "$RUNTIME/api-upstream.conf"
@@ -243,9 +277,11 @@ rollback_switches() {
 on_error() {
   local status="$1" line="$2"
   set +e
-  cleanup_postgres_ci_image
+  cleanup_release_ci_images
   release_ci_lock
-  rollback_switches
+  if ! rollback_switches; then
+    printf 'Failed to restore the prior API pool after deployment error.\n' >&2
+  fi
   restore_runtime_compose
   restore_runtime_env
   if restore_postgres_runtime; then
@@ -290,8 +326,10 @@ run_repository_ci() {
   if [[ "$TEST_MODE" == '1' ]]; then
     log_event "ci-verified:$SHA"
     postgres_ci_retained=1
-  elif MIXLI_CI_RETAIN_POSTGRES_IMAGE=1 "$CI_RUNNER" "$BUILDS/$SHA" "$SHA"; then
+    api_ci_retained=1
+  elif MIXLI_CI_RETAIN_RELEASE_IMAGES=1 "$CI_RUNNER" "$BUILDS/$SHA" "$SHA"; then
     postgres_ci_retained=1
+    api_ci_retained=1
     log_event "ci-verified:$SHA"
   else
     ci_status=$?
@@ -331,13 +369,14 @@ build_release() {
   local build_dir="$BUILDS/$SHA" release_dir="$RELEASES/$SHA" built_at
   fail_if_requested build
   built_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  install -d -m 0750 "$release_dir/web"
+  install -d -m 0755 "$release_dir" "$release_dir/web"
 
   if [[ "$TEST_MODE" == '1' ]]; then
     printf 'web:%s\n' "$SHA" >"$release_dir/web/index.html"
   else
     cp -a "$build_dir/apps/mosaic_app/build/web/." "$release_dir/web/"
   fi
+  chmod -R a=rX,u+w "$release_dir/web"
 
   write_json_atomic "$release_dir/release.json" \
     "{\"sha\":\"$SHA\",\"built_at\":\"$built_at\"}"
@@ -447,9 +486,11 @@ smoke_release() {
   fail_if_requested public-smoke
   [[ "$TEST_MODE" == '1' ]] && return 0
   curl --fail --silent --show-error --max-time 10 \
-    --resolve api.mixli.app:443:127.0.0.1 https://api.mixli.app/ready >/dev/null
+    --cacert "$ORIGIN_CA" --resolve api.mixli.app:443:127.0.0.1 \
+    https://api.mixli.app/ready >/dev/null
   curl --fail --silent --show-error --max-time 10 \
-    --resolve mixli.app:443:127.0.0.1 https://mixli.app/ >/dev/null
+    --cacert "$ORIGIN_CA" --resolve mixli.app:443:127.0.0.1 \
+    https://mixli.app/ >/dev/null
   curl --fail --silent --show-error --max-time 15 https://api.mixli.app/ready >/dev/null
   curl --fail --silent --show-error --max-time 15 https://mixli.app/ >/dev/null
 }
@@ -458,12 +499,48 @@ stop_old_pool() {
   local old_pool="$1"
   [[ "$DRAIN_SECONDS" =~ ^[0-9]+$ && "$DRAIN_SECONDS" -le 90 ]]
   [[ "$DRAIN_SECONDS" -eq 0 ]] || sleep "$DRAIN_SECONDS"
-  [[ "$TEST_MODE" == '1' || -z "$old_pool" ]] && return 0
+  [[ -n "$old_pool" ]] || return 0
+  stopped_pool="$old_pool"
+  old_pool_stopped=1
+  if [[ "$TEST_MODE" == '1' ]]; then
+    log_event "old-pool-stopped:$old_pool"
+    return 0
+  fi
   compose stop -t 30 "api-${old_pool}-1" "api-${old_pool}-2"
+  log_event "old-pool-stopped:$old_pool"
+}
+
+restart_old_pool() {
+  local attempt consecutive=0 service_one service_two
+  [[ "$old_pool_stopped" == '1' && -n "$stopped_pool" ]] || return 0
+  service_one="api-${stopped_pool}-1"
+  service_two="api-${stopped_pool}-2"
+  if [[ "$TEST_MODE" == '1' ]]; then
+    log_event "old-pool-restarted:$stopped_pool"
+    log_event "old-pool-healthy:$stopped_pool"
+    old_pool_stopped=0
+    return 0
+  fi
+  compose up -d --no-deps "$service_one" "$service_two"
+  for ((attempt = 1; attempt <= 60; attempt++)); do
+    if container_is_ready "$service_one" && container_is_ready "$service_two"; then
+      consecutive=$((consecutive + 1))
+      if [[ "$consecutive" -ge 5 ]]; then
+        log_event "old-pool-healthy:$stopped_pool"
+        old_pool_stopped=0
+        return 0
+      fi
+    else
+      consecutive=0
+    fi
+    sleep 2
+  done
+  return 1
 }
 
 record_success() {
   local old_current="$1" old_pool="$2" deployed_at principal current_json previous_json
+  fail_if_requested record
   deployed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   principal="$(printf '%s' "${SUDO_USER:-${USER:-unknown}}" | tr -cd 'A-Za-z0-9_.@-')"
   current_json="{\"sha\":\"$SHA\",\"pool\":\"$target_pool\",\"deployed_at\":\"$deployed_at\",\"initiator\":\"$principal\"}"
@@ -536,7 +613,7 @@ main() {
   fi
 
   build_release
-  promote_postgres_image
+  promote_release_images
   release_ci_lock
   persist_runtime_compose
   persist_runtime_images "$current_sha"

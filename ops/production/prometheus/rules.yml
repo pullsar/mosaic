@@ -69,7 +69,7 @@ groups:
           summary: PostgreSQL connections exceed 80 percent
 
       - alert: BackupStale
-        expr: time() - mixli_pgbackrest_last_backup_success_timestamp > 93600
+        expr: (time() - mixli_pgbackrest_last_backup_success_timestamp > 93600) or absent(mixli_pgbackrest_last_backup_success_timestamp)
         for: 15m
         labels: {severity: critical}
         annotations:
@@ -83,7 +83,7 @@ groups:
           summary: PostgreSQL WAL archive is more than 15 minutes stale
 
       - alert: RestoreVerificationStale
-        expr: time() - mixli_pgbackrest_last_restore_verify_success_timestamp > 3024000
+        expr: (time() - mixli_pgbackrest_last_restore_verify_success_timestamp > 3024000) or absent(mixli_pgbackrest_last_restore_verify_success_timestamp)
         for: 1h
         labels: {severity: critical}
         annotations:
