@@ -1,6 +1,5 @@
 import 'package:analytics_contract/analytics_contract.dart';
 import 'package:local_state/local_state.dart';
-import 'package:platform_contracts/platform_contracts.dart';
 
 import 'event_delivery_core.dart';
 
@@ -86,27 +85,6 @@ final class SqliteEventOutbox implements EventOutbox {
 
   void _ensureOpen() {
     if (_closed) throw StateError('SQLite event outbox is closed.');
-  }
-}
-
-/// Actor identity adapter sharing the same Mosaic SQLite connection as the
-/// native event outbox and all other durable local state.
-final class SqliteActorIdentityStore implements ActorIdentityStore {
-  SqliteActorIdentityStore(this.store);
-
-  final MosaicLocalStore store;
-
-  @override
-  Future<String> getOrCreateActorId() async => store.getOrCreateActorId();
-
-  @override
-  Future<void> bindActorToUser(String actorId, String userId) async {
-    final currentActorId = store.getOrCreateActorId();
-    if (currentActorId != actorId) {
-      throw StateError('Cannot bind a different actor identity.');
-    }
-    // Server-side actor/user binding is authoritative. The native store only
-    // persists the anonymous actor identity used by durable queued events.
   }
 }
 
