@@ -27,7 +27,10 @@ jobs:
       - name: Resolve locked workspace
         run: flutter pub get --enforce-lockfile
       - name: Verify formatting
-        run: dart format --output=none --set-exit-if-changed .
+        run: |
+          dart format apps/mosaic_app/test/consumer_onboarding_test.dart
+          git diff -- apps/mosaic_app/test/consumer_onboarding_test.dart
+          exit 1
       - name: Analyze
         run: flutter analyze
       - name: Test play_schema
