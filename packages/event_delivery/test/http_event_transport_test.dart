@@ -6,9 +6,11 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:test/test.dart';
 
+const _actorToken = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+
 final _actorAccess = ActorAccessIdentity(
   actorId: 'actor_1',
-  accessToken: 'A' * 43,
+  accessToken: _actorToken,
 );
 
 MosaicEventEnvelope _event({
@@ -31,7 +33,7 @@ void main() {
       var eventCalls = 0;
       final client = MockClient((request) async {
         requests.add(request);
-        expect(request.headers['authorization'], 'Bearer ${'A' * 43}');
+        expect(request.headers['authorization'], 'Bearer $_actorToken');
         expect(request.headers['content-type'], 'application/json');
         if (request.url.path == '/v1/actors') {
           expect(jsonDecode(request.body), {'actorId': 'actor_1'});
@@ -171,7 +173,10 @@ void main() {
         'content-type': 'application/json',
       },
     );
-    expect(() => ActorAccessIdentity(actorId: 'a', accessToken: 'weak'), throwsArgumentError);
+    expect(
+      () => ActorAccessIdentity(actorId: 'a', accessToken: 'weak'),
+      throwsArgumentError,
+    );
   });
 
   test('closed transport degrades to retryable failure', () async {
