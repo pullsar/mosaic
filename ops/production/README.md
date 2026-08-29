@@ -215,7 +215,7 @@ container at `/srv/mixli/data/postgres` during validation.
 
   ```bash
   sudo -i
-  set -uo pipefail
+  set -Eeuo pipefail
   set +x
   umask 077
 
@@ -251,16 +251,20 @@ container at `/srv/mixli/data/postgres` during validation.
         "$probe_url" >/dev/null 2>&1 || true
     fi
     rm -f -- "$candidate" "$curl_config" "$probe_body" "$probe_read"
-    if [[ "$rotation_complete" == 1 || "$active_replaced" == 0 ]]; then
+    if [[ "$status" == 0 && "$rotation_complete" == 1 ]]; then
       rm -f -- "$rollback"
-    fi
-    if [[ "$timers_stopped" == 1 && \
-          ( "$active_replaced" == 0 || "$rotation_complete" == 1 ) ]]; then
-      systemctl start $timer_units || true
+    elif [[ "$status" != 0 && "$active_replaced" == 0 ]]; then
+      rm -f -- "$rollback"
+      if [[ "$timers_stopped" == 1 ]]; then
+        systemctl start $timer_units || true
+      fi
     fi
     exit "$status"
   }
-  trap cleanup_rotation EXIT HUP INT TERM
+  trap cleanup_rotation EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
 
   printf 'R2 rotation started at %s (epoch %s); id=%s\n' \
     "$rotation_started_at" "$rotation_started_epoch" "$rotation_id"
@@ -270,11 +274,16 @@ container at `/srv/mixli/data/postgres` during validation.
   exec 9>/run/lock/mixli-backup.lock
   flock -n 9 || exit 75
 
-  ! systemctl list-units --type=service --state=active --no-legend --plain \
-    'mixli-deploy-*' 'mixli-backup-*.service' \
-    'mixli-restore-verify.service' | grep -q .
-  systemctl stop $timer_units
+  active_units="$(systemctl list-units --type=service --state=active \
+    --no-legend --plain 'mixli-deploy-*' 'mixli-backup-*.service' \
+    'mixli-restore-verify.service')"
+  if [[ -n "$active_units" ]]; then
+    printf '%s\n' 'R2 rotation stopped: a deployment, backup, or restore unit is active.' >&2
+    exit 1
+  fi
+  unset active_units
   timers_stopped=1
+  systemctl stop $timer_units
   ```
 
   Stop before changing the active file if a lock cannot be acquired, a relevant
@@ -283,14 +292,22 @@ container at `/srv/mixli/data/postgres` during validation.
   active file. Edit only the two key assignments through the no-echo editor.
 
   ```bash
-  test -f "$active" && test ! -L "$active" && test -s "$active"
+  if [[ ! -f "$active" || -L "$active" || ! -s "$active" ]]; then
+    printf '%s\n' 'R2 rotation stopped: active configuration is not a regular protected file.' >&2
+    exit 1
+  fi
   test "$(stat -c '%U:%G:%a' "$active")" = 'root:root:600'
-  test ! -e "$candidate" && test ! -L "$candidate"
-  test ! -e "$rollback" && test ! -L "$rollback"
+  if [[ -e "$candidate" || -L "$candidate" || -e "$rollback" || -L "$rollback" ]]; then
+    printf '%s\n' 'R2 rotation stopped: unique candidate or rollback path already exists.' >&2
+    exit 1
+  fi
   install -o root -g root -m 0600 "$active" "$candidate"
   sudoedit "$candidate"
 
-  test -f "$candidate" && test ! -L "$candidate" && test -s "$candidate"
+  if [[ ! -f "$candidate" || -L "$candidate" || ! -s "$candidate" ]]; then
+    printf '%s\n' 'R2 rotation stopped: candidate is not a regular protected file.' >&2
+    exit 1
+  fi
   test "$(stat -c '%U:%G:%a' "$candidate")" = 'root:root:600'
 
   normalize_rotation_keys() {
@@ -305,7 +322,15 @@ container at `/srv/mixli/data/postgres` during validation.
     ' "$1"
   }
 
-  ! cmp -s "$active" "$candidate"
+  if cmp -s "$active" "$candidate"; then
+    printf '%s\n' 'R2 rotation stopped: candidate does not rotate a key.' >&2
+    exit 1
+  else
+    cmp_status=$?
+    if [[ "$cmp_status" -ne 1 ]]; then
+      exit "$cmp_status"
+    fi
+  fi
   cmp -s \
     <(normalize_rotation_keys "$active") \
     <(normalize_rotation_keys "$candidate")
@@ -400,11 +425,23 @@ container at `/srv/mixli/data/postgres` during validation.
 
   ```bash
   install -o root -g root -m 0600 "$active" "$rollback"
-  test -f "$rollback" && test ! -L "$rollback" && test -s "$rollback"
+  if [[ ! -f "$rollback" || -L "$rollback" || ! -s "$rollback" ]]; then
+    printf '%s\n' 'R2 rotation stopped: rollback copy is not a regular protected file.' >&2
+    exit 1
+  fi
   test "$(stat -c '%U:%G:%a' "$rollback")" = 'root:root:600'
-  mv -fT -- "$candidate" "$active"
   active_replaced=1
-  test -f "$active" && test ! -L "$active" && test -s "$active"
+  if mv -fT -- "$candidate" "$active"; then
+    :
+  else
+    replace_status=$?
+    active_replaced=0
+    exit "$replace_status"
+  fi
+  if [[ ! -f "$active" || -L "$active" || ! -s "$active" ]]; then
+    printf '%s\n' 'R2 rotation stopped: replacement is not a regular protected file.' >&2
+    exit 1
+  fi
   test "$(stat -c '%U:%G:%a' "$active")" = 'root:root:600'
 
   compose up -d --no-deps --force-recreate postgres
@@ -472,7 +509,10 @@ container at `/srv/mixli/data/postgres` during validation.
   ```bash
   compose exec -T --user postgres postgres \
     pgbackrest --stanza=mixli --repo=2 check
-  systemctl start $timer_units
+  if ! systemctl start $timer_units; then
+    systemctl stop $timer_units || true
+    exit 1
+  fi
   timers_stopped=0
   rm -f -- "$rollback"
   rotation_complete=1
@@ -482,23 +522,64 @@ container at `/srv/mixli/data/postgres` during validation.
   exit
   ```
 
-  If any command after atomic replacement fails, do not revoke the old key or
-  release the deployment lock. Wait for any started backup/restore unit to stop,
-  reacquire the backup lock after the deployment lock, atomically restore the
-  same-directory rollback file, recreate PostgreSQL, wait healthy, and check both
-  repositories. Then restart the timers and release the deployment lock. These
-  commands intentionally never print or copy secret values into documentation,
+  If any invariant after atomic replacement fails, `errexit` terminates the
+  rotation shell. Its exit trap deliberately preserves the rollback file and
+  leaves timers stopped; the kernel releases its lock descriptors. Do not revoke
+  the old key or continue deployment. Immediately open a new root shell, locate
+  the single protected rollback file without reading it, and reacquire the
+  deployment lock before the backup lock. Wait for any started backup/restore
+  unit to stop, atomically restore the same-directory file, recreate PostgreSQL,
+  wait healthy, and check both repositories. Then restart the timers and release
+  the locks. These commands never print or copy secret values into documentation,
   shell history, chat, tickets, or logs.
 
   ```bash
+  sudo -i
+  set -Eeuo pipefail
+  set +x
+  umask 077
+
+  compose_file=/srv/mixli/runtime/compose.yaml
+  env_file=/etc/mixli/env/production.env
+  active=/etc/mixli/postgres/pgbackrest.conf
+  timer_units='mixli-backup-full.timer mixli-backup-incr.timer mixli-backup-check.timer mixli-restore-verify.timer'
+  compose() {
+    docker compose --env-file "$env_file" -f "$compose_file" "$@"
+  }
+
+  shopt -s nullglob
+  rollback_candidates=(/etc/mixli/postgres/.pgbackrest.conf.rollback-*)
+  shopt -u nullglob
+  if [[ "${#rollback_candidates[@]}" -ne 1 ]]; then
+    printf '%s\n' 'R2 rollback stopped: expected exactly one protected rollback file.' >&2
+    exit 1
+  fi
+  rollback="${rollback_candidates[0]}"
+
+  exec 8>/run/lock/mixli-deploy.lock
+  flock -n 8 || exit 75
   exec 9>/run/lock/mixli-backup.lock
   flock -n 9 || exit 75
-  ! systemctl list-units --type=service --state=active --no-legend --plain \
-    'mixli-backup-*.service' 'mixli-restore-verify.service' | grep -q .
-  test -f "$rollback" && test ! -L "$rollback" && test -s "$rollback"
+  systemctl stop $timer_units
+  active_units="$(systemctl list-units --type=service --state=active \
+    --no-legend --plain 'mixli-backup-*.service' \
+    'mixli-restore-verify.service')"
+  if [[ -n "$active_units" ]]; then
+    printf '%s\n' 'R2 rollback stopped: a backup or restore unit is active.' >&2
+    exit 1
+  fi
+  unset active_units
+  if [[ ! -f "$rollback" || -L "$rollback" || ! -s "$rollback" ]]; then
+    printf '%s\n' 'R2 rollback stopped: protected rollback copy is unavailable.' >&2
+    exit 1
+  fi
   test "$(stat -c '%U:%G:%a' "$rollback")" = 'root:root:600'
-  mv -fT -- "$rollback" "$active"
-  active_replaced=0
+  if mv -fT -- "$rollback" "$active"; then
+    :
+  else
+    rollback_status=$?
+    exit "$rollback_status"
+  fi
   compose up -d --no-deps --force-recreate postgres
   postgres_health=''
   for attempt in $(seq 1 60); do
@@ -518,8 +599,10 @@ container at `/srv/mixli/data/postgres` during validation.
     pgbackrest --stanza=mixli --repo=2 check
   flock -u 9
   exec 9>&-
-  systemctl start $timer_units
-  timers_stopped=0
+  if ! systemctl start $timer_units; then
+    systemctl stop $timer_units || true
+    exit 1
+  fi
   flock -u 8
   exec 8>&-
   exit 1
