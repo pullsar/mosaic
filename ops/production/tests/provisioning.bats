@@ -56,18 +56,45 @@ run_ip_refresh() {
   [ "$first" = "$second" ]
 }
 
-@test "provisioning keeps postgres configuration private and installs no credentials" {
+@test "provisioning repairs postgres config ownership and installs only the public example" {
   root="$TEST_ROOT/root"
   mkdir -p "$root"
-  run env MIXLI_PROVISION_TEST_MODE=1 MIXLI_PROVISION_ROOT="$root" \
-    "$REPO_ROOT/ops/production/bin/provision-host.sh"
-  [ "$status" -eq 0 ]
 
-  [ "$(stat -c '%a' "$root/etc/mixli/postgres")" = '750' ]
-  [ -f "$root/etc/mixli/postgres/pgbackrest.conf.example" ]
-  [ ! -e "$root/etc/mixli/postgres/pgbackrest.conf" ]
-  [ "$(find "$root/etc/mixli/postgres" -maxdepth 1 -type f \
-    -name 'pgbackrest.conf*' -printf '%f\n')" = 'pgbackrest.conf.example' ]
+  sudo env MIXLI_PROVISION_TEST_MODE=1 MIXLI_PROVISION_ROOT="$root" \
+    "$REPO_ROOT/ops/production/bin/provision-host.sh"
+  sudo chown 12345:12345 "$root/etc/mixli/postgres"
+  sudo chmod 0777 "$root/etc/mixli/postgres"
+
+  run sudo env MIXLI_PROVISION_TEST_MODE=1 MIXLI_PROVISION_ROOT="$root" \
+    "$REPO_ROOT/ops/production/bin/provision-host.sh"
+  provision_status="$status"
+
+  postgres_metadata="$(sudo stat -c '%U:%G:%a' "$root/etc/mixli/postgres")"
+  example_metadata="$(sudo stat -c '%U:%G:%a' \
+    "$root/etc/mixli/postgres/pgbackrest.conf.example")"
+  if sudo cmp -s "$REPO_ROOT/ops/production/postgres/pgbackrest.conf.example" \
+    "$root/etc/mixli/postgres/pgbackrest.conf.example"; then
+    example_matches=1
+  else
+    example_matches=0
+  fi
+  if sudo test -e "$root/etc/mixli/postgres/pgbackrest.conf" || \
+    sudo test -L "$root/etc/mixli/postgres/pgbackrest.conf"; then
+    live_config_present=1
+  else
+    live_config_present=0
+  fi
+  pgbackrest_entries="$(sudo find "$root/etc/mixli/postgres" -maxdepth 1 \
+    -name 'pgbackrest.conf*' -printf '%f %y\n' | sort)"
+
+  sudo chown -R "$(id -u):$(id -g)" "$root"
+
+  [ "$provision_status" -eq 0 ]
+  [ "$postgres_metadata" = 'root:root:750' ]
+  [ "$example_metadata" = 'root:root:640' ]
+  [ "$example_matches" -eq 1 ]
+  [ "$live_config_present" -eq 0 ]
+  [ "$pgbackrest_entries" = 'pgbackrest.conf.example f' ]
 }
 
 @test "forced-command deploy user can traverse the installed command directory" {
