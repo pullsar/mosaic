@@ -83,10 +83,10 @@ export function planImageNormalization(
       source: sourceTraits,
       output: {
         format: 'jpeg',
-        quality: 86,
+        quality: 82,
         dynamicRange: 'sdr',
         colorSpace: 'srgb',
-        maxLongEdge: 1920,
+        maxLongEdge: 1280,
         evenDimensions: true,
         orientation: 'pixels-normalized',
       },
