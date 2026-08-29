@@ -67,10 +67,15 @@ final class IndexedDbConsumerLocalState implements ConsumerLocalState {
     try {
       final value = jsonDecode(encoded);
       if (value is! Map) return null;
-      return ConsumerFeedCache.fromJson(
+      final cache = ConsumerFeedCache.fromJson(
         value.map((key, nested) => MapEntry(key.toString(), nested)),
         capabilities: capabilities,
       );
+      if (cache.isExpiredAt(DateTime.now())) {
+        await clearRecentFeed();
+        return null;
+      }
+      return cache;
     } on Object {
       return null;
     }
