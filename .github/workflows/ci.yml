@@ -1,21 +1,24 @@
-name: m2-feed-format
+name: ci
 
 on:
   push:
-    branches: ['agent/m2-feed-pager-20260829']
+    branches: ['**']
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  format:
+  flutter:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: agent/m2-feed-pager-20260829
       - name: Flutter
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
@@ -23,89 +26,28 @@ jobs:
           cache: true
       - name: Resolve locked workspace
         run: flutter pub get --enforce-lockfile
-      - name: Patch, format, and push product files only
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          feed = Path('apps/mosaic_app/lib/consumer_feed.dart')
-          text = feed.read_text()
-          replacements = [
-              (
-                  '''      _fetching = false;\n      _failure = result.failure;\n\n      if (page != null) {''',
-                  '''      _fetching = false;\n      _failure = result.failure;\n      if (result.cursorReset && page == null) {\n        _nextCursor = null;\n      }\n\n      if (page != null) {''',
-                  'cursor reset',
-              ),
-              (
-                  '''    await _fetchPage(cursor, epoch: _entries.isEmpty ? _loadEpoch : null);''',
-                  '''    await _fetchPage(cursor, epoch: _loadEpoch);''',
-                  'manual retry',
-              ),
-              (
-                  '''  bool _suppressPageCallback = false;''',
-                  '''  int? _suppressedPageCallback;''',
-                  'suppression field',
-              ),
-              (
-                  '''  void _onPageChanged(int index) {\n    if (_suppressPageCallback || index < 0 || index >= _entries.length) return;''',
-                  '''  void _onPageChanged(int index) {\n    if (_suppressedPageCallback == index) {\n      _suppressedPageCallback = null;\n      return;\n    }\n    if (index < 0 || index >= _entries.length) return;''',
-                  'page callback',
-              ),
-              (
-                  '''      _suppressPageCallback = true;\n      _pageController.jumpToPage(bounded);\n      _suppressPageCallback = false;''',
-                  '''      _suppressedPageCallback = bounded;\n      _pageController.jumpToPage(bounded);\n      WidgetsBinding.instance.addPostFrameCallback((_) {\n        if (_suppressedPageCallback == bounded) {\n          _suppressedPageCallback = null;\n        }\n      });''',
-                  'page jump',
-              ),
-              (
-                  '''        final result = callback(context, items);\n        if (result is Future<void>) {\n          unawaited(result.catchError((Object _, StackTrace _) {}));\n        }''',
-                  '''        unawaited(\n          Future<void>.sync(() async {\n            await callback(context, items);\n          }).catchError((Object _, StackTrace _) {}),\n        );''',
-                  'warm callback',
-              ),
-          ]
-          for old, new, label in replacements:
-              if text.count(old) != 1:
-                  raise SystemExit(f'{label} patch anchor mismatch')
-              text = text.replace(old, new)
-          feed.write_text(text)
-
-          feed_test = Path('apps/mosaic_app/test/consumer_feed_test.dart')
-          text = feed_test.read_text()
-          if text.count("'format': 'tap',") != 1:
-              raise SystemExit('test format patch anchor mismatch')
-          text = text.replace("'format': 'tap',", "'format': 'play',")
-          insert_before = "  testWidgets('long paging keeps persisted and warm windows hard-bounded', (\n    tester,\n  ) async {"
-          analytics_test = '''  testWidgets('paging emits canonical context and active-page ownership', (\n    tester,\n  ) async {\n    final state = _MemoryConsumerState();\n    final events = <String>[];\n    final runtime = _runtime(\n      state,\n      (cursor, call) => http.Response(\n        jsonEncode(\n          _page(\n            'request_events',\n            [_item('event_0'), _item('event_1')],\n            null,\n          ),\n        ),\n        200,\n      ),\n    );\n    addTearDown(runtime.close);\n\n    await tester.pumpWidget(\n      _app(\n        runtime,\n        onEvent:\n            (\n              event, {\n              required feedRequestId,\n              required playRevisionId,\n              required payload,\n            }) {\n              events.add('$event:$feedRequestId:$playRevisionId');\n            },\n        itemBuilder:\n            (\n              context,\n              item, {\n              required feedRequestId,\n              required active,\n              required onDirectManipulationChanged,\n            }) => SizedBox.expand(\n              key: ValueKey<String>('active:${item.playId}:$active'),\n              child: Center(child: Text(item.playId)),\n            ),\n      ),\n    );\n    await tester.pumpAndSettle();\n\n    expect(\n      events.take(3),\n      [\n        'play_impression:request_events:revision_event_0',\n        'play_visible:request_events:revision_event_0',\n        'play_started:request_events:revision_event_0',\n      ],\n    );\n    expect(\n      find.byKey(const ValueKey<String>('active:event_0:true')),\n      findsOneWidget,\n    );\n\n    await tester.drag(\n      find.byKey(const ValueKey<String>('consumer-feed-pager')),\n      const Offset(0, -700),\n    );\n    await tester.pumpAndSettle();\n\n    expect(\n      events,\n      containsAllInOrder([\n        'play_dismissed:request_events:revision_event_0',\n        'play_impression:request_events:revision_event_1',\n        'play_visible:request_events:revision_event_1',\n        'play_started:request_events:revision_event_1',\n      ]),\n    );\n    expect(\n      find.byKey(const ValueKey<String>('active:event_1:true')),\n      findsOneWidget,\n    );\n  });\n\n'''
-          if text.count(insert_before) != 1:
-              raise SystemExit('analytics insertion anchor mismatch')
-          feed_test.write_text(text.replace(insert_before, analytics_test + insert_before))
-
-          runtime_test = Path('apps/mosaic_app/test/consumer_runtime_test.dart')
-          text = runtime_test.read_text()
-          old_count = '    expect(local.resume?.windowRevisionIds, hasLength(20));'
-          if text.count(old_count) != 1:
-              raise SystemExit('bounded resume assertion anchor mismatch')
-          text = text.replace(
-              old_count,
-              '''    expect(\n      local.resume?.windowRevisionIds,\n      hasLength(ConsumerRuntime.recentFeedMaxItems),\n    );''',
-          )
-          insert_runtime = "  test('successful feed caches at most the bounded recent window', () async {"
-          runtime_regressions = '''  test('coordinator fetch does not replace the visible recovery window', () async {\n    final now = DateTime.utc(2026, 8, 29, 16);\n    final local = _MemoryConsumerState()\n      ..recent = _cache(now)\n      ..resume = ConsumerFeedResume(\n        requestId: 'feed_runtime',\n        cursor: 'cursor_existing',\n        visibleRevisionId: 'rev_0',\n        visiblePosition: 0,\n        windowRevisionIds: const ['rev_0'],\n        updatedAt: now,\n      );\n    final runtime = ConsumerRuntime(\n      api: _client(\n        MockClient((request) async {\n          if (request.url.path == '/v1/actors') {\n            return http.Response('{}', 201);\n          }\n          return http.Response(\n            jsonEncode(\n              _feed(\n                requestId: 'feed_new',\n                nextCursor: 'cursor_new',\n              ),\n            ),\n            200,\n          );\n        }),\n      ),\n      localState: local,\n      capabilities: PlayCapabilityEnvelope.m1(),\n      clock: () => now,\n    );\n\n    final result = await runtime.fetchFeed(persistPage: false);\n\n    expect(result.page?.requestId, 'feed_new');\n    expect(local.recent?.requestId, 'feed_runtime');\n    expect(local.resume?.requestId, 'feed_runtime');\n    expect(local.resume?.cursor, 'cursor_existing');\n    runtime.close();\n  });\n\n  test('persisted visible position disambiguates reused revision ids', () async {\n    final now = DateTime.utc(2026, 8, 29, 16);\n    final local = _MemoryConsumerState();\n    final first = ConsumerFeedItem.fromJson(\n      <String, Object?>{\n        'playId': 'play_first',\n        'revisionId': 'rev_shared',\n        'sourceBucket': 'known',\n        'document': _play('play_first', 'rev_shared'),\n      },\n      compatibilityChecker: const PlayCompatibilityChecker(),\n      capabilities: PlayCapabilityEnvelope.m1(),\n    );\n    final second = ConsumerFeedItem.fromJson(\n      <String, Object?>{\n        'playId': 'play_second',\n        'revisionId': 'rev_shared',\n        'sourceBucket': 'known',\n        'document': _play('play_second', 'rev_shared'),\n      },\n      compatibilityChecker: const PlayCompatibilityChecker(),\n      capabilities: PlayCapabilityEnvelope.m1(),\n    );\n    final runtime = ConsumerRuntime(\n      localState: local,\n      capabilities: PlayCapabilityEnvelope.m1(),\n      clock: () => now,\n    );\n\n    final persisted = await runtime.persistFeedWindow(\n      requestId: 'feed_shared_revision',\n      cursor: 'cursor_shared',\n      visibleRevisionId: 'rev_shared',\n      visiblePosition: 1,\n      items: [first, second],\n    );\n\n    expect(persisted, isTrue);\n    expect(local.resume?.visiblePosition, 1);\n    expect(local.resume?.visibleRevisionId, 'rev_shared');\n    expect(local.recent?.items[1].playId, 'play_second');\n    runtime.close();\n  });\n\n'''
-          if text.count(insert_runtime) != 1:
-              raise SystemExit('runtime insertion anchor mismatch')
-          runtime_test.write_text(text.replace(insert_runtime, runtime_regressions + insert_runtime))
-          PY
-
-          dart format \
-            apps/mosaic_app/lib/consumer_feed.dart \
-            apps/mosaic_app/lib/main.dart \
-            apps/mosaic_app/test/consumer_feed_test.dart \
-            apps/mosaic_app/test/consumer_runtime_test.dart
-
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add apps/mosaic_app/lib/consumer_feed.dart \
-                  apps/mosaic_app/lib/main.dart \
-                  apps/mosaic_app/test/consumer_feed_test.dart \
-                  apps/mosaic_app/test/consumer_runtime_test.dart
-          git commit -m 'fix(m2): harden feed paging and recovery contracts'
-          git push origin HEAD:agent/m2-feed-pager-20260829
+      - name: Verify formatting
+        run: dart format --output=none --set-exit-if-changed .
+      - name: Analyze
+        run: flutter analyze
+      - name: Test play_schema
+        working-directory: packages/play_schema
+        run: dart test
+      - name: Test play_engine
+        working-directory: packages/play_engine
+        run: dart test
+      - name: Test analytics_contract
+        working-directory: packages/analytics_contract
+        run: dart test
+      - name: Test local_state
+        working-directory: packages/local_state
+        run: dart test
+      - name: Test event_delivery
+        working-directory: packages/event_delivery
+        run: dart test
+      - name: Test play_flutter
+        working-directory: packages/play_flutter
+        run: flutter test
+      - name: Test app shell
+        working-directory: apps/mosaic_app
+        run: flutter test
