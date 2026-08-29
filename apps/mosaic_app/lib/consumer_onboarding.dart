@@ -162,6 +162,7 @@ final class _ConsumerOnboardingState extends State<ConsumerOnboarding>
   }
 
   void _onSearchChanged(String value) {
+    if (mounted) setState(() {});
     _searchTimer?.cancel();
     _searchTimer = Timer(
       widget.topicSearchDebounce,
@@ -726,18 +727,16 @@ final class _OnboardingFooter extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsetsDirectional.fromSTEB(20, 12, 20, 14),
         child: step == _OnboardingStep.interests
-            ? Row(
+            ? OverflowBar(
+                spacing: 12,
+                overflowSpacing: 4,
+                alignment: MainAxisAlignment.spaceBetween,
+                overflowAlignment: OverflowBarAlignment.end,
                 children: <Widget>[
-                  Expanded(
-                    child: Align(
-                      alignment: AlignmentDirectional.centerStart,
-                      child: TextButton(
-                        onPressed: busy ? null : onSurprise,
-                        child: Text(strings.surpriseMe),
-                      ),
-                    ),
+                  TextButton(
+                    onPressed: busy ? null : onSurprise,
+                    child: Text(strings.surpriseMe),
                   ),
-                  const SizedBox(width: 12),
                   FilledButton(
                     key: const ValueKey<String>('interests-continue'),
                     onPressed: busy ? null : onContinueInterests,
@@ -746,20 +745,28 @@ final class _OnboardingFooter extends StatelessWidget {
                   ),
                 ],
               )
-            : Row(
+            : OverflowBar(
+                spacing: 12,
+                overflowSpacing: 4,
+                alignment: MainAxisAlignment.spaceBetween,
+                overflowAlignment: OverflowBarAlignment.end,
                 children: <Widget>[
-                  IconButton(
-                    key: const ValueKey<String>('learning-back'),
-                    tooltip: strings.back,
-                    onPressed: busy ? null : onBack,
-                    icon: const BackButtonIcon(),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      IconButton(
+                        key: const ValueKey<String>('learning-back'),
+                        tooltip: strings.back,
+                        onPressed: busy ? null : onBack,
+                        icon: const BackButtonIcon(),
+                      ),
+                      const SizedBox(width: 4),
+                      TextButton(
+                        onPressed: busy ? null : onSkipLearning,
+                        child: Text(strings.skip),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 4),
-                  TextButton(
-                    onPressed: busy ? null : onSkipLearning,
-                    child: Text(strings.skip),
-                  ),
-                  const Spacer(),
                   FilledButton(
                     key: const ValueKey<String>('learning-continue'),
                     onPressed: busy ? null : onFinish,
