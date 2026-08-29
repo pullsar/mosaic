@@ -13,6 +13,9 @@ const _metadataStore = 'metadata';
 const _actorIdKey = 'actor_id';
 const _actorAccessTokenKey = 'actor_access_token';
 const _boundUserIdKey = 'bound_user_id';
+const _consumerMetadataPrefix = 'consumer.';
+const _maxConsumerMetadataBytes = 256 * 1024;
+final RegExp _consumerMetadataKeyPattern = RegExp(r'^[a-z0-9][a-z0-9_.-]{0,79}\$');
 const _databaseVersion = 1;
 
 /// Browser-persistent event outbox and actor identity backed by IndexedDB.
@@ -135,6 +138,36 @@ final class IndexedDbEventStore implements EventOutbox, ActorIdentityStore {
 
   Future<String?> boundUserId() => _readMetadata(_boundUserIdKey);
 
+  Future<String?> readConsumerMetadata(String key) async {
+    final storageKey = _consumerMetadataKey(key);
+    await _writeTail;
+    _ensureOpen();
+    return _readMetadata(storageKey);
+  }
+
+  Future<void> writeConsumerMetadata(String key, String value) {
+    final storageKey = _consumerMetadataKey(key);
+    if (utf8.encode(value).length > _maxConsumerMetadataBytes) {
+      throw ArgumentError.value(
+        value.length,
+        'value',
+        'consumer metadata must be at most $_maxConsumerMetadataBytes UTF-8 bytes',
+      );
+    }
+    return _serializeWrite(() async {
+      _ensureOpen();
+      await _writeMetadata(storageKey, value);
+    });
+  }
+
+  Future<void> deleteConsumerMetadata(String key) {
+    final storageKey = _consumerMetadataKey(key);
+    return _serializeWrite(() async {
+      _ensureOpen();
+      await _deleteMetadata(storageKey);
+    });
+  }
+
   @override
   Future<void> enqueue(
     MosaicEventEnvelope event, {
@@ -249,6 +282,13 @@ final class IndexedDbEventStore implements EventOutbox, ActorIdentityStore {
     await completion;
   }
 
+  Future<void> _deleteMetadata(String key) async {
+    final transaction = _database.transaction(_metadataStore.toJS, 'readwrite');
+    final completion = _transactionCompletion(transaction);
+    transaction.objectStore(_metadataStore).delete(key.toJS);
+    await completion;
+  }
+
   Future<void> _writeActorAccess(ActorAccessIdentity actorAccess) async {
     final transaction = _database.transaction(_metadataStore.toJS, 'readwrite');
     final completion = _transactionCompletion(transaction);
@@ -348,6 +388,18 @@ final class IndexedDbEventStore implements EventOutbox, ActorIdentityStore {
   void _ensureOpen() {
     if (_closed) throw StateError('IndexedDB event store is closed.');
   }
+}
+
+String _consumerMetadataKey(String key) {
+  final normalized = key.trim();
+  if (!_consumerMetadataKeyPattern.hasMatch(normalized)) {
+    throw ArgumentError.value(
+      key,
+      'key',
+      'must be 1 to 80 lowercase consumer-key characters',
+    );
+  }
+  return '$_consumerMetadataPrefix$normalized';
 }
 
 final class _WebEventRecord {
