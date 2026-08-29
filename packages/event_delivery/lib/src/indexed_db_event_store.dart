@@ -255,6 +255,10 @@ final class IndexedDbEventStore implements EventOutbox, ActorIdentityStore {
     final metadata = transaction.objectStore(_metadataStore);
     metadata.put(actorAccess.actorId.toJS, _actorIdKey.toJS);
     metadata.put(actorAccess.accessToken.toJS, _actorAccessTokenKey.toJS);
+    // A rotated anonymous actor must never inherit a local account binding from
+    // the previous actor. Keep identity replacement and binding invalidation in
+    // one transaction so a crash cannot expose a mixed identity state.
+    metadata.delete(_boundUserIdKey.toJS);
     await completion;
   }
 
@@ -505,16 +509,6 @@ StateError _requestFailure(String operation, web.DOMException? error) {
   return StateError('IndexedDB $operation failed ($name).');
 }
 
-bool _isValidActorAccessToken(String? value) {
-  if (value == null) return false;
-  try {
-    requireActorAccessToken(value);
-    return true;
-  } on ArgumentError {
-    return false;
-  }
-}
-
 void _validatePolicy(EventOutboxPolicy policy) {
   if (policy.maxCount <= 0) {
     throw ArgumentError.value(
@@ -545,3 +539,6 @@ void _validatePolicy(EventOutboxPolicy policy) {
     );
   }
 }
+
+bool _isValidActorAccessToken(String? value) =>
+    value != null && RegExp(r'^[A-Za-z0-9_-]{43}$').hasMatch(value);
