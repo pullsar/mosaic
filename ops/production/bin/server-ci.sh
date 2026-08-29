@@ -135,6 +135,9 @@ isolated_nginx_contract() {
   chmod -R a=rX "$nginx_verify_root"
   docker run --rm --network none --read-only --user 101:101 \
     --cap-drop ALL --security-opt no-new-privileges \
+    --add-host api-blue-1:127.0.0.1 \
+    --add-host api-blue-2:127.0.0.1 \
+    --add-host grafana:127.0.0.1 \
     --tmpfs /var/cache/nginx --tmpfs /var/run --tmpfs /tmp \
     -v "$nginx_verify_root/config:/etc/nginx/mixli:ro" \
     -v "$nginx_verify_root/runtime:/etc/nginx/runtime:ro" \
