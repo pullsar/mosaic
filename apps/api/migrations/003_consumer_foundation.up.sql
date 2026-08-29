@@ -58,8 +58,8 @@ create table if not exists feed_decisions (
 create index if not exists feed_decisions_actor_created_idx
   on feed_decisions(actor_id, created_at desc, request_id);
 
-create index if not exists feed_decisions_actor_expiry_idx
-  on feed_decisions(actor_id, expires_at);
+create index if not exists feed_decisions_expiry_idx
+  on feed_decisions(expires_at, request_id);
 
 create table if not exists feed_decision_items (
   request_id text not null references feed_decisions(request_id) on delete cascade,
