@@ -114,7 +114,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   app.post('/v1/actors/:actorId/bind-user', async (request, reply) => {
     const params = request.params as {actorId?: string};
     const actorId = boundedText(params.actorId, 200);
-    if (actorId === null || !isRecord(request.body) || typeof request.body.userId !== 'string') {
+    if (actorId === null) {
       return reply.code(400).send({error: 'invalid_binding'});
     }
     if (!(await requireActorAccess(options.repository, request, reply, actorId))) return;
