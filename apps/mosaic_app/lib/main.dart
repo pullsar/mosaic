@@ -10,6 +10,7 @@ import 'package:play_schema/play_schema.dart';
 
 import 'app_event_runtime.dart';
 import 'asset_delivery_client.dart';
+import 'asset_delivery_warm.dart';
 import 'consumer_api_client.dart';
 import 'consumer_feed.dart';
 import 'consumer_onboarding.dart';
@@ -21,8 +22,6 @@ const _apiBaseUrl = String.fromEnvironment('MOSAIC_API_BASE_URL');
 const _allowInsecureLocalApi = bool.fromEnvironment(
   'MOSAIC_ALLOW_INSECURE_LOCAL_API',
 );
-const _maxWarmMetadataAssets = 12;
-const _maxWarmMetadataConcurrent = 3;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -57,6 +56,7 @@ final class _MosaicAppState extends State<MosaicApp> {
   final SoLoudAudioEngine _audioEngine = SoLoudAudioEngine();
   late final AppEventRuntime _eventRuntime;
   late final AssetDeliveryClient? _assetDelivery;
+  late final AssetMetadataWarmController? _metadataWarmer;
   late final ConsumerRuntime _consumerRuntime;
   late final CachingPlayVisualAssetResolver _visualResolver;
   late final PlayVideoAssetResolver _videoResolver;
@@ -66,7 +66,6 @@ final class _MosaicAppState extends State<MosaicApp> {
   late final PlayVisualPrefetchController _visualPrefetch;
   late final FlutterLifecycleBridge _lifecycle;
   var _semanticResumeEpoch = 0;
-  var _warmGeneration = 0;
 
   @override
   void initState() {
@@ -94,6 +93,16 @@ final class _MosaicAppState extends State<MosaicApp> {
     _canvasResolver = assetDelivery == null
         ? MapPlayCanvasAssetResolver(const {})
         : ManagedCanvasAssetResolver(assetDelivery);
+    _metadataWarmer = assetDelivery == null
+        ? null
+        : AssetMetadataWarmController(
+            client: assetDelivery,
+            onError: (assetId, error, stackTrace) => _reportEventRuntimeError(
+              error,
+              stackTrace,
+              operation: 'feed_asset_warm:$assetId',
+            ),
+          );
 
     _consumerRuntime = ConsumerRuntime(
       api: _createConsumerApi(_eventRuntime),
@@ -225,95 +234,16 @@ final class _MosaicAppState extends State<MosaicApp> {
     BuildContext context,
     List<ConsumerFeedItem> items,
   ) async {
-    final generation = ++_warmGeneration;
-    final visualIds = <String>{};
-    final metadataTargets = <_WarmAssetTarget>[];
-    final seenMetadata = <String>{};
-
-    for (final item in items) {
-      for (final state in item.play.states.values) {
-        for (final layer in state.presentation) {
-          final assetId = layer.assetId?.trim();
-          if (assetId == null || assetId.isEmpty) continue;
-          switch (layer.type) {
-            case 'image':
-              visualIds.add(assetId);
-              _addWarmTarget(
-                metadataTargets,
-                seenMetadata,
-                _WarmAssetTarget(assetId, canvas: false),
-              );
-            case 'video_clip' || 'audio':
-              _addWarmTarget(
-                metadataTargets,
-                seenMetadata,
-                _WarmAssetTarget(assetId, canvas: false),
-              );
-            case 'canvas':
-              _addWarmTarget(
-                metadataTargets,
-                seenMetadata,
-                _WarmAssetTarget(assetId, canvas: true),
-              );
-          }
-        }
-      }
-    }
-
+    final plan = buildAssetWarmPlan(items.map((item) => item.play));
+    final metadataWarm = _metadataWarmer?.warm(plan) ?? Future<void>.value();
     await Future.wait<void>([
-      _visualPrefetch.prefetch(context, visualIds).then((_) {}),
-      _warmMetadata(metadataTargets, generation),
-    ]);
-  }
-
-  void _addWarmTarget(
-    List<_WarmAssetTarget> targets,
-    Set<String> seen,
-    _WarmAssetTarget target,
-  ) {
-    if (targets.length >= _maxWarmMetadataAssets) return;
-    final key = '${target.canvas ? 'canvas' : 'binary'}:${target.assetId}';
-    if (seen.add(key)) targets.add(target);
-  }
-
-  Future<void> _warmMetadata(
-    List<_WarmAssetTarget> targets,
-    int generation,
-  ) async {
-    final client = _assetDelivery;
-    if (client == null || targets.isEmpty) return;
-    var nextIndex = 0;
-
-    Future<void> worker() async {
-      while (generation == _warmGeneration && nextIndex < targets.length) {
-        final target = targets[nextIndex++];
-        try {
-          if (target.canvas) {
-            await client.resolveCanvas(target.assetId);
-          } else if (client.supportsBinaryNetworkAssets) {
-            await client.describe(target.assetId);
-          }
-        } on Object catch (error, stackTrace) {
-          if (generation != _warmGeneration) return;
-          _reportEventRuntimeError(
-            error,
-            stackTrace,
-            operation: 'feed_asset_warm:${target.assetId}',
-          );
-        }
-      }
-    }
-
-    final workers = targets.length < _maxWarmMetadataConcurrent
-        ? targets.length
-        : _maxWarmMetadataConcurrent;
-    await Future.wait<void>([
-      for (var index = 0; index < workers; index += 1) worker(),
+      _visualPrefetch.prefetch(context, plan.visualAssetIds).then((_) {}),
+      metadataWarm,
     ]);
   }
 
   void _cancelWarmWindow() {
-    _warmGeneration += 1;
+    _metadataWarmer?.cancel();
     _visualPrefetch.cancel();
   }
 
@@ -445,13 +375,6 @@ void _reportEventRuntimeError(
       ),
     ),
   );
-}
-
-final class _WarmAssetTarget {
-  const _WarmAssetTarget(this.assetId, {required this.canvas});
-
-  final String assetId;
-  final bool canvas;
 }
 
 final class _ReservedSettingsPage extends StatelessWidget {
