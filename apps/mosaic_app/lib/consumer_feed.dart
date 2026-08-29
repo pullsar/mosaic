@@ -79,6 +79,22 @@ final class _FeedEntry {
   String get analyticsIdentity => '$requestId\u0000$identity';
 }
 
+final class _FeedPersistenceSnapshot {
+  const _FeedPersistenceSnapshot({
+    required this.requestId,
+    required this.cursor,
+    required this.visibleRevisionId,
+    required this.visiblePosition,
+    required this.items,
+  });
+
+  final String requestId;
+  final String? cursor;
+  final String visibleRevisionId;
+  final int visiblePosition;
+  final List<ConsumerFeedItem> items;
+}
+
 final class _ConsumerFeedState extends State<ConsumerFeed> {
   static const int _analyticsHistoryWindows = 4;
 
@@ -86,7 +102,8 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
   final List<_FeedEntry> _entries = <_FeedEntry>[];
   final LinkedHashSet<String> _impressed = LinkedHashSet<String>();
   final LinkedHashSet<String> _started = LinkedHashSet<String>();
-  Future<void> _persistTail = Future<void>.value();
+  _FeedPersistenceSnapshot? _pendingPersistence;
+  bool _persisting = false;
 
   int _currentIndex = 0;
   int _loadEpoch = 0;
@@ -369,18 +386,40 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
     final cursor = visible.requestId == _activeDecisionRequestId
         ? _nextCursor
         : null;
-    final items = decisionEntries
-        .map((entry) => entry.item)
-        .toList(growable: false);
-    _persistTail = _persistTail.then((_) async {
-      await widget.runtime.persistFeedWindow(
-        requestId: visible.requestId,
-        cursor: cursor,
-        visibleRevisionId: visible.item.revisionId,
-        visiblePosition: visiblePosition,
-        items: items,
-      );
-    });
+    _pendingPersistence = _FeedPersistenceSnapshot(
+      requestId: visible.requestId,
+      cursor: cursor,
+      visibleRevisionId: visible.item.revisionId,
+      visiblePosition: visiblePosition,
+      items: List<ConsumerFeedItem>.unmodifiable(
+        decisionEntries.map((entry) => entry.item),
+      ),
+    );
+    if (!_persisting) unawaited(_drainPersistence());
+  }
+
+  Future<void> _drainPersistence() async {
+    if (_persisting) return;
+    _persisting = true;
+    try {
+      while (true) {
+        final snapshot = _pendingPersistence;
+        if (snapshot == null) return;
+        _pendingPersistence = null;
+        await widget.runtime.persistFeedWindow(
+          requestId: snapshot.requestId,
+          cursor: snapshot.cursor,
+          visibleRevisionId: snapshot.visibleRevisionId,
+          visiblePosition: snapshot.visiblePosition,
+          items: snapshot.items,
+        );
+      }
+    } finally {
+      _persisting = false;
+      if (_pendingPersistence != null) {
+        unawaited(_drainPersistence());
+      }
+    }
   }
 
   void _emitInitialVisibleAfterBuild() {

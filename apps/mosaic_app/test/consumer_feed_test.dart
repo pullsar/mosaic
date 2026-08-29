@@ -21,6 +21,8 @@ final _actorAccess = ActorAccessIdentity(
 final class _MemoryConsumerState implements ConsumerLocalState {
   ConsumerFeedResume? resume;
   ConsumerFeedCache? cache;
+  Completer<void>? resumeWriteGate;
+  int resumeWriteCalls = 0;
   int maxPersistedItems = 0;
 
   @override
@@ -40,6 +42,9 @@ final class _MemoryConsumerState implements ConsumerLocalState {
 
   @override
   Future<void> writeFeedResume(ConsumerFeedResume state) async {
+    resumeWriteCalls += 1;
+    final gate = resumeWriteGate;
+    if (gate != null && !gate.isCompleted) await gate.future;
     resume = state;
   }
 
@@ -394,6 +399,47 @@ void main() {
       find.byKey(const ValueKey<String>('active:event_1:true')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('rapid swipes coalesce persistence behind one active write', (
+    tester,
+  ) async {
+    final state = _MemoryConsumerState()..resumeWriteGate = Completer<void>();
+    final runtime = _runtime(
+      state,
+      (cursor, call) => http.Response(
+        jsonEncode(
+          _page(
+            'request_persist',
+            List.generate(6, (index) => _item('persist_$index')),
+            null,
+          ),
+        ),
+        200,
+      ),
+    );
+    addTearDown(runtime.close);
+
+    await tester.pumpWidget(_app(runtime));
+    await tester.pumpAndSettle();
+    expect(state.resumeWriteCalls, 1);
+
+    for (var index = 0; index < 4; index += 1) {
+      await tester.drag(
+        find.byKey(const ValueKey<String>('consumer-feed-pager')),
+        const Offset(0, -700),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    expect(state.resumeWriteCalls, 1);
+    state.resumeWriteGate!.complete();
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(state.resumeWriteCalls, 2);
+    expect(state.resume?.visiblePosition, 4);
+    expect(state.resume?.visibleRevisionId, 'revision_persist_4');
   });
 
   testWidgets('long paging keeps persisted and warm windows hard-bounded', (
