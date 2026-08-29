@@ -198,6 +198,12 @@ run_ip_refresh() {
   [ -x "$root/opt/mixli/bin/review-ci.sh" ]
   [ "$(stat -c '%u:%g:%a' "$root/etc/mixli/github")" = '0:0:750' ]
   [ "$(stat -c '%u:%g:%a' "$root/srv/mixli/state/reviews")" = '0:0:750' ]
+  grep -Fq 'ensure_account mixli-review-build' \
+    "$REPO_ROOT/ops/production/bin/provision-host.sh"
+  grep -Fq 'mixli-review-build /etc/subuid --add-subuids' \
+    "$REPO_ROOT/ops/production/bin/provision-host.sh"
+  grep -Fq 'mixli-review-build /etc/subgid --add-subgids' \
+    "$REPO_ROOT/ops/production/bin/provision-host.sh"
 }
 
 @test "review sudo rule grants only the fixed request entrypoint" {

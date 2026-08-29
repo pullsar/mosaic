@@ -23,15 +23,24 @@ setup() { setup_repo_root; }
   ! grep -Fq '+refs/pull/*' "$script"
 }
 
-@test "checkout-controlled host validators run as the locked build account" {
+@test "checkout-controlled host validators run as the lane-specific locked build account" {
   script="$REPO_ROOT/ops/production/bin/server-ci.sh"
   runner="$(sed -n '/^builder_exec()/,/^}/p' "$script")"
-  [[ "$runner" == *'runuser -u mixli-build --'* ]]
+  [[ "$runner" == *'runuser -u "$BUILDER_USER" --'* ]]
+  grep -Fq 'MIXLI_CI_BUILDER_USER:-mixli-build' "$script"
+  grep -Fq 'ENGINE_MODE" == review && "$BUILDER_USER" != mixli-review-build' "$script"
   for command in bats shellcheck systemd-analyze find grep; do
     grep -Eq "builder_exec .*${command}|builder_exec[[:space:]]+${command}" "$script"
   done
   ! grep -Eq 'usermod.*mixli-build.*docker|mixli-build.*NOPASSWD' \
     "$REPO_ROOT/ops/production/bin/provision-host.sh"
+}
+
+@test "review execution identity cannot mutate the trusted Git mirror" {
+  [ "${MIXLI_CI_ENGINE_MODE:-release}" = review ] || skip
+  [ "${MIXLI_CI_BUILDER_USER:-}" = mixli-review-build ]
+  run test -w /srv/mixli/repository/.git/config
+  [ "$status" -ne 0 ]
 }
 
 @test "build account has no production Docker secret or data authority" {

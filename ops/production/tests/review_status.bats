@@ -47,5 +47,7 @@ setup() {
 @test "API failures use bounded retries and fail nonzero" {
   grep -Fq 'for attempt in 1 2 3 4 5' "$STATUS"
   grep -Fq 'sleep "$attempt"' "$STATUS"
+  [ "$(grep -Fc -- '--connect-timeout 10' "$STATUS")" -eq 2 ]
+  [ "$(grep -Fc -- '--max-time 30' "$STATUS")" -eq 2 ]
   grep -Fq 'return 75' "$STATUS"
 }

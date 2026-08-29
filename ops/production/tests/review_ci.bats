@@ -12,6 +12,7 @@ setup() {
 
 @test "review wrapper selects only review engine mode" {
   grep -Fq 'MIXLI_CI_ENGINE_MODE=review' "$REVIEW"
+  grep -Fq 'MIXLI_CI_BUILDER_USER=mixli-review-build' "$REVIEW"
   grep -Fq '/opt/mixli/bin/server-ci.sh "$checkout" "$SHA"' "$REVIEW"
   ! grep -Eq 'deployment|promote|MIXLI_CI_RETAIN_RELEASE_IMAGES=1' "$REVIEW"
 }
@@ -35,11 +36,19 @@ setup() {
 @test "review cleanup removes daemon checkout and fetched ref at their owning boundaries" {
   cleanup="$(sed -n '/^cleanup()/,/^}/p' "$SERVER")"
   [[ "$cleanup" == *'stop_rootless_docker'* ]]
-  grep -Fq 'worktree remove --force "$checkout"' "$REVIEW"
+  grep -Fq 'rm -rf -- "$checkout"' "$REVIEW"
   grep -Fq '"$(<"$state/latest-sha")" == "$SHA"' "$REVIEW"
   grep -Fq 'update-ref -d "refs/mixli/reviews/$PR"' "$REVIEW"
   grep -Fq 'cleanup failure' "$REVIEW"
   ! grep -Fq 'stop_rootless_docker' "$REVIEW"
+}
+
+@test "review source runs from an isolated clone outside the trusted mirror owner" {
+  grep -Fq 'clone --no-local --no-hardlinks --no-checkout' "$REVIEW"
+  grep -Fq 'chown -R mixli-review-build:mixli-review-build "$checkout"' "$REVIEW"
+  grep -Fq 'remote remove origin' "$REVIEW"
+  ! grep -Fq 'worktree add' "$REVIEW"
+  grep -Fq 'review-builds/review-$PR-$SHA' "$REVIEW"
 }
 
 @test "review lifecycle distinguishes success failure cancellation and timeout" {
