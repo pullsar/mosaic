@@ -151,6 +151,7 @@ configure_host() {
   install -d -o root -g root -m 0711 /srv/mixli-review
   install -d -o root -g root -m 0555 /srv/mixli-review/home
   install -d -o root -g root -m 0711 /srv/mixli-review/builds
+  install -d -o root -g root -m 0711 /srv/mixli-review/runtime
   install -d -o mixli-build -g mixli-build -m 0750 /srv/mixli/repository
   chown -R mixli-build:mixli-build /srv/mixli/builds /srv/mixli/repository
   chown -R 999:999 /srv/mixli/data/postgres /srv/mixli/backups/pgbackrest

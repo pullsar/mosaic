@@ -16,6 +16,7 @@ readonly API_TEST_IMAGE="mixli-api-test:$SHA"
 readonly PROMETHEUS_IMAGE="${MIXLI_PROMETHEUS_CI_IMAGE:-prom/prometheus:v3.5.5}"
 readonly ALERTMANAGER_IMAGE="${MIXLI_ALERTMANAGER_CI_IMAGE:-prom/alertmanager:v0.32.1}"
 readonly ROOTLESS_STORAGE_PARENT="${MIXLI_ROOTLESS_STORAGE_PARENT:-/srv/mixli/builds}"
+readonly ROOTLESS_RUNTIME_PARENT="${MIXLI_ROOTLESS_RUNTIME_PARENT:-/run}"
 readonly ROOTLESS_HOST_BATS=(
   "$CHECKOUT/ops/production/tests/api_image.bats"
   "$CHECKOUT/ops/production/tests/ci_request.bats"
@@ -75,6 +76,7 @@ rootless_builder_exec() {
     XDG_RUNTIME_DIR="$rootless_runtime" \
     DOCKER_HOST="unix://$rootless_runtime/docker.sock" \
     MIXLI_ROOTLESS_DATA="$rootless_data" \
+    MIXLI_ROOTLESS_RUNTIME_PARENT="$ROOTLESS_RUNTIME_PARENT" \
     MIXLI_CI_BUILDER_USER="$BUILDER_USER" \
     MIXLI_CI_ENGINE_MODE="$ENGINE_MODE" \
     "$@"
@@ -113,7 +115,7 @@ load_rootless_candidate_images() {
 start_rootless_docker() {
   local attempt
   rootless_root="$(mktemp -d "$ROOTLESS_STORAGE_PARENT/.rootless-ci-$SHORT_SHA.XXXXXX")"
-  rootless_runtime="$(mktemp -d "/run/mixli-rootless-ci.$SHORT_SHA.XXXXXX")"
+  rootless_runtime="$(mktemp -d "$ROOTLESS_RUNTIME_PARENT/mixli-rootless-ci.$SHORT_SHA.XXXXXX")"
   rootless_data="$rootless_root/data"
   rootless_home="$rootless_root/home"
   install -d -o "$BUILDER_USER" -g "$BUILDER_USER" -m 0700 \
@@ -162,7 +164,8 @@ stop_rootless_docker() {
     wait "$rootless_launcher_pid" 2>/dev/null || true
   fi
   if [[ "$rootless_root" == "$ROOTLESS_STORAGE_PARENT"/.rootless-ci-* && -d "$rootless_root" &&
-    "$rootless_runtime" == /run/mixli-rootless-ci.* && -d "$rootless_runtime" ]]; then
+    "$rootless_runtime" == "$ROOTLESS_RUNTIME_PARENT"/mixli-rootless-ci.* &&
+    -d "$rootless_runtime" ]]; then
     rm -rf -- "$rootless_root" "$rootless_runtime" || status=$?
   elif [[ -n "$rootless_root" || -n "$rootless_runtime" ]]; then
     status=1
@@ -254,6 +257,8 @@ validate_inputs() {
   fi
   if [[ "$TEST_MODE" != '1' ]]; then
     id "$BUILDER_USER" >/dev/null 2>&1 || die_usage
+    [[ "$ROOTLESS_RUNTIME_PARENT" == /* && "$ROOTLESS_RUNTIME_PARENT" != '/' &&
+      -d "$ROOTLESS_RUNTIME_PARENT" ]] || die_usage
   fi
   [[ "$RETAIN_RELEASE_IMAGES_REQUESTED" == '0' ||
     "$RETAIN_RELEASE_IMAGES_REQUESTED" == '1' ]] || die_usage

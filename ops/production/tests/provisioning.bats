@@ -208,6 +208,8 @@ run_ip_refresh() {
     "$REPO_ROOT/ops/production/bin/provision-host.sh"
   grep -Fq 'install -d -o root -g root -m 0711 /srv/mixli-review/builds' \
     "$REPO_ROOT/ops/production/bin/provision-host.sh"
+  grep -Fq 'install -d -o root -g root -m 0711 /srv/mixli-review/runtime' \
+    "$REPO_ROOT/ops/production/bin/provision-host.sh"
 }
 
 @test "review sudo rule grants only the fixed request entrypoint" {

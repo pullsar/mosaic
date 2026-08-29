@@ -59,7 +59,8 @@ main() {
   trap on_term TERM INT
   trap 'cleanup $?' EXIT
   /opt/mixli/bin/review-status.sh update "$PR" "$SHA" in_progress
-  install -d -o root -g root -m 0711 "$REVIEW_ROOT" "$REVIEW_ROOT/builds"
+  install -d -o root -g root -m 0711 \
+    "$REVIEW_ROOT" "$REVIEW_ROOT/builds" "$REVIEW_ROOT/runtime"
   install -d -o mixli-build -g mixli-build -m 0700 "$checkout"
   trusted_git clone --no-local --no-hardlinks --no-checkout \
     "$REPO" "$checkout"
@@ -71,7 +72,9 @@ main() {
   set +e
   timeout --signal=TERM --kill-after=30s 44m \
     env MIXLI_CI_ENGINE_MODE=review MIXLI_CI_BUILDER_USER=mixli-review-build \
-      MIXLI_ROOTLESS_STORAGE_PARENT="$REVIEW_ROOT/builds" MIXLI_CI_RETAIN_RELEASE_IMAGES=0 \
+      MIXLI_ROOTLESS_STORAGE_PARENT="$REVIEW_ROOT/builds" \
+      MIXLI_ROOTLESS_RUNTIME_PARENT="$REVIEW_ROOT/runtime" \
+      MIXLI_CI_RETAIN_RELEASE_IMAGES=0 \
       /opt/mixli/bin/server-ci.sh "$checkout" "$SHA"
   result=$?
   set -e

@@ -61,7 +61,9 @@ setup() { setup_repo_root; }
 }
 
 @test "checkout Docker tests use only the private rootless daemon" {
-  [[ "${DOCKER_HOST:-}" == unix:///run/mixli-rootless-ci.*/*docker.sock ]]
+  [[ "${MIXLI_ROOTLESS_RUNTIME_PARENT:-}" == /run || \
+    "${MIXLI_ROOTLESS_RUNTIME_PARENT:-}" == /srv/mixli-review/runtime ]]
+  [[ "${DOCKER_HOST:-}" == unix://"${MIXLI_ROOTLESS_RUNTIME_PARENT}"/mixli-rootless-ci.*/*docker.sock ]]
   [[ "$DOCKER_HOST" != 'unix:///var/run/docker.sock' ]]
   run docker info --format '{{json .SecurityOptions}}'
   [ "$status" -eq 0 ]

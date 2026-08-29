@@ -13,6 +13,7 @@ setup() {
 @test "review wrapper selects only review engine mode" {
   grep -Fq 'MIXLI_CI_ENGINE_MODE=review' "$REVIEW"
   grep -Fq 'MIXLI_CI_BUILDER_USER=mixli-review-build' "$REVIEW"
+  grep -Fq 'MIXLI_ROOTLESS_RUNTIME_PARENT="$REVIEW_ROOT/runtime"' "$REVIEW"
   grep -Fq '/opt/mixli/bin/server-ci.sh "$checkout" "$SHA"' "$REVIEW"
   ! grep -Eq 'deployment|promote|MIXLI_CI_RETAIN_RELEASE_IMAGES=1' "$REVIEW"
 }
