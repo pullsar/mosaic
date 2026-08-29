@@ -152,7 +152,10 @@ final class MosaicEventTelemetry implements Telemetry {
       final callback = onQueued;
       if (callback != null) {
         unawaited(
-          Future<void>.sync(callback).catchError((Object error, StackTrace stackTrace) {
+          Future<void>.sync(callback).catchError((
+            Object error,
+            StackTrace stackTrace,
+          ) {
             _reportInternal(error, stackTrace, operation: 'event_drain');
           }),
         );
