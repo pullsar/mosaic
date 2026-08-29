@@ -262,6 +262,33 @@ test('PostgreSQL media lifecycle is immutable, leased and stale-worker safe', {s
 
 test('actor access, consumer and media migrations roll back in order and cleanly reapply', {skip: !databaseUrl}, async () => {
   await runMigration('up');
+
+  await runMigration('down');
+  const imagePurposeDownPool = new Pool({connectionString: databaseUrl});
+  try {
+    const afterImagePurposeDown = await imagePurposeDownPool.query<{
+      actor_access_credentials: string | null;
+      purpose_check: string | null;
+    }>(
+      `select to_regclass('public.actor_access_credentials')::text as actor_access_credentials,
+              (
+                select pg_get_constraintdef(oid)
+                from pg_constraint
+                where conname = 'media_derivatives_purpose_check'
+              ) as purpose_check`,
+    );
+    assert.equal(
+      afterImagePurposeDown.rows[0]?.actor_access_credentials,
+      'actor_access_credentials',
+    );
+    const purposeCheck = afterImagePurposeDown.rows[0]?.purpose_check;
+    assert.ok(purposeCheck);
+    assert.equal(purposeCheck.includes("'image'"), false);
+    assert.equal(purposeCheck.includes("'playback'"), true);
+  } finally {
+    await imagePurposeDownPool.end();
+  }
+
   await runMigration('down');
   const actorAccessDownPool = new Pool({connectionString: databaseUrl});
   try {
