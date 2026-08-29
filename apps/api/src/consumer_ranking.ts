@@ -76,7 +76,8 @@ export function rankFeedCandidates(
   for (const candidate of candidates) {
     validateCandidate(candidate);
     const key = candidateKey(candidate);
-    if (!seenKeys.add(key)) throw new Error(`Duplicate feed candidate: ${key}`);
+    if (seenKeys.has(key)) throw new Error(`Duplicate feed candidate: ${key}`);
+    seenKeys.add(key);
     if (
       hasOverlap(candidate.topicIds, normalized.mutedTopicIds) ||
       hasOverlap(candidate.learningTopicIds, normalized.mutedTopicIds)
@@ -117,11 +118,15 @@ export function rankFeedCandidates(
       qualityPrior: candidate.qualityPrior * config.weights.qualityPrior,
       explorationBonus: exploration * config.weights.explorationBonus,
       moreLikeThisAffinity: moreLike * config.weights.moreLikeThisAffinity,
-      recentSeenPenalty: -recentSeen * config.weights.recentSeenPenalty,
-      repeatedTopicDismissalPenalty:
-        -topicDismissal * config.weights.repeatedTopicDismissalPenalty,
-      repeatedFormatDismissalPenalty:
-        -formatDismissal * config.weights.repeatedFormatDismissalPenalty,
+      recentSeenPenalty: negativeContribution(recentSeen, config.weights.recentSeenPenalty),
+      repeatedTopicDismissalPenalty: negativeContribution(
+        topicDismissal,
+        config.weights.repeatedTopicDismissalPenalty,
+      ),
+      repeatedFormatDismissalPenalty: negativeContribution(
+        formatDismissal,
+        config.weights.repeatedFormatDismissalPenalty,
+      ),
     });
     const score = Object.values(featureContributions).reduce(
       (sum, value) => sum + value,
@@ -156,6 +161,10 @@ function dismissalStrength(values: readonly number[]): number {
   const count = Math.max(0, ...values.map(normalizeCount));
   if (count <= 1) return 0;
   return Math.min(1, (count - 1) / 3);
+}
+
+function negativeContribution(strength: number, weight: number): number {
+  return strength === 0 || weight === 0 ? 0 : -(strength * weight);
 }
 
 function normalizeCount(value: number): number {
