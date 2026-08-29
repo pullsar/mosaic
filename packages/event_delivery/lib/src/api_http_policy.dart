@@ -58,9 +58,7 @@ final class ApiHttpPolicy {
               actorAccess.accessToken,
               json: true,
             ),
-            body: jsonEncode(<String, Object?>{
-              'actorId': actorAccess.actorId,
-            }),
+            body: jsonEncode(<String, Object?>{'actorId': actorAccess.actorId}),
           )
           .timeout(requestTimeout);
       final statusCode = response.statusCode;
@@ -100,10 +98,7 @@ bool isRetryableHttpStatus(int statusCode) =>
     statusCode == 429 ||
     statusCode >= 500;
 
-Uri validateApiBaseUri(
-  Uri baseUri, {
-  required bool allowInsecureLocalhost,
-}) {
+Uri validateApiBaseUri(Uri baseUri, {required bool allowInsecureLocalhost}) {
   if (!baseUri.isAbsolute || baseUri.host.isEmpty) {
     throw ArgumentError.value(baseUri, 'baseUri', 'must be an absolute URI');
   }

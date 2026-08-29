@@ -11,59 +11,71 @@ final _actorAccess = ActorAccessIdentity(
 );
 
 void main() {
-  test('normalizes API base URI and keeps explicit localhost exception narrow', () {
-    final policy = ApiHttpPolicy(
-      baseUri: Uri.parse('https://api.example.test/root'),
-    );
-    expect(policy.resolve('v1/feed').toString(), 'https://api.example.test/root/v1/feed');
+  test(
+    'normalizes API base URI and keeps explicit localhost exception narrow',
+    () {
+      final policy = ApiHttpPolicy(
+        baseUri: Uri.parse('https://api.example.test/root'),
+      );
+      expect(
+        policy.resolve('v1/feed').toString(),
+        'https://api.example.test/root/v1/feed',
+      );
 
-    expect(
-      () => ApiHttpPolicy(baseUri: Uri.parse('http://api.example.test/')),
-      throwsArgumentError,
-    );
-    expect(
-      () => ApiHttpPolicy(
-        baseUri: Uri.parse('http://localhost:3000/'),
-        allowInsecureLocalhost: true,
-      ),
-      returnsNormally,
-    );
-  });
+      expect(
+        () => ApiHttpPolicy(baseUri: Uri.parse('http://api.example.test/')),
+        throwsArgumentError,
+      );
+      expect(
+        () => ApiHttpPolicy(
+          baseUri: Uri.parse('http://localhost:3000/'),
+          allowInsecureLocalhost: true,
+        ),
+        returnsNormally,
+      );
+    },
+  );
 
-  test('actor registration preserves accepted, retryable and recovery classes', () async {
-    var status = 201;
-    final policy = ApiHttpPolicy(
-      baseUri: Uri.parse('https://api.example.test/'),
-    );
-    final client = MockClient((request) async {
-      expect(request.url.path, '/v1/actors');
-      expect(request.headers['authorization'], 'Bearer $_actorToken');
-      return http.Response('{}', status);
-    });
+  test(
+    'actor registration preserves accepted, retryable and recovery classes',
+    () async {
+      var status = 201;
+      final policy = ApiHttpPolicy(
+        baseUri: Uri.parse('https://api.example.test/'),
+      );
+      final client = MockClient((request) async {
+        expect(request.url.path, '/v1/actors');
+        expect(request.headers['authorization'], 'Bearer $_actorToken');
+        return http.Response('{}', status);
+      });
 
-    final created = await policy.registerActor(
-      client: client,
-      actorAccess: _actorAccess,
-    );
-    status = 503;
-    final unavailable = await policy.registerActor(
-      client: client,
-      actorAccess: _actorAccess,
-    );
-    status = 409;
-    final rotation = await policy.registerActor(
-      client: client,
-      actorAccess: _actorAccess,
-    );
+      final created = await policy.registerActor(
+        client: client,
+        actorAccess: _actorAccess,
+      );
+      status = 503;
+      final unavailable = await policy.registerActor(
+        client: client,
+        actorAccess: _actorAccess,
+      );
+      status = 409;
+      final rotation = await policy.registerActor(
+        client: client,
+        actorAccess: _actorAccess,
+      );
 
-    expect(created.disposition, ActorRegistrationDisposition.accepted);
-    expect(created.statusCode, 201);
-    expect(
-      unavailable.disposition,
-      ActorRegistrationDisposition.retryableFailure,
-    );
-    expect(rotation.disposition, ActorRegistrationDisposition.identityRecoveryRequired);
-  });
+      expect(created.disposition, ActorRegistrationDisposition.accepted);
+      expect(created.statusCode, 201);
+      expect(
+        unavailable.disposition,
+        ActorRegistrationDisposition.retryableFailure,
+      );
+      expect(
+        rotation.disposition,
+        ActorRegistrationDisposition.identityRecoveryRequired,
+      );
+    },
+  );
 
   test('retryable HTTP classification is shared and bounded', () {
     for (final status in [408, 425, 429, 500, 503]) {

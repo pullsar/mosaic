@@ -58,32 +58,35 @@ AppEventResources _resources(_MemoryOutbox outbox) => AppEventResources(
 );
 
 void main() {
-  test('queue-only Play scope persists actor, session and immutable feed context', () async {
-    final outbox = _MemoryOutbox();
-    final runtime = AppEventRuntime.create(resources: _resources(outbox));
-    final playTelemetry = runtime.telemetryForPlay(
-      feedRequestId: 'feed_a',
-      playRevisionId: 'rev_a',
-    );
+  test(
+    'queue-only Play scope persists actor, session and immutable feed context',
+    () async {
+      final outbox = _MemoryOutbox();
+      final runtime = AppEventRuntime.create(resources: _resources(outbox));
+      final playTelemetry = runtime.telemetryForPlay(
+        feedRequestId: 'feed_a',
+        playRevisionId: 'rev_a',
+      );
 
-    playTelemetry.event(MosaicEventName.mediaPlayback, const {
-      'browser': 'safari',
-      'videoCodec': 'h264',
-    });
-    await outbox.enqueued.future;
+      playTelemetry.event(MosaicEventName.mediaPlayback, const {
+        'browser': 'safari',
+        'videoCodec': 'h264',
+      });
+      await outbox.enqueued.future;
 
-    final event = outbox.queued.single.envelope;
-    expect(runtime.deliveryConfigured, isFalse);
-    expect(event.actorId, 'actor_app');
-    expect(event.sessionId, runtime.sessionId);
-    expect(event.feedRequestId, 'feed_a');
-    expect(event.playRevisionId, 'rev_a');
-    expect(event.payload['browser'], 'safari');
-    expect(runtime.resources.actorAccess.accessToken, _actorToken);
+      final event = outbox.queued.single.envelope;
+      expect(runtime.deliveryConfigured, isFalse);
+      expect(event.actorId, 'actor_app');
+      expect(event.sessionId, runtime.sessionId);
+      expect(event.feedRequestId, 'feed_a');
+      expect(event.playRevisionId, 'rev_a');
+      expect(event.payload['browser'], 'safari');
+      expect(runtime.resources.actorAccess.accessToken, _actorToken);
 
-    await runtime.close();
-    expect(outbox.closed, isTrue);
-  });
+      await runtime.close();
+      expect(outbox.closed, isTrue);
+    },
+  );
 
   test('delayed callback from Play A cannot inherit Play B context', () async {
     final outbox = _MemoryOutbox();
@@ -134,26 +137,29 @@ void main() {
     await runtime.close();
   });
 
-  test('invalid production API degrades to queue-only and reports config error', () async {
-    final outbox = _MemoryOutbox();
-    final errors = <String>[];
-    final runtime = AppEventRuntime.create(
-      resources: _resources(outbox),
-      apiBaseUrl: 'http://api.example.test/',
-      onError: (error, stackTrace, {operation}) {
-        errors.add(operation ?? 'unknown');
-      },
-    );
+  test(
+    'invalid production API degrades to queue-only and reports config error',
+    () async {
+      final outbox = _MemoryOutbox();
+      final errors = <String>[];
+      final runtime = AppEventRuntime.create(
+        resources: _resources(outbox),
+        apiBaseUrl: 'http://api.example.test/',
+        onError: (error, stackTrace, {operation}) {
+          errors.add(operation ?? 'unknown');
+        },
+      );
 
-    expect(runtime.deliveryConfigured, isFalse);
-    expect(errors, ['event_transport_config']);
+      expect(runtime.deliveryConfigured, isFalse);
+      expect(errors, ['event_transport_config']);
 
-    runtime.telemetry.event(MosaicEventName.mediaPlayback, const {
-      'phase': 'playbackError',
-    });
-    await outbox.enqueued.future;
-    expect(outbox.queued, hasLength(1));
+      runtime.telemetry.event(MosaicEventName.mediaPlayback, const {
+        'phase': 'playbackError',
+      });
+      await outbox.enqueued.future;
+      expect(outbox.queued, hasLength(1));
 
-    await runtime.close();
-  });
+      await runtime.close();
+    },
+  );
 }

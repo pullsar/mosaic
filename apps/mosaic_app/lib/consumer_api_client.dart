@@ -59,8 +59,14 @@ final class ConsumerPreferences {
 
   factory ConsumerPreferences.fromJson(Map<String, Object?> json) =>
       ConsumerPreferences(
-        interestTopicIds: _jsonStringList(json['interestTopicIds'], 'interestTopicIds'),
-        learningTopicIds: _jsonStringList(json['learningTopicIds'], 'learningTopicIds'),
+        interestTopicIds: _jsonStringList(
+          json['interestTopicIds'],
+          'interestTopicIds',
+        ),
+        learningTopicIds: _jsonStringList(
+          json['learningTopicIds'],
+          'learningTopicIds',
+        ),
       );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -110,11 +116,15 @@ final class ConsumerFeedItem {
   }) {
     final playId = _requiredJsonString(json, 'playId', 200);
     final revisionId = _requiredJsonString(json, 'revisionId', 200);
-    final sourceBucket = ConsumerFeedSourceBucket.fromWire(json['sourceBucket']);
+    final sourceBucket = ConsumerFeedSourceBucket.fromWire(
+      json['sourceBucket'],
+    );
     final rawDocument = _jsonObject(json['document'], 'feed item document');
     final decoded = compatibilityChecker.decode(rawDocument, capabilities);
     if (decoded is! DecodedPlay) {
-      throw const FormatException('Feed item Play is malformed or unsupported.');
+      throw const FormatException(
+        'Feed item Play is malformed or unsupported.',
+      );
     }
     final play = decoded.play;
     if (play.id != playId || play.revisionId != revisionId) {
@@ -153,7 +163,9 @@ final class ConsumerFeedPage {
   }) {
     final rawItems = json['items'];
     if (rawItems is! List || rawItems.length > 20) {
-      throw const FormatException('feed items must be an array of at most 20 items');
+      throw const FormatException(
+        'feed items must be an array of at most 20 items',
+      );
     }
     final fallback = json['fallback'];
     if (fallback is! bool) {
@@ -195,7 +207,8 @@ final class ConsumerApiClient {
     http.Client? client,
     Duration requestTimeout = const Duration(seconds: 10),
     bool allowInsecureLocalhost = false,
-    PlayCompatibilityChecker compatibilityChecker = const PlayCompatibilityChecker(),
+    PlayCompatibilityChecker compatibilityChecker =
+        const PlayCompatibilityChecker(),
   }) : _policy = ApiHttpPolicy(
          baseUri: baseUri,
          requestTimeout: requestTimeout,
@@ -220,17 +233,23 @@ final class ConsumerApiClient {
   }) async {
     final normalizedQuery = query.trim();
     if (normalizedQuery.length > 100) {
-      throw ArgumentError.value(query, 'query', 'must be at most 100 characters');
+      throw ArgumentError.value(
+        query,
+        'query',
+        'must be at most 100 characters',
+      );
     }
     if (limit < 1 || limit > 100) {
       throw ArgumentError.value(limit, 'limit', 'must be between 1 and 100');
     }
-    final endpoint = _policy.resolve('v1/topics').replace(
-      queryParameters: <String, String>{
-        'q': normalizedQuery,
-        'limit': '$limit',
-      },
-    );
+    final endpoint = _policy
+        .resolve('v1/topics')
+        .replace(
+          queryParameters: <String, String>{
+            'q': normalizedQuery,
+            'limit': '$limit',
+          },
+        );
     final response = await _send(() => _client.get(endpoint));
     if (response == null) {
       return const ConsumerApiFailure(ConsumerApiFailureKind.retryable);
@@ -242,7 +261,9 @@ final class ConsumerApiClient {
       final json = _decodeResponseObject(response.body);
       final rawTopics = json['topics'];
       if (rawTopics is! List || rawTopics.length > 100) {
-        throw const FormatException('topics must be an array of at most 100 items');
+        throw const FormatException(
+          'topics must be an array of at most 100 items',
+        );
       }
       return ConsumerApiSuccess(
         List<ConsumerTopic>.unmodifiable(
@@ -319,7 +340,11 @@ final class ConsumerApiClient {
       throw ArgumentError.value(limit, 'limit', 'must be between 1 and 20');
     }
     if (cursor != null && (cursor.isEmpty || cursor.length > 512)) {
-      throw ArgumentError.value(cursor, 'cursor', 'must be 1 to 512 characters');
+      throw ArgumentError.value(
+        cursor,
+        'cursor',
+        'must be 1 to 512 characters',
+      );
     }
     final registrationFailure = await _ensureRegistered<ConsumerFeedPage>();
     if (registrationFailure != null) return registrationFailure;
@@ -395,9 +420,7 @@ final class ConsumerApiClient {
     }
   }
 
-  Future<http.Response?> _send(
-    Future<http.Response> Function() request,
-  ) async {
+  Future<http.Response?> _send(Future<http.Response> Function() request) async {
     if (_closed) return null;
     try {
       return await request().timeout(_policy.requestTimeout);
@@ -423,8 +446,7 @@ final class ConsumerApiClient {
         statusCode: statusCode,
       );
     }
-    if (
-        invalidCursorAware &&
+    if (invalidCursorAware &&
         statusCode == 400 &&
         _responseErrorCode(response.body) == 'invalid_feed_cursor') {
       return ConsumerApiFailure(
@@ -494,10 +516,13 @@ List<String> _jsonStringList(Object? value, String field) {
   if (value is! List || value.length > 64) {
     throw FormatException('$field must be an array of at most 64 items');
   }
-  return value.map((item) {
-    if (item is! String) throw FormatException('$field must contain strings');
-    return _requiredText(item, field, 200);
-  }).toList(growable: false);
+  return value
+      .map((item) {
+        if (item is! String)
+          throw FormatException('$field must contain strings');
+        return _requiredText(item, field, 200);
+      })
+      .toList(growable: false);
 }
 
 List<String> _topicIds(List<String> values, String field) {

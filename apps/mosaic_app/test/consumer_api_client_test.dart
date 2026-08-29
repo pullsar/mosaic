@@ -72,7 +72,9 @@ void main() {
         paths.add(request.url.path);
         expect(request.headers['authorization'], 'Bearer $_actorToken');
         if (request.url.path == '/v1/actors') {
-          expect(jsonDecode(request.body), <String, Object?>{'actorId': 'actor_1'});
+          expect(jsonDecode(request.body), <String, Object?>{
+            'actorId': 'actor_1',
+          });
           return http.Response('{"actorId":"actor_1"}', 201);
         }
         return http.Response(
@@ -86,34 +88,38 @@ void main() {
 
     expect(paths, <String>['/v1/actors', '/v1/actors/actor_1/preferences']);
     expect(result, isA<ConsumerApiSuccess<ConsumerPreferences>>());
-    final preferences = (result as ConsumerApiSuccess<ConsumerPreferences>).value;
+    final preferences =
+        (result as ConsumerApiSuccess<ConsumerPreferences>).value;
     expect(preferences.interestTopicIds, <String>['science']);
   });
 
-  test('feed passes opaque cursor unchanged and validates Play envelope IDs', () async {
-    const cursor = 'opaque+/=_cursor';
-    final client = ConsumerApiClient(
-      baseUri: Uri.parse('https://api.example.test/'),
-      actorAccess: _actorAccess,
-      client: MockClient((request) async {
-        if (request.url.path == '/v1/actors') return http.Response('{}', 200);
-        final body = jsonDecode(request.body) as Map<String, Object?>;
-        expect(body['cursor'], cursor);
-        return http.Response(jsonEncode(_feedJson(nextCursor: cursor)), 200);
-      }),
-    );
+  test(
+    'feed passes opaque cursor unchanged and validates Play envelope IDs',
+    () async {
+      const cursor = 'opaque+/=_cursor';
+      final client = ConsumerApiClient(
+        baseUri: Uri.parse('https://api.example.test/'),
+        actorAccess: _actorAccess,
+        client: MockClient((request) async {
+          if (request.url.path == '/v1/actors') return http.Response('{}', 200);
+          final body = jsonDecode(request.body) as Map<String, Object?>;
+          expect(body['cursor'], cursor);
+          return http.Response(jsonEncode(_feedJson(nextCursor: cursor)), 200);
+        }),
+      );
 
-    final result = await client.fetchFeed(
-      capabilities: PlayCapabilityEnvelope.m1(),
-      cursor: cursor,
-    );
+      final result = await client.fetchFeed(
+        capabilities: PlayCapabilityEnvelope.m1(),
+        cursor: cursor,
+      );
 
-    expect(result, isA<ConsumerApiSuccess<ConsumerFeedPage>>());
-    final page = (result as ConsumerApiSuccess<ConsumerFeedPage>).value;
-    expect(page.nextCursor, cursor);
-    expect(page.items.single.play.id, 'play_1');
-    expect(page.items.single.validatedDocumentJson['revisionId'], 'rev_1');
-  });
+      expect(result, isA<ConsumerApiSuccess<ConsumerFeedPage>>());
+      final page = (result as ConsumerApiSuccess<ConsumerFeedPage>).value;
+      expect(page.nextCursor, cursor);
+      expect(page.items.single.play.id, 'play_1');
+      expect(page.items.single.validatedDocumentJson['revisionId'], 'rev_1');
+    },
+  );
 
   test('feed rejects envelope/document identifier mismatch', () async {
     final client = ConsumerApiClient(
@@ -121,10 +127,7 @@ void main() {
       actorAccess: _actorAccess,
       client: MockClient((request) async {
         if (request.url.path == '/v1/actors') return http.Response('{}', 201);
-        return http.Response(
-          jsonEncode(_feedJson(playId: 'play_other')),
-          200,
-        );
+        return http.Response(jsonEncode(_feedJson(playId: 'play_other')), 200);
       }),
     );
 
@@ -139,64 +142,70 @@ void main() {
     );
   });
 
-  test('invalid cursor and actor rejection are distinct from retryable failure', () async {
-    var feedStatus = 400;
-    var feedBody = '{"error":"invalid_feed_cursor"}';
-    final client = ConsumerApiClient(
-      baseUri: Uri.parse('https://api.example.test/'),
-      actorAccess: _actorAccess,
-      client: MockClient((request) async {
-        if (request.url.path == '/v1/actors') return http.Response('{}', 201);
-        return http.Response(feedBody, feedStatus);
-      }),
-    );
+  test(
+    'invalid cursor and actor rejection are distinct from retryable failure',
+    () async {
+      var feedStatus = 400;
+      var feedBody = '{"error":"invalid_feed_cursor"}';
+      final client = ConsumerApiClient(
+        baseUri: Uri.parse('https://api.example.test/'),
+        actorAccess: _actorAccess,
+        client: MockClient((request) async {
+          if (request.url.path == '/v1/actors') return http.Response('{}', 201);
+          return http.Response(feedBody, feedStatus);
+        }),
+      );
 
-    final invalidCursor = await client.fetchFeed(
-      capabilities: PlayCapabilityEnvelope.m1(),
-    );
-    feedStatus = 403;
-    feedBody = '{"error":"actor_credential_rejected"}';
-    final rejected = await client.fetchFeed(
-      capabilities: PlayCapabilityEnvelope.m1(),
-    );
-    feedStatus = 503;
-    feedBody = '{}';
-    final unavailable = await client.fetchFeed(
-      capabilities: PlayCapabilityEnvelope.m1(),
-    );
+      final invalidCursor = await client.fetchFeed(
+        capabilities: PlayCapabilityEnvelope.m1(),
+      );
+      feedStatus = 403;
+      feedBody = '{"error":"actor_credential_rejected"}';
+      final rejected = await client.fetchFeed(
+        capabilities: PlayCapabilityEnvelope.m1(),
+      );
+      feedStatus = 503;
+      feedBody = '{}';
+      final unavailable = await client.fetchFeed(
+        capabilities: PlayCapabilityEnvelope.m1(),
+      );
 
-    expect(
-      (invalidCursor as ConsumerApiFailure<ConsumerFeedPage>).kind,
-      ConsumerApiFailureKind.invalidCursor,
-    );
-    expect(
-      (rejected as ConsumerApiFailure<ConsumerFeedPage>).kind,
-      ConsumerApiFailureKind.identityRecoveryRequired,
-    );
-    expect(
-      (unavailable as ConsumerApiFailure<ConsumerFeedPage>).kind,
-      ConsumerApiFailureKind.retryable,
-    );
-  });
+      expect(
+        (invalidCursor as ConsumerApiFailure<ConsumerFeedPage>).kind,
+        ConsumerApiFailureKind.invalidCursor,
+      );
+      expect(
+        (rejected as ConsumerApiFailure<ConsumerFeedPage>).kind,
+        ConsumerApiFailureKind.identityRecoveryRequired,
+      );
+      expect(
+        (unavailable as ConsumerApiFailure<ConsumerFeedPage>).kind,
+        ConsumerApiFailureKind.retryable,
+      );
+    },
+  );
 
-  test('actor registration rotation blocks private request without retry loop', () async {
-    var requests = 0;
-    final client = ConsumerApiClient(
-      baseUri: Uri.parse('https://api.example.test/'),
-      actorAccess: _actorAccess,
-      client: MockClient((request) async {
-        requests += 1;
-        return http.Response('{"error":"actor_rotation_required"}', 409);
-      }),
-    );
+  test(
+    'actor registration rotation blocks private request without retry loop',
+    () async {
+      var requests = 0;
+      final client = ConsumerApiClient(
+        baseUri: Uri.parse('https://api.example.test/'),
+        actorAccess: _actorAccess,
+        client: MockClient((request) async {
+          requests += 1;
+          return http.Response('{"error":"actor_rotation_required"}', 409);
+        }),
+      );
 
-    final result = await client.getPreferences();
-    final failure = result as ConsumerApiFailure<ConsumerPreferences>;
+      final result = await client.getPreferences();
+      final failure = result as ConsumerApiFailure<ConsumerPreferences>;
 
-    expect(requests, 1);
-    expect(failure.kind, ConsumerApiFailureKind.identityRecoveryRequired);
-    expect(failure.statusCode, 409);
-  });
+      expect(requests, 1);
+      expect(failure.kind, ConsumerApiFailureKind.identityRecoveryRequired);
+      expect(failure.statusCode, 409);
+    },
+  );
 
   test('public topic search does not require actor registration', () async {
     final paths = <String>[];

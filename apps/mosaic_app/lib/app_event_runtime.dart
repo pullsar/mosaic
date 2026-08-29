@@ -53,10 +53,8 @@ final class AppEventRuntime {
         : () => _drainSafely(controller, onError);
     final telemetry = MosaicEventTelemetry(
       outbox: resources.outbox,
-      contextProvider: () => EventContext(
-        actorId: resources.actorId,
-        sessionId: sessionId,
-      ),
+      contextProvider: () =>
+          EventContext(actorId: resources.actorId, sessionId: sessionId),
       onQueued: onQueued,
       onInternalError: onError,
     );
