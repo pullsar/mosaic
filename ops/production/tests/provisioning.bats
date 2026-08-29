@@ -56,6 +56,22 @@ run_ip_refresh() {
   [ "$first" = "$second" ]
 }
 
+@test "reprovisioning preserves the generated Cloudflare real-IP trust file" {
+  root="$TEST_ROOT/root"
+  mkdir -p "$root"
+  env MIXLI_PROVISION_TEST_MODE=1 MIXLI_PROVISION_ROOT="$root" \
+    "$REPO_ROOT/ops/production/bin/provision-host.sh"
+  printf '%s\n' 'set_real_ip_from 203.0.113.0/24;' \
+    >"$root/etc/mixli/nginx/cloudflare-real-ip.conf"
+
+  run env MIXLI_PROVISION_TEST_MODE=1 MIXLI_PROVISION_ROOT="$root" \
+    "$REPO_ROOT/ops/production/bin/provision-host.sh"
+
+  [ "$status" -eq 0 ]
+  [ "$(cat "$root/etc/mixli/nginx/cloudflare-real-ip.conf")" = \
+    'set_real_ip_from 203.0.113.0/24;' ]
+}
+
 @test "provisioning repairs postgres config ownership and installs only the public example" {
   root="$TEST_ROOT/root"
   mkdir -p "$root"
