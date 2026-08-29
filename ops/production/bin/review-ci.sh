@@ -5,8 +5,9 @@ umask 027
 readonly PR="${1-}"
 readonly SHA="${2-}"
 readonly ROOT="${MIXLI_ROOT:-/srv/mixli}"
+readonly REVIEW_ROOT="${MIXLI_REVIEW_ROOT:-/srv/mixli-review}"
 readonly REPO="${MIXLI_REPO:-/srv/mixli/repository}"
-readonly checkout="$ROOT/review-builds/review-$PR-$SHA"
+readonly checkout="$REVIEW_ROOT/builds/review-$PR-$SHA"
 readonly state="$ROOT/state/reviews/$PR"
 conclusion=failure
 cleanup_status=0
@@ -27,7 +28,7 @@ cleanup() {
   set +e
   if [[ -e "$checkout" || -L "$checkout" ]]; then
     if [[ ! -L "$checkout" && "$(readlink -f "$checkout")" == "$checkout" &&
-      "$checkout" == "$ROOT"/review-builds/review-"$PR"-"$SHA" ]]; then
+      "$checkout" == "$REVIEW_ROOT"/builds/review-"$PR"-"$SHA" ]]; then
       rm -rf -- "$checkout" || cleanup_status=$?
     else
       cleanup_status=64
@@ -58,7 +59,7 @@ main() {
   trap on_term TERM INT
   trap 'cleanup $?' EXIT
   /opt/mixli/bin/review-status.sh update "$PR" "$SHA" in_progress
-  install -d -o root -g root -m 0711 "$ROOT/review-builds"
+  install -d -o root -g root -m 0711 "$REVIEW_ROOT" "$REVIEW_ROOT/builds"
   install -d -o mixli-build -g mixli-build -m 0700 "$checkout"
   trusted_git clone --no-local --no-hardlinks --no-checkout \
     "$REPO" "$checkout"
@@ -70,7 +71,7 @@ main() {
   set +e
   timeout --signal=TERM --kill-after=30s 44m \
     env MIXLI_CI_ENGINE_MODE=review MIXLI_CI_BUILDER_USER=mixli-review-build \
-      MIXLI_ROOTLESS_STORAGE_PARENT="$ROOT/review-builds" MIXLI_CI_RETAIN_RELEASE_IMAGES=0 \
+      MIXLI_ROOTLESS_STORAGE_PARENT="$REVIEW_ROOT/builds" MIXLI_CI_RETAIN_RELEASE_IMAGES=0 \
       /opt/mixli/bin/server-ci.sh "$checkout" "$SHA"
   result=$?
   set -e

@@ -6,6 +6,7 @@ readonly PR="${1-}"
 readonly SHA="${2-}"
 readonly TEST_MODE="${MIXLI_REVIEW_REQUEST_TEST_MODE:-0}"
 readonly ROOT="${MIXLI_ROOT:-/srv/mixli}"
+readonly REVIEW_ROOT="${MIXLI_REVIEW_ROOT:-/srv/mixli-review}"
 readonly REPO="${MIXLI_REPO:-/srv/mixli/repository}"
 readonly REVIEW_REF="refs/mixli/reviews/$PR"
 readonly REVIEW_STATE="$ROOT/state/reviews/$PR"
@@ -62,7 +63,7 @@ queue_review() {
     --property=PrivateTmp=yes \
     --property=ProtectHome=yes \
     --property=ProtectSystem=strict \
-    --property="ReadWritePaths=$ROOT/review-builds $ROOT/state/reviews $ROOT/log $REPO" \
+    --property="ReadWritePaths=$REVIEW_ROOT $ROOT/state/reviews $ROOT/log $REPO" \
     /opt/mixli/bin/review-ci.sh "$PR" "$SHA"; then
     /opt/mixli/bin/review-status.sh update "$PR" "$SHA" failure || true
     return 75

@@ -51,7 +51,8 @@ setup() {
   grep -Fq 'chown -R mixli-review-build:mixli-review-build "$checkout"' "$REVIEW"
   grep -Fq 'remote remove origin' "$REVIEW"
   ! grep -Fq 'worktree add' "$REVIEW"
-  grep -Fq 'review-builds/review-$PR-$SHA' "$REVIEW"
+  grep -Fq 'builds/review-$PR-$SHA' "$REVIEW"
+  grep -Fq 'MIXLI_REVIEW_ROOT:-/srv/mixli-review' "$REVIEW"
 }
 
 @test "review lifecycle distinguishes success failure cancellation and timeout" {

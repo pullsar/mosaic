@@ -60,7 +60,7 @@ setup() {
   grep -Fq -- '--property=PrivateTmp=yes' "$REQUEST"
   grep -Fq -- '--property=ProtectHome=yes' "$REQUEST"
   grep -Fq -- '--property=ProtectSystem=strict' "$REQUEST"
-  grep -Fq -- '--property="ReadWritePaths=$ROOT/review-builds $ROOT/state/reviews $ROOT/log $REPO"' "$REQUEST"
+  grep -Fq -- '--property="ReadWritePaths=$REVIEW_ROOT $ROOT/state/reviews $ROOT/log $REPO"' "$REQUEST"
   grep -Fq '/opt/mixli/bin/review-ci.sh "$PR" "$SHA"' "$REQUEST"
 }
 

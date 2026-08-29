@@ -16,6 +16,7 @@ command-line arguments.
 | Review trigger | `mixli-review` (forced PR-review command only) |
 | Release/mirror owner | `mixli-build` (locked, no login) |
 | Review execution owner | `mixli-review-build` (locked, no login, ephemeral paths only) |
+| Review execution tree | `/srv/mixli-review` (root-owned parent; exact-run children only) |
 | Git mirror | `/srv/mixli/repository` |
 | Immutable checkouts | `/srv/mixli/builds/<sha>` |
 | Releases and state | `/srv/mixli/releases`, `/srv/mixli/state` |

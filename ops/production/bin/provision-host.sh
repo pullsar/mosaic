@@ -138,7 +138,7 @@ ensure_account() {
 
 configure_host() {
   ensure_account mixli-build /srv/mixli /usr/sbin/nologin
-  ensure_account mixli-review-build /srv/mixli/review-home /usr/sbin/nologin
+  ensure_account mixli-review-build /srv/mixli-review/home /usr/sbin/nologin
   ensure_account mixli-deploy /var/lib/mixli-deploy /bin/bash
   ensure_account mixli-review /var/lib/mixli-review /bin/bash
   ensure_subordinate_ids mixli-build /etc/subuid --add-subuids
@@ -148,8 +148,9 @@ configure_host() {
   runuser -u mixli-build -- env HOME=/srv/mixli dockerd-rootless-setuptool.sh check
   runuser -u mixli-review-build -- env HOME=/tmp dockerd-rootless-setuptool.sh check
   install_layout
-  install -d -o root -g root -m 0555 /srv/mixli/review-home
-  install -d -o root -g root -m 0711 /srv/mixli/review-builds
+  install -d -o root -g root -m 0711 /srv/mixli-review
+  install -d -o root -g root -m 0555 /srv/mixli-review/home
+  install -d -o root -g root -m 0711 /srv/mixli-review/builds
   install -d -o mixli-build -g mixli-build -m 0750 /srv/mixli/repository
   chown -R mixli-build:mixli-build /srv/mixli/builds /srv/mixli/repository
   chown -R 999:999 /srv/mixli/data/postgres /srv/mixli/backups/pgbackrest
