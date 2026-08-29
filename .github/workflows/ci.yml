@@ -3,69 +3,51 @@ name: ci
 on:
   push:
     branches: ['**']
+  pull_request:
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  patch:
+  flutter:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
-          ref: ${{ github.ref_name }}
-      - name: Patch local-state v2 recovery schema
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path('packages/local_state/lib/local_state.dart')
-          text = path.read_text()
-
-          replacements = [
-              (
-                  "final class FeedResumeState {\n  const FeedResumeState({\n    required this.cursor,\n    required this.windowRevisionIds,\n    required this.updatedAt,\n  });\n\n  final String? cursor;\n  final List<String> windowRevisionIds;\n  final DateTime updatedAt;\n}\n",
-                  "final class FeedResumeState {\n  const FeedResumeState({\n    this.requestId,\n    required this.cursor,\n    this.visibleRevisionId,\n    this.visiblePosition,\n    required this.windowRevisionIds,\n    required this.updatedAt,\n  });\n\n  final String? requestId;\n  final String? cursor;\n  final String? visibleRevisionId;\n  final int? visiblePosition;\n  final List<String> windowRevisionIds;\n  final DateTime updatedAt;\n}\n\nfinal class RecentFeedCacheState {\n  const RecentFeedCacheState({\n    required this.requestId,\n    required this.items,\n    required this.updatedAt,\n  });\n\n  final String requestId;\n  final List<Map<String, Object?>> items;\n  final DateTime updatedAt;\n}\n",
-              ),
-              (
-                  "  static const int schemaVersion = 1;\n  static const int defaultMaxFeedWindowRevisionIds = 64;",
-                  "  static const int schemaVersion = 2;\n  static const int defaultMaxFeedWindowRevisionIds = 64;\n  static const int defaultRecentFeedCacheMaxItems = 12;\n  static const int defaultRecentFeedCacheMaxBytes = 256 * 1024;\n  static const Duration defaultRecentFeedCacheMaxAge = Duration(days: 2);",
-              ),
-              (
-                  "  void saveFeedResume({\n    required String? cursor,\n    required List<String> windowRevisionIds,\n    DateTime? updatedAt,\n  }) {\n    final boundedWindow = <String>[];\n    final seen = <String>{};\n    for (final revisionId in windowRevisionIds) {\n      final normalized = revisionId.trim();\n      if (normalized.isEmpty || !seen.add(normalized)) continue;\n      boundedWindow.add(normalized);\n      if (boundedWindow.length >= maxFeedWindowRevisionIds) break;\n    }\n\n    _db.execute(\n      '''\n      insert into feed_resume (singleton, cursor, window_json, updated_at)\n      values (1, ?, ?, ?)\n      on conflict(singleton) do update set\n        cursor = excluded.cursor,\n        window_json = excluded.window_json,\n        updated_at = excluded.updated_at\n      ''',\n      [\n        cursor,\n        jsonEncode(boundedWindow),\n        (updatedAt ?? DateTime.now().toUtc()).toIso8601String(),\n      ],\n    );\n  }\n\n  FeedResumeState? loadFeedResume() {\n    final rows = _db.select(\n      'select cursor, window_json, updated_at from feed_resume where singleton = 1',\n    );\n    if (rows.isEmpty) return null;\n    final row = rows.first;\n    return FeedResumeState(\n      cursor: row['cursor'] as String?,\n      windowRevisionIds: (jsonDecode(row['window_json'] as String) as List)\n          .cast<String>(),\n      updatedAt: DateTime.parse(row['updated_at'] as String),\n    );\n  }\n",
-                  "  void saveFeedResume({\n    String? requestId,\n    required String? cursor,\n    String? visibleRevisionId,\n    int? visiblePosition,\n    required List<String> windowRevisionIds,\n    DateTime? updatedAt,\n  }) {\n    if (visiblePosition != null && visiblePosition < 0) {\n      throw ArgumentError.value(\n        visiblePosition,\n        'visiblePosition',\n        'must be non-negative',\n      );\n    }\n    final boundedWindow = <String>[];\n    final seen = <String>{};\n    for (final revisionId in windowRevisionIds) {\n      final normalized = revisionId.trim();\n      if (normalized.isEmpty || !seen.add(normalized)) continue;\n      boundedWindow.add(normalized);\n      if (boundedWindow.length >= maxFeedWindowRevisionIds) break;\n    }\n\n    _db.execute(\n      '''\n      insert into feed_resume (\n        singleton, request_id, cursor, visible_revision_id, visible_position,\n        window_json, updated_at\n      ) values (1, ?, ?, ?, ?, ?, ?)\n      on conflict(singleton) do update set\n        request_id = excluded.request_id,\n        cursor = excluded.cursor,\n        visible_revision_id = excluded.visible_revision_id,\n        visible_position = excluded.visible_position,\n        window_json = excluded.window_json,\n        updated_at = excluded.updated_at\n      ''',\n      [\n        requestId,\n        cursor,\n        visibleRevisionId,\n        visiblePosition,\n        jsonEncode(boundedWindow),\n        (updatedAt ?? DateTime.now().toUtc()).toIso8601String(),\n      ],\n    );\n  }\n\n  FeedResumeState? loadFeedResume() {\n    final rows = _db.select(\n      '''\n      select request_id, cursor, visible_revision_id, visible_position,\n             window_json, updated_at\n        from feed_resume where singleton = 1\n      ''',\n    );\n    if (rows.isEmpty) return null;\n    final row = rows.first;\n    return FeedResumeState(\n      requestId: row['request_id'] as String?,\n      cursor: row['cursor'] as String?,\n      visibleRevisionId: row['visible_revision_id'] as String?,\n      visiblePosition: row['visible_position'] as int?,\n      windowRevisionIds: (jsonDecode(row['window_json'] as String) as List)\n          .cast<String>(),\n      updatedAt: DateTime.parse(row['updated_at'] as String),\n    );\n  }\n\n  void saveRecentFeedCache({\n    required String requestId,\n    required List<Map<String, Object?>> items,\n    DateTime? updatedAt,\n  }) {\n    final normalizedRequestId = requestId.trim();\n    if (normalizedRequestId.isEmpty || normalizedRequestId.length > 200) {\n      throw ArgumentError.value(\n        requestId,\n        'requestId',\n        'must be 1 to 200 characters',\n      );\n    }\n\n    final bounded = <Map<String, Object?>>[];\n    for (final rawItem in items) {\n      if (bounded.length >= defaultRecentFeedCacheMaxItems) break;\n      final decoded = jsonDecode(jsonEncode(rawItem));\n      if (decoded is! Map) {\n        throw const FormatException('Recent feed cache item must be an object.');\n      }\n      final item = decoded.map(\n        (key, value) => MapEntry(key.toString(), value),\n      );\n      final candidate = jsonEncode(<Object?>[...bounded, item]);\n      if (utf8.encode(candidate).length > defaultRecentFeedCacheMaxBytes) break;\n      bounded.add(item);\n    }\n\n    if (bounded.isEmpty) {\n      clearRecentFeedCache();\n      return;\n    }\n    final encoded = jsonEncode(bounded);\n    _db.execute(\n      '''\n      insert into recent_feed_cache (\n        singleton, request_id, items_json, byte_size, updated_at\n      ) values (1, ?, ?, ?, ?)\n      on conflict(singleton) do update set\n        request_id = excluded.request_id,\n        items_json = excluded.items_json,\n        byte_size = excluded.byte_size,\n        updated_at = excluded.updated_at\n      ''',\n      [\n        normalizedRequestId,\n        encoded,\n        utf8.encode(encoded).length,\n        (updatedAt ?? DateTime.now().toUtc()).toIso8601String(),\n      ],\n    );\n  }\n\n  RecentFeedCacheState? loadRecentFeedCache({DateTime? now}) {\n    final rows = _db.select(\n      '''\n      select request_id, items_json, updated_at\n        from recent_feed_cache where singleton = 1\n      ''',\n    );\n    if (rows.isEmpty) return null;\n    final row = rows.first;\n    try {\n      final updatedAt = DateTime.parse(row['updated_at'] as String).toUtc();\n      final instant = (now ?? DateTime.now()).toUtc();\n      if (instant.difference(updatedAt) > defaultRecentFeedCacheMaxAge) {\n        clearRecentFeedCache();\n        return null;\n      }\n      final decoded = jsonDecode(row['items_json'] as String);\n      if (decoded is! List || decoded.length > defaultRecentFeedCacheMaxItems) {\n        throw const FormatException('Recent feed cache payload is invalid.');\n      }\n      final items = decoded.map((value) {\n        if (value is! Map) {\n          throw const FormatException('Recent feed cache item is invalid.');\n        }\n        return value.map(\n          (key, nested) => MapEntry(key.toString(), nested),\n        );\n      }).toList(growable: false);\n      return RecentFeedCacheState(\n        requestId: row['request_id'] as String,\n        items: items,\n        updatedAt: updatedAt,\n      );\n    } on Object {\n      clearRecentFeedCache();\n      return null;\n    }\n  }\n\n  void clearRecentFeedCache() {\n    _db.execute('delete from recent_feed_cache where singleton = 1');\n  }\n",
-              ),
-              (
-                  "          create table feed_resume (\n            singleton integer primary key check(singleton = 1),\n            cursor text,\n            window_json text not null,\n            updated_at text not null\n          )",
-                  "          create table feed_resume (\n            singleton integer primary key check(singleton = 1),\n            request_id text,\n            cursor text,\n            visible_revision_id text,\n            visible_position integer,\n            window_json text not null,\n            updated_at text not null\n          )",
-              ),
-              (
-                  "        _db.execute('''\n          create table creator_drafts (",
-                  "        _db.execute('''\n          create table recent_feed_cache (\n            singleton integer primary key check(singleton = 1),\n            request_id text not null,\n            items_json text not null,\n            byte_size integer not null,\n            updated_at text not null\n          )\n        ''');\n        _db.execute('''\n          create table creator_drafts (",
-              ),
-              (
-                  "        _db.execute('pragma user_version = $schemaVersion');\n      });\n    }\n  }",
-                  "        _db.execute('pragma user_version = $schemaVersion');\n      });\n      return;\n    }\n    if (version == 1) {\n      _transaction(() {\n        _db.execute('alter table feed_resume add column request_id text');\n        _db.execute(\n          'alter table feed_resume add column visible_revision_id text',\n        );\n        _db.execute(\n          'alter table feed_resume add column visible_position integer',\n        );\n        _db.execute('''\n          create table recent_feed_cache (\n            singleton integer primary key check(singleton = 1),\n            request_id text not null,\n            items_json text not null,\n            byte_size integer not null,\n            updated_at text not null\n          )\n        ''');\n        _db.execute('pragma user_version = $schemaVersion');\n      });\n    }\n  }",
-              ),
-          ]
-
-          for old, new in replacements:
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f'Expected exactly one patch anchor, found {count}: {old[:90]!r}')
-              text = text.replace(old, new, 1)
-
-          path.write_text(text)
-          PY
-          git diff --check
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add packages/local_state/lib/local_state.dart
-          git commit -m 'feat(m2): add bounded native feed recovery schema [skip ci]'
-          git push origin HEAD:${{ github.ref_name }}
+          flutter-version: '3.44.7'
+          cache: true
+      - name: Resolve locked workspace
+        run: flutter pub get --enforce-lockfile
+      - name: Verify formatting
+        run: dart format --output=none --set-exit-if-changed .
+      - name: Analyze
+        run: flutter analyze
+      - name: Test play_schema
+        working-directory: packages/play_schema
+        run: dart test
+      - name: Test play_engine
+        working-directory: packages/play_engine
+        run: dart test
+      - name: Test analytics_contract
+        working-directory: packages/analytics_contract
+        run: dart test
+      - name: Test local_state
+        working-directory: packages/local_state
+        run: dart test
+      - name: Test event_delivery
+        working-directory: packages/event_delivery
+        run: dart test
+      - name: Test play_flutter
+        working-directory: packages/play_flutter
+        run: flutter test
+      - name: Test app shell
+        working-directory: apps/mosaic_app
+        run: flutter test
