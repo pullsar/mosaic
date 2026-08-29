@@ -71,69 +71,73 @@ export function rankFeedCandidates(
   const seenKeys = new Set<string>();
   const hasExplicitPreference =
     normalized.interestTopicIds.size > 0 || normalized.learningTopicIds.size > 0;
+  const ranked: RankedFeedCandidate[] = [];
 
-  const ranked = candidates
-    .map((candidate) => {
-      validateCandidate(candidate);
-      const key = candidateKey(candidate);
-      if (!seenKeys.add(key)) throw new Error(`Duplicate feed candidate: ${key}`);
-      if (hasOverlap(candidate.topicIds, normalized.mutedTopicIds) ||
-          hasOverlap(candidate.learningTopicIds, normalized.mutedTopicIds)) {
-        return null;
-      }
+  for (const candidate of candidates) {
+    validateCandidate(candidate);
+    const key = candidateKey(candidate);
+    if (!seenKeys.add(key)) throw new Error(`Duplicate feed candidate: ${key}`);
+    if (
+      hasOverlap(candidate.topicIds, normalized.mutedTopicIds) ||
+      hasOverlap(candidate.learningTopicIds, normalized.mutedTopicIds)
+    ) {
+      continue;
+    }
 
-      const interest = hasOverlap(candidate.topicIds, normalized.interestTopicIds) ? 1 : 0;
-      const learning = hasOverlap(candidate.learningTopicIds, normalized.learningTopicIds) ? 1 : 0;
-      const known = interest > 0 || learning > 0;
-      const sourceBucket: FeedSourceBucket = known
-        ? 'known'
-        : hasExplicitPreference
-          ? 'wildcard'
-          : 'curated_fallback';
-      const interaction = clampSigned(normalized.interactionAffinity[candidate.format] ?? 0);
-      const moreLike =
-        hasOverlap(candidate.topicIds, normalized.moreLikeTopicIds) ||
-        hasOverlap(candidate.learningTopicIds, normalized.moreLikeTopicIds)
-          ? 1
-          : 0;
-      const recentSeen = normalized.recentRevisionIds.has(candidate.revisionId) ? 1 : 0;
-      const topicDismissal = dismissalStrength([
-        ...candidate.topicIds.map((topic) => normalized.topicDismissalCounts[topic] ?? 0),
-        ...candidate.learningTopicIds.map(
-          (topic) => normalized.topicDismissalCounts[topic] ?? 0,
-        ),
-      ]);
-      const formatDismissal = dismissalStrength([
-        normalized.formatDismissalCounts[candidate.format] ?? 0,
-      ]);
-      const exploration = sourceBucket === 'wildcard' ? 1 : 0;
+    const interest = hasOverlap(candidate.topicIds, normalized.interestTopicIds) ? 1 : 0;
+    const learning = hasOverlap(candidate.learningTopicIds, normalized.learningTopicIds) ? 1 : 0;
+    const known = interest > 0 || learning > 0;
+    const sourceBucket: FeedSourceBucket = known
+      ? 'known'
+      : hasExplicitPreference
+        ? 'wildcard'
+        : 'curated_fallback';
+    const interaction = clampSigned(normalized.interactionAffinity[candidate.format] ?? 0);
+    const moreLike =
+      hasOverlap(candidate.topicIds, normalized.moreLikeTopicIds) ||
+      hasOverlap(candidate.learningTopicIds, normalized.moreLikeTopicIds)
+        ? 1
+        : 0;
+    const recentSeen = normalized.recentRevisionIds.has(candidate.revisionId) ? 1 : 0;
+    const topicDismissal = dismissalStrength([
+      ...candidate.topicIds.map((topic) => normalized.topicDismissalCounts[topic] ?? 0),
+      ...candidate.learningTopicIds.map(
+        (topic) => normalized.topicDismissalCounts[topic] ?? 0,
+      ),
+    ]);
+    const formatDismissal = dismissalStrength([
+      normalized.formatDismissalCounts[candidate.format] ?? 0,
+    ]);
+    const exploration = sourceBucket === 'wildcard' ? 1 : 0;
 
-      const features = {
-        interestAffinity: interest * config.weights.interestAffinity,
-        learningAffinity: learning * config.weights.learningAffinity,
-        interactionAffinity: interaction * config.weights.interactionAffinity,
-        qualityPrior: candidate.qualityPrior * config.weights.qualityPrior,
-        explorationBonus: exploration * config.weights.explorationBonus,
-        moreLikeThisAffinity: moreLike * config.weights.moreLikeThisAffinity,
-        recentSeenPenalty: -recentSeen * config.weights.recentSeenPenalty,
-        repeatedTopicDismissalPenalty:
-          -topicDismissal * config.weights.repeatedTopicDismissalPenalty,
-        repeatedFormatDismissalPenalty:
-          -formatDismissal * config.weights.repeatedFormatDismissalPenalty,
-      } satisfies Record<string, number>;
-      const score = Object.values(features).reduce((sum, value) => sum + value, 0);
+    const featureContributions: Readonly<Record<string, number>> = Object.freeze({
+      interestAffinity: interest * config.weights.interestAffinity,
+      learningAffinity: learning * config.weights.learningAffinity,
+      interactionAffinity: interaction * config.weights.interactionAffinity,
+      qualityPrior: candidate.qualityPrior * config.weights.qualityPrior,
+      explorationBonus: exploration * config.weights.explorationBonus,
+      moreLikeThisAffinity: moreLike * config.weights.moreLikeThisAffinity,
+      recentSeenPenalty: -recentSeen * config.weights.recentSeenPenalty,
+      repeatedTopicDismissalPenalty:
+        -topicDismissal * config.weights.repeatedTopicDismissalPenalty,
+      repeatedFormatDismissalPenalty:
+        -formatDismissal * config.weights.repeatedFormatDismissalPenalty,
+    });
+    const score = Object.values(featureContributions).reduce(
+      (sum, value) => sum + value,
+      0,
+    );
 
-      return {
-        ...candidate,
-        rank: 0,
-        sourceBucket,
-        score,
-        featureContributions: Object.freeze(features),
-      } satisfies RankedFeedCandidate;
-    })
-    .filter((candidate): candidate is RankedFeedCandidate => candidate !== null)
-    .sort(compareRankedCandidates);
+    ranked.push({
+      ...candidate,
+      rank: 0,
+      sourceBucket,
+      score,
+      featureContributions,
+    });
+  }
 
+  ranked.sort(compareRankedCandidates);
   return ranked.map((candidate, index) => ({...candidate, rank: index + 1}));
 }
 
@@ -205,13 +209,20 @@ function candidateKey(candidate: Pick<FeedCandidate, 'playId' | 'revisionId'>): 
 }
 
 function validateCandidate(candidate: FeedCandidate): void {
-  if (normalizeText(candidate.playId).length === 0 || normalizeText(candidate.revisionId).length === 0) {
+  if (
+    normalizeText(candidate.playId).length === 0 ||
+    normalizeText(candidate.revisionId).length === 0
+  ) {
     throw new Error('Feed candidates require playId and revisionId.');
   }
   if (normalizeText(candidate.format).length === 0) {
     throw new Error(`Feed candidate ${candidateKey(candidate)} requires a format.`);
   }
-  if (!Number.isFinite(candidate.qualityPrior) || candidate.qualityPrior < 0 || candidate.qualityPrior > 1) {
+  if (
+    !Number.isFinite(candidate.qualityPrior) ||
+    candidate.qualityPrior < 0 ||
+    candidate.qualityPrior > 1
+  ) {
     throw new Error(`Feed candidate ${candidateKey(candidate)} has an invalid quality prior.`);
   }
   if (!Number.isInteger(candidate.curatedOrder) || candidate.curatedOrder < 0) {
