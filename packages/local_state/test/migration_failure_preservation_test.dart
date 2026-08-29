@@ -5,7 +5,7 @@ import 'package:sqlite3/sqlite3.dart';
 import 'package:test/test.dart';
 
 void main() {
-  test('migration failure preserves verified database without quarantine', () {
+  test('migration failure does not quarantine verified data', () {
     final temp = Directory.systemTemp.createTempSync('mosaic-migrate-');
     final path = '${temp.path}/mosaic.db';
 
@@ -27,12 +27,17 @@ void main() {
       raw.execute('pragma user_version = 1');
       raw.close();
 
-      final openStore = () => MosaicLocalStore.open(path);
-      expect(openStore, throwsA(isA<SqliteException>()));
-
-      final quarantined = temp.listSync().whereType<File>().where(
-        (file) => file.path.contains('.corrupt.'),
+      expect(
+        () => MosaicLocalStore.open(path),
+        throwsA(isA<SqliteException>()),
       );
+
+      final quarantined = <File>[];
+      for (final entity in temp.listSync()) {
+        if (entity is File && entity.path.contains('.corrupt.')) {
+          quarantined.add(entity);
+        }
+      }
       expect(quarantined, isEmpty);
 
       final reopened = sqlite3.open(path);
@@ -40,13 +45,16 @@ void main() {
         final versionRows = reopened.select('pragma user_version');
         expect(versionRows.first.values.first, 1);
 
-        const markerQuery = 'select marker from recent_feed_cache';
-        final cacheRows = reopened.select(markerQuery);
+        final cacheRows = reopened.select(
+          'select marker from recent_feed_cache',
+        );
         expect(cacheRows.single['marker'], 'preserve_me');
 
-        const feedResumeSchema = 'pragma table_info(feed_resume)';
-        final schemaRows = reopened.select(feedResumeSchema);
-        final names = schemaRows.map((row) => row['name'] as String).toSet();
+        final schemaRows = reopened.select('pragma table_info(feed_resume)');
+        final names = <String>{};
+        for (final row in schemaRows) {
+          names.add(row['name'] as String);
+        }
         expect(names, isNot(contains('request_id')));
         expect(names, isNot(contains('visible_revision_id')));
         expect(names, isNot(contains('visible_position')));
