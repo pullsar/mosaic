@@ -402,8 +402,15 @@ record_success() {
 }
 
 remove_release_image_tag() {
-  local image="$1"
-  if ! docker image inspect "$image" >/dev/null 2>&1; then
+  local image="$1" image_ids lookup_status
+  if image_ids="$(docker image ls --quiet --no-trunc "$image")"; then
+    :
+  else
+    lookup_status=$?
+    printf 'Failed to query exact release image tag %s.\n' "$image" >&2
+    return "$lookup_status"
+  fi
+  if [[ -z "$image_ids" ]]; then
     return 0
   fi
   docker image rm --force "$image"

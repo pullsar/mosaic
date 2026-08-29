@@ -168,9 +168,10 @@ and fails deployment; the error path retries only that exact CI tag. The
 bootstrap environment intentionally names a nonexistent placeholder; the first
 deployment must persist the verified exact ref before the stack starts. Release
 pruning removes each old exact API and PostgreSQL tag before its directory, so a
-failed prune leaves a discoverable release for retry. Systemd and scheduled
-backup jobs use only the pinned runtime files, so a reboot cannot drift to an
-unverified checkout or mutable PostgreSQL image.
+successful empty exact-reference lookup is treated as already absent, while a
+lookup or removal error leaves a discoverable release for retry. Systemd and
+scheduled backup jobs use only the pinned runtime files, so a reboot cannot drift
+to an unverified checkout or mutable PostgreSQL image.
 
 ## Rollback and migration-forward repair
 
