@@ -88,8 +88,7 @@ ConsumerRuntime _runtime(
     if (request.url.path == '/v1/actors') {
       return http.Response('{}', 201);
     }
-    if (request.url.path ==
-        '/v1/actors/actor_onboarding/preferences') {
+    if (request.url.path == '/v1/actors/actor_onboarding/preferences') {
       onPreferencePut?.call();
       return http.Response('', preferenceStatus);
     }
