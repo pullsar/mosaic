@@ -7,7 +7,14 @@ setup() {
   TEST_ROOT="$(mktemp -d)"
   CHECKOUT="$TEST_ROOT/checkout"
   SHA="b5098ec72c804b6df97a7017681ea17b9843d73c"
-  mkdir -p "$CHECKOUT"
+  COMMAND_LOG="$TEST_ROOT/commands.log"
+  mkdir -p "$CHECKOUT" "$TEST_ROOT/bin"
+  cat >"$TEST_ROOT/bin/docker" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$COMMAND_LOG"
+SH
+  chmod +x "$TEST_ROOT/bin/docker"
+  export COMMAND_LOG
 }
 
 teardown() {
@@ -15,7 +22,10 @@ teardown() {
 }
 
 run_ci() {
-  MIXLI_CI_TEST_MODE=1 \
+  PATH="$TEST_ROOT/bin:$PATH" \
+    MIXLI_CI_TEST_MODE=1 \
+    MIXLI_CI_TEST_FAIL_STAGE="${MIXLI_CI_TEST_FAIL_STAGE:-}" \
+    MIXLI_CI_RETAIN_POSTGRES_IMAGE="${MIXLI_CI_RETAIN_POSTGRES_IMAGE:-0}" \
     "$REPO_ROOT/ops/production/bin/server-ci.sh" "$@"
 }
 
@@ -107,4 +117,33 @@ production-builds" ]
   script="$REPO_ROOT/ops/production/bin/server-ci.sh"
   grep -Fq 'git -c safe.directory="$CHECKOUT" -C "$CHECKOUT"' "$script"
   ! grep -Fq 'safe.directory=*' "$script"
+}
+
+@test "ordinary CI builds only an exact-SHA PostgreSQL CI tag and removes it" {
+  run run_ci "$CHECKOUT" "$SHA"
+  [ "$status" -eq 0 ]
+
+  grep -Fxq "image rm mixli-postgres-ci:$SHA" "$COMMAND_LOG"
+  ! grep -Fq 'mixli-postgres:18.3' \
+    "$REPO_ROOT/ops/production/bin/server-ci.sh"
+  grep -Fq 'POSTGRES_CI_IMAGE="mixli-postgres-ci:$SHA"' \
+    "$REPO_ROOT/ops/production/bin/server-ci.sh"
+  grep -Fq -- '-t "$POSTGRES_CI_IMAGE"' \
+    "$REPO_ROOT/ops/production/bin/server-ci.sh"
+}
+
+@test "failed CI removes its exact-SHA PostgreSQL CI tag even when retention was requested" {
+  MIXLI_CI_TEST_FAIL_STAGE=infrastructure-contracts \
+    MIXLI_CI_RETAIN_POSTGRES_IMAGE=1 run run_ci "$CHECKOUT" "$SHA"
+  [ "$status" -ne 0 ]
+  grep -Fxq "image rm mixli-postgres-ci:$SHA" "$COMMAND_LOG"
+}
+
+@test "authorized deployment retention applies only after every CI stage passes" {
+  MIXLI_CI_RETAIN_POSTGRES_IMAGE=1 run run_ci "$CHECKOUT" "$SHA"
+  [ "$status" -eq 0 ]
+  ! grep -Fxq "image rm mixli-postgres-ci:$SHA" "$COMMAND_LOG"
+
+  grep -Fq 'MIXLI_CI_RETAIN_POSTGRES_IMAGE=1' \
+    "$REPO_ROOT/ops/production/bin/deployment.sh"
 }

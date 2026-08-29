@@ -10,7 +10,32 @@ setup() {
   PREVIOUS_SHA="2222222222222222222222222222222222222222"
   mkdir -p "$TEST_ROOT/releases/$OLD_SHA/web" "$TEST_ROOT/releases/$PREVIOUS_SHA/web" \
     "$TEST_ROOT/runtime" "$TEST_ROOT/state" "$TEST_ROOT/log" "$TEST_ROOT/locks" "$TEST_ROOT/repo" \
-    "$TEST_ROOT/builds/$SHA/ops/production"
+    "$TEST_ROOT/builds/$SHA/ops/production" "$TEST_ROOT/bin" "$TEST_ROOT/images"
+  COMMAND_LOG="$TEST_ROOT/commands.log"
+  export COMMAND_LOG MIXLI_TEST_DOCKER_STATE="$TEST_ROOT/images"
+  cat >"$TEST_ROOT/bin/docker" <<'SH'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+printf '%s\n' "$*" >>"$COMMAND_LOG"
+image_file() {
+  printf '%s/%s' "$MIXLI_TEST_DOCKER_STATE" "${1//:/__}"
+}
+if [[ "$1 $2" == 'image inspect' ]]; then
+  ref="${@: -1}"
+  file="$(image_file "$ref")"
+  [[ -f "$file" ]] || exit 1
+  cat "$file"
+elif [[ "$1 $2" == 'image tag' ]]; then
+  source="$3"
+  target="$4"
+  printf '%s\n' "$source" >"$(image_file "$target")"
+elif [[ "$1 $2" == 'image rm' ]]; then
+  rm -f -- "$(image_file "$3")"
+fi
+SH
+  chmod +x "$TEST_ROOT/bin/docker"
+  printf '%s\n' 'sha256:ci-postgres-image' \
+    >"$TEST_ROOT/images/mixli-postgres-ci__$SHA"
   printf 'compose:%s\n' "$SHA" >"$TEST_ROOT/builds/$SHA/ops/production/compose.yaml"
   printf 'compose:%s\n' "$OLD_SHA" >"$TEST_ROOT/runtime/compose.yaml"
   cat >"$TEST_ROOT/production.env" <<EOF
@@ -18,6 +43,7 @@ MIXLI_API_BLUE_IMAGE=mixli-api:$OLD_SHA
 MIXLI_API_GREEN_IMAGE=mixli-api:$PREVIOUS_SHA
 MIXLI_API_BLUE_RELEASE_SHA=$OLD_SHA
 MIXLI_API_GREEN_RELEASE_SHA=$PREVIOUS_SHA
+MIXLI_POSTGRES_IMAGE=mixli-postgres:$OLD_SHA
 EOF
   printf 'old-web' >"$TEST_ROOT/releases/$OLD_SHA/web/index.html"
   printf 'previous-web' >"$TEST_ROOT/releases/$PREVIOUS_SHA/web/index.html"
@@ -33,6 +59,7 @@ teardown() {
 
 deploy() {
   env \
+    PATH="$TEST_ROOT/bin:$PATH" \
     MIXLI_DEPLOY_TEST_MODE=1 \
     MIXLI_ROOT="$TEST_ROOT" \
     MIXLI_REPO="$TEST_ROOT/repo" \
@@ -103,6 +130,7 @@ deploy() {
   [ "$(cat "$TEST_ROOT/runtime/api-upstream.conf")" = 'old-upstream' ]
   [ "$(readlink "$TEST_ROOT/current")" = "$TEST_ROOT/releases/$OLD_SHA" ]
   grep -qx "MIXLI_API_GREEN_IMAGE=mixli-api:$PREVIOUS_SHA" "$TEST_ROOT/production.env"
+  grep -qx "MIXLI_POSTGRES_IMAGE=mixli-postgres:$OLD_SHA" "$TEST_ROOT/production.env"
   [ "$(cat "$TEST_ROOT/runtime/compose.yaml")" = "compose:$OLD_SHA" ]
 }
 
@@ -187,6 +215,46 @@ deploy() {
   grep -qx "MIXLI_API_GREEN_IMAGE=mixli-api:$SHA" "$TEST_ROOT/production.env"
   grep -qx "MIXLI_API_BLUE_RELEASE_SHA=$SHA" "$TEST_ROOT/production.env"
   grep -qx "MIXLI_API_GREEN_RELEASE_SHA=$SHA" "$TEST_ROOT/production.env"
+}
+
+@test "deployment promotes the retained PostgreSQL image ID and persists its exact SHA" {
+  run deploy "$SHA"
+  [ "$status" -eq 0 ]
+
+  grep -Fxq "image tag sha256:ci-postgres-image mixli-postgres:$SHA" "$COMMAND_LOG"
+  grep -Fxq "image rm mixli-postgres-ci:$SHA" "$COMMAND_LOG"
+  grep -qx "MIXLI_POSTGRES_IMAGE=mixli-postgres:$SHA" "$TEST_ROOT/production.env"
+  [ "$(cat "$TEST_ROOT/images/mixli-postgres__$SHA")" = 'sha256:ci-postgres-image' ]
+  [ ! -e "$TEST_ROOT/images/mixli-postgres-ci__$SHA" ]
+}
+
+@test "deployment accepts an existing identical PostgreSQL SHA tag without retagging" {
+  printf '%s\n' 'sha256:ci-postgres-image' \
+    >"$TEST_ROOT/images/mixli-postgres__$SHA"
+
+  run deploy "$SHA"
+  [ "$status" -eq 0 ]
+  ! grep -Fxq "image tag sha256:ci-postgres-image mixli-postgres:$SHA" "$COMMAND_LOG"
+  grep -qx "MIXLI_POSTGRES_IMAGE=mixli-postgres:$SHA" "$TEST_ROOT/production.env"
+}
+
+@test "deployment rejects a conflicting PostgreSQL SHA tag without overwriting it" {
+  printf '%s\n' 'sha256:conflicting-postgres-image' \
+    >"$TEST_ROOT/images/mixli-postgres__$SHA"
+
+  run deploy "$SHA"
+  [ "$status" -ne 0 ]
+  [ "$(cat "$TEST_ROOT/images/mixli-postgres__$SHA")" = \
+    'sha256:conflicting-postgres-image' ]
+  grep -qx "MIXLI_POSTGRES_IMAGE=mixli-postgres:$OLD_SHA" "$TEST_ROOT/production.env"
+  [ ! -e "$TEST_ROOT/images/mixli-postgres-ci__$SHA" ]
+}
+
+@test "release pruning removes old PostgreSQL SHA images with old API images" {
+  script="$REPO_ROOT/ops/production/bin/deployment.sh"
+  prune="$(sed -n '/^prune_releases()/,/^}/p' "$script")"
+  [[ "$prune" == *'docker image rm "mixli-api:$sha"'* ]]
+  [[ "$prune" == *'docker image rm "mixli-postgres:$sha"'* ]]
 }
 
 @test "retention keeps current and previous while bounding other releases" {

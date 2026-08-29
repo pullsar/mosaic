@@ -67,6 +67,14 @@ setup_file() {
   [ "$status" -eq 0 ]
 }
 
+@test "bootstrap PostgreSQL image cannot collide with CI or a mutable production tag" {
+  run jq -e '
+    .services.postgres.image == "mixli-postgres:bootstrap-required"
+  ' <<<"$CONFIG_JSON"
+  [ "$status" -eq 0 ]
+  grep -Fxq 'MIXLI_POSTGRES_IMAGE=mixli-postgres:bootstrap-required' "$ENV_FILE"
+}
+
 @test "PostgreSQL stages the root-only pgBackRest config and requires production S3 settings" {
   run jq -e '
     (.services.postgres.volumes | any(

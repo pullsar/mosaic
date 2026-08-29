@@ -142,3 +142,22 @@ run_ip_refresh() {
       "$REPO_ROOT/ops/production/bin/$script"
   done
 }
+
+@test "R2 rotation keeps failures reboot-safe and unlocks before timer restoration" {
+  readme="$REPO_ROOT/ops/production/README.md"
+  cleanup="$(sed -n '/^  cleanup_rotation()/,/^  }/p' "$readme")"
+
+  grep -Fq 'systemctl is-enabled --quiet "$timer"' "$readme"
+  grep -Fq 'systemctl is-active --quiet "$timer"' "$readme"
+  grep -Fq 'systemctl disable --now $timer_units' "$readme"
+  grep -Fq 'systemctl enable --now $timer_units' "$readme"
+  grep -Fq 'timers_expected_enabled_active=1' "$readme"
+
+  unlock_line="$(grep -n 'release_backup_lock' <<<"$cleanup" | tail -n 1 | cut -d: -f1)"
+  enable_line="$(grep -n 'systemctl enable --now' <<<"$cleanup" | cut -d: -f1)"
+  [ -n "$unlock_line" ]
+  [ -n "$enable_line" ]
+  [ "$unlock_line" -lt "$enable_line" ]
+
+  [[ "$cleanup" == *'"$active_replaced" == 0'* ]]
+}
