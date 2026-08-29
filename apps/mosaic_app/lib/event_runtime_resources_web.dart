@@ -5,10 +5,11 @@ import 'event_runtime_resources.dart';
 Future<AppEventResources> openPlatformEventResources() async {
   final store = await IndexedDbEventStore.open();
   try {
-    final actorId = await store.getOrCreateActorId();
+    final actorAccess = await store.getOrCreateActorAccess();
     return AppEventResources(
       outbox: store,
-      actorId: actorId,
+      actorId: actorAccess.actorId,
+      actorAccessToken: actorAccess.accessToken,
       close: store.close,
     );
   } on Object {
