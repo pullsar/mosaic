@@ -558,10 +558,9 @@ EOF
   chmod 0755 "$TEST_ROOT/bin/postgres"
 
   run -37 docker run --rm \
-    -e PATH=/test-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     -e PGDATA=/var/lib/postgresql/upstream-probe \
     -v "$SOURCE_CONFIG:$STAGED_CONFIG:ro" \
-    -v "$TEST_ROOT/bin:/test-bin:ro" \
+    -v "$TEST_ROOT/bin/postgres:/usr/local/bin/postgres:ro" \
     -v "$TEST_ROOT/pgdata:/var/lib/postgresql/upstream-probe" \
     "$IMAGE" -c shared_buffers=64MB -c max_connections=17
 
