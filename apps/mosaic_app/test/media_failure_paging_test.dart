@@ -109,11 +109,11 @@ void main() {
                 required active,
                 required onDirectManipulationChanged,
               }) => item.playId == 'play_broken_media'
-                  ? ResolvedPlayVisual(
-                      assetId: 'media_bad',
-                      resolver: visualResolver,
-                    )
-                  : Center(child: Text(item.playId)),
+              ? ResolvedPlayVisual(
+                  assetId: 'media_bad',
+                  resolver: visualResolver,
+                )
+              : Center(child: Text(item.playId)),
         ),
       ),
     );
