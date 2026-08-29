@@ -40,17 +40,18 @@ setup() {
 @test "pins the Android and browser toolchain inside the Flutter image" {
   grep -Fq 'ARG ANDROID_CMDLINE_TOOLS_VERSION=15859902' "$DOCKERFILE"
   grep -Fq 'ARG ANDROID_CMDLINE_TOOLS_SHA256=4e4c464f145a7512b57d088ac6c278c03c9eea610886b35a5e0804e74eedf583' "$DOCKERFILE"
-  grep -Fq 'platforms;android-37' "$DOCKERFILE"
-  grep -Fq 'build-tools;37.0.0' "$DOCKERFILE"
-  grep -Fq 'ndk;28.2.13676358' "$DOCKERFILE"
+  grep -Fq 'platforms/android-37.0' "$DOCKERFILE"
+  grep -Fq 'build-tools/37.0.0' "$DOCKERFILE"
+  grep -Fq 'ndk/28.2.13676358' "$DOCKERFILE"
 
   run docker run --rm "$IMAGE" bash -lc '
     test "$ANDROID_SDK_ROOT" = /opt/android-sdk
     java -version
     chromium --version
-    sdkmanager --list_installed | grep -Fq "platforms;android-37"
-    sdkmanager --list_installed | grep -Fq "build-tools;37.0.0"
-    sdkmanager --list_installed | grep -Fq "ndk;28.2.13676358"
+    test -x /opt/android-sdk/platform-tools/adb
+    test -x /opt/android-sdk/build-tools/37.0.0/aapt2
+    test -d /opt/android-sdk/platforms/android-37.0
+    test -d /opt/android-sdk/ndk/28.2.13676358
   '
 
   [ "$status" -eq 0 ]

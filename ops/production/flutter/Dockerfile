@@ -32,12 +32,13 @@ ENV ANDROID_HOME=/opt/android-sdk \
     JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 \
     CHROME_EXECUTABLE=/usr/bin/chromium
 
-RUN yes | /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses >/dev/null \
-    && /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager \
+RUN yes | /opt/android-sdk/cmdline-tools/latest/bin/android \
+      --sdk=/opt/android-sdk \
+      sdk install \
       'platform-tools' \
-      'platforms;android-37' \
-      'build-tools;37.0.0' \
-      'ndk;28.2.13676358'
+      'platforms/android-37.0' \
+      'build-tools/37.0.0' \
+      'ndk/28.2.13676358'
 
 RUN curl --fail --show-error --location \
       --retry 5 --retry-all-errors --retry-delay 2 --continue-at - \
