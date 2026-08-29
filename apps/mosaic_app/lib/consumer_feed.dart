@@ -92,6 +92,7 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
   int _loadEpoch = 0;
   String? _activeDecisionRequestId;
   String? _nextCursor;
+  String? _automaticFetchBlockedCursor;
   ConsumerApiFailureKind? _failure;
   bool _booting = true;
   bool _fetching = false;
@@ -186,6 +187,7 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
       }
 
       if (page != null) {
+        _automaticFetchBlockedCursor = null;
         final nextCursor = page.nextCursor == cursor ? null : page.nextCursor;
         if (_entries.isEmpty) {
           _entries.addAll(
@@ -220,16 +222,21 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
           _activeDecisionRequestId = page.requestId;
           _nextCursor = nextCursor;
         }
-      } else if (_entries.isEmpty && result.recovered != null) {
-        final cache = result.recovered!;
-        _entries.addAll(
-          cache.items.map(
-            (item) => _FeedEntry(requestId: cache.requestId, item: item),
-          ),
-        );
-        _currentIndex = 0;
-        _activeDecisionRequestId = cache.requestId;
-        shouldEmitInitial = _entries.isNotEmpty;
+      } else {
+        if (result.failure != null && cursor != null) {
+          _automaticFetchBlockedCursor = cursor;
+        }
+        if (_entries.isEmpty && result.recovered != null) {
+          final cache = result.recovered!;
+          _entries.addAll(
+            cache.items.map(
+              (item) => _FeedEntry(requestId: cache.requestId, item: item),
+            ),
+          );
+          _currentIndex = 0;
+          _activeDecisionRequestId = cache.requestId;
+          shouldEmitInitial = _entries.isNotEmpty;
+        }
       }
 
       _booting = false;
@@ -297,10 +304,16 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
   }
 
   void _maybeFetchAhead() {
-    if (_fetching || _entries.isEmpty || _nextCursor == null) return;
+    final cursor = _nextCursor;
+    if (_fetching ||
+        _entries.isEmpty ||
+        cursor == null ||
+        cursor == _automaticFetchBlockedCursor) {
+      return;
+    }
     final remaining = _entries.length - _currentIndex - 1;
     if (remaining <= widget.fetchAheadItems) {
-      unawaited(_fetchPage(_nextCursor));
+      unawaited(_fetchPage(cursor));
     }
   }
 
@@ -436,6 +449,9 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
   Future<void> _retry() async {
     if (_fetching) return;
     final cursor = _entries.isEmpty ? null : _nextCursor;
+    if (_automaticFetchBlockedCursor == cursor) {
+      _automaticFetchBlockedCursor = null;
+    }
     await _fetchPage(cursor, epoch: _loadEpoch);
   }
 
