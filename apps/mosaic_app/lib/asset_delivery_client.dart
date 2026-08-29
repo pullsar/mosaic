@@ -395,7 +395,11 @@ final class AssetDeliveryClient {
     }
   }
 
-  void _removeCurrent<T>(Map<String, Future<T>> map, String id, Future<T> current) {
+  void _removeCurrent<T>(
+    Map<String, Future<T>> map,
+    String id,
+    Future<T> current,
+  ) {
     final stored = map[id];
     if (identical(stored, current)) {
       final removed = map.remove(id);
@@ -405,7 +409,8 @@ final class AssetDeliveryClient {
 
   void _detach<T>(Map<String, Future<T>> map, String id) {
     final detached = map.remove(id);
-    if (detached != null) unawaited(detached.then<void>((_) {}, onError: (_, __) {}));
+    if (detached != null)
+      unawaited(detached.then<void>((_) {}, onError: (_, __) {}));
   }
 
   void _detachAll<T>(Map<String, Future<T>> map) {
