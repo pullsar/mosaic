@@ -179,6 +179,7 @@ production-builds" ]
   done
   grep -Fq 'DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK=true' "$script"
   grep -Fq 'dockerd-rootless.sh' "$script"
+  grep -Fq -- '--exec-opt native.cgroupdriver=cgroupfs' "$script"
   grep -Fq 'DOCKER_HOST="unix://$rootless_runtime/docker.sock"' "$script"
   grep -Fq 'rootless_docker system prune --all --force --volumes' "$script"
   grep -Fq 'rm -rf -- "$rootless_root" "$rootless_runtime"' "$script"
