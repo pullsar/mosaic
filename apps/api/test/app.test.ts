@@ -89,9 +89,9 @@ test('actor ownership protects registration, binding and idempotent events', asy
     method: 'POST',
     url: '/v1/actors/actor_a/bind-user',
     headers: actorAuthorization,
-    payload: {userId: 'user_a'},
   });
   assert.equal(binding.statusCode, 501);
+  assert.deepEqual(binding.json(), {error: 'account_auth_not_configured'});
   assert.equal(repo.bindings.size, 0);
 
   const payload = {
