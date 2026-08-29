@@ -21,8 +21,7 @@ validate_inputs() {
 
 verify_pr_ref() {
   local actual
-  builder_git -C "$REPO" fetch --force --no-tags origin \
-    "+refs/pull/$PR/head:$REVIEW_REF"
+  builder_git -C "$REPO" fetch --force --no-tags origin "+refs/pull/$PR/head:$REVIEW_REF"
   actual="$(builder_git -C "$REPO" rev-parse "$REVIEW_REF^{commit}")"
   [[ "$actual" == "$SHA" ]] || exit 65
 }
