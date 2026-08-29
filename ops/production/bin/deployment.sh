@@ -134,9 +134,17 @@ persist_runtime_images() {
 }
 
 cleanup_postgres_ci_image() {
+  local cleanup_status
   [[ "$postgres_ci_retained" == '1' ]] || return 0
-  docker image rm "$POSTGRES_CI_IMAGE" >/dev/null 2>&1 || true
-  postgres_ci_retained=0
+  if docker image rm --force "$POSTGRES_CI_IMAGE" >/dev/null 2>&1; then
+    postgres_ci_retained=0
+    return 0
+  else
+    cleanup_status=$?
+  fi
+  printf 'Failed to remove exact CI image tag %s.\n' "$POSTGRES_CI_IMAGE" >&2
+  log_event "postgres-ci-cleanup-failed:$SHA" || true
+  return "$cleanup_status"
 }
 
 promote_postgres_image() {
@@ -152,8 +160,7 @@ promote_postgres_image() {
     [[ "$production_image_id" == "$ci_image_id" ]]
   fi
 
-  docker image rm "$POSTGRES_CI_IMAGE" >/dev/null
-  postgres_ci_retained=0
+  cleanup_postgres_ci_image
 }
 
 restore_runtime_compose() {
@@ -200,6 +207,7 @@ rollback_switches() {
 
 on_error() {
   local status="$1" line="$2"
+  set +e
   rollback_switches
   restore_runtime_compose
   restore_runtime_env
@@ -262,12 +270,15 @@ build_release() {
     printf 'web:%s\n' "$SHA" >"$release_dir/web/index.html"
   else
     cp -a "$build_dir/apps/mosaic_app/build/web/." "$release_dir/web/"
-    compose config --quiet
   fi
 
   write_json_atomic "$release_dir/release.json" \
     "{\"sha\":\"$SHA\",\"built_at\":\"$built_at\"}"
   log_event "built:$SHA"
+}
+
+validate_runtime_compose() {
+  [[ "$TEST_MODE" == '1' ]] || compose config --quiet
 }
 
 prepare_database() {
@@ -390,24 +401,29 @@ record_success() {
   log_event "deployed:$SHA:$target_pool"
 }
 
+remove_release_image_tag() {
+  local image="$1"
+  if ! docker image inspect "$image" >/dev/null 2>&1; then
+    return 0
+  fi
+  docker image rm --force "$image"
+}
+
 prune_releases() {
-  local current_sha previous_sha dir sha kept=0
-  current_sha="$(json_field "$STATE/current.json" sha)"
-  previous_sha="$(json_field "$STATE/previous.json" sha)"
+  local current_sha="$1" previous_sha="$2" dir sha kept=0
 
   while IFS= read -r dir; do
     [[ -n "$dir" && "$dir" == "$RELEASES"/* && -d "$dir" ]] || continue
     sha="$(basename "$dir")"
+    [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || continue
     if [[ "$sha" == "$current_sha" || "$sha" == "$previous_sha" ]]; then
       continue
     fi
     kept=$((kept + 1))
     if [[ "$kept" -gt 5 ]]; then
+      remove_release_image_tag "mixli-api:$sha"
+      remove_release_image_tag "mixli-postgres:$sha"
       rm -rf -- "$dir"
-      if [[ "$TEST_MODE" != '1' ]]; then
-        docker image rm "mixli-api:$sha" >/dev/null 2>&1 || true
-        docker image rm "mixli-postgres:$sha" >/dev/null 2>&1 || true
-      fi
     fi
   done < <(find "$RELEASES" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' | sort -nr | cut -d' ' -f2-)
 }
@@ -429,8 +445,6 @@ main() {
   verify_ancestry
   prepare_checkout
   run_repository_ci
-  promote_postgres_image
-  persist_runtime_compose
   current_sha="$(json_field "$STATE/current.json" sha)"
   current_pool="$(json_field "$STATE/current.json" pool)"
   if [[ "$current_pool" == 'blue' ]]; then
@@ -439,8 +453,11 @@ main() {
     target_pool='blue'
   fi
 
-  persist_runtime_images "$current_sha"
   build_release
+  promote_postgres_image
+  persist_runtime_compose
+  persist_runtime_images "$current_sha"
+  validate_runtime_compose
   prepare_database
   backup_and_migrate "$current_sha"
   start_candidate
@@ -458,10 +475,10 @@ main() {
   reload_nginx
 
   smoke_release
+  prune_releases "$SHA" "$current_sha"
   set_env_value MIXLI_ACTIVE_POOL "$target_pool"
   stop_old_pool "$current_pool"
   record_success "$current_sha" "$current_pool"
-  prune_releases
   rm -f -- "$upstream_backup"
   rm -f -- "$env_backup"
   rm -f -- "$compose_backup"

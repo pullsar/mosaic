@@ -27,13 +27,22 @@ die_usage() {
 }
 
 checkout_git() {
-  git -c safe.directory="$CHECKOUT" -C "$CHECKOUT" "$@"
+  runuser -u mixli-build -- \
+    git -c safe.directory="$CHECKOUT" -C "$CHECKOUT" "$@"
 }
 
 cleanup() {
+  local status="$1" cleanup_status=0
+  trap - EXIT
+  set +e
   docker image rm "$API_CI_IMAGE" >/dev/null 2>&1 || true
   if [[ "$retain_postgres_image" != '1' ]]; then
-    docker image rm "$POSTGRES_CI_IMAGE" >/dev/null 2>&1 || true
+    docker image rm --force "$POSTGRES_CI_IMAGE" >/dev/null 2>&1
+    cleanup_status=$?
+    if [[ "$cleanup_status" -ne 0 ]]; then
+      printf 'Failed to remove exact CI image tag %s.\n' \
+        "$POSTGRES_CI_IMAGE" >&2
+    fi
   fi
   if [[ -n "$postgres_container" ]]; then
     docker rm -f "$postgres_container" >/dev/null 2>&1 || true
@@ -50,6 +59,10 @@ cleanup() {
   if [[ "$prometheus_verify_root" == /tmp/mixli-prometheus-verify.* && -d "$prometheus_verify_root" ]]; then
     rm -rf -- "$prometheus_verify_root"
   fi
+  if [[ "$status" -ne 0 ]]; then
+    exit "$status"
+  fi
+  exit "$cleanup_status"
 }
 
 validate_inputs() {
@@ -290,7 +303,7 @@ production_builds() {
 
 main() {
   validate_inputs
-  trap cleanup EXIT
+  trap 'cleanup $?' EXIT
   run_stage source-integrity source_integrity
   run_stage infrastructure-contracts infrastructure_contracts
   run_stage api-postgres-integration api_postgres_integration

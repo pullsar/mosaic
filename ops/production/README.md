@@ -157,14 +157,20 @@ The deployer atomically pins the exact release's Compose file at
 `/srv/mixli/runtime/compose.yaml` and persists both pool image SHAs plus
 `MIXLI_POSTGRES_IMAGE=mixli-postgres:<sha>` in the root-owned environment file.
 Ordinary branch/PR CI builds PostgreSQL only as `mixli-postgres-ci:<sha>` and
-removes that tag on success or failure. An authorized deployment retains the
-verified CI tag only long enough to compare its image ID, refuses a conflicting
-existing production SHA tag, creates the exact production tag, and removes the
-CI tag before any deployment-time Compose command. The bootstrap environment
-intentionally names a nonexistent placeholder; the first deployment must persist
-the verified exact ref before the stack starts. Systemd and scheduled backup jobs
-use only the pinned runtime files, so a reboot cannot drift to an unverified
-checkout or mutable PostgreSQL image.
+force-removes that exact tag on success or failure; cleanup failure fails the CI
+run without hiding an earlier stage failure. Checkout Git commands run as the
+locked `mixli-build` owner so root validation cannot rewrite worktree metadata.
+An authorized deployment retains the verified CI tag until its release directory
+is successfully created, then compares the image ID, refuses a conflicting
+existing production SHA tag, creates the exact production tag, and force-removes
+the CI tag before any deployment-time Compose command. Cleanup failure is logged
+and fails deployment; the error path retries only that exact CI tag. The
+bootstrap environment intentionally names a nonexistent placeholder; the first
+deployment must persist the verified exact ref before the stack starts. Release
+pruning removes each old exact API and PostgreSQL tag before its directory, so a
+failed prune leaves a discoverable release for retry. Systemd and scheduled
+backup jobs use only the pinned runtime files, so a reboot cannot drift to an
+unverified checkout or mutable PostgreSQL image.
 
 ## Rollback and migration-forward repair
 
