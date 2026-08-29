@@ -136,6 +136,10 @@ final class UnsupportedLocalSchemaException implements Exception {
       '$supportedVersion.';
 }
 
+final class _CorruptLocalDatabaseException implements Exception {
+  const _CorruptLocalDatabaseException();
+}
+
 typedef ActorIdFactory = String Function();
 typedef ActorAccessTokenFactory = String Function();
 
@@ -169,35 +173,37 @@ final class MosaicLocalStore {
     ActorAccessTokenFactory actorAccessTokenFactory = _randomActorAccessToken,
   }) {
     _validateFeedWindowLimit(maxFeedWindowRevisionIds);
-    Database? candidate;
+    final candidate = sqlite3.open(path);
+    final store = MosaicLocalStore._(
+      candidate,
+      policy: policy,
+      maxFeedWindowRevisionIds: maxFeedWindowRevisionIds,
+      actorIdFactory: actorIdFactory,
+      actorAccessTokenFactory: actorAccessTokenFactory,
+    );
+
     try {
-      candidate = sqlite3.open(path);
-      final store = MosaicLocalStore._(
-        candidate,
-        policy: policy,
-        maxFeedWindowRevisionIds: maxFeedWindowRevisionIds,
-        actorIdFactory: actorIdFactory,
-        actorAccessTokenFactory: actorAccessTokenFactory,
-      );
       store._verifyIntegrity();
-      store._migrate();
-      return store;
-    } on UnsupportedLocalSchemaException {
-      candidate?.close();
-      rethrow;
-    } on Object {
-      candidate?.close();
-      _quarantineCorruptDatabase(path);
-      final db = sqlite3.open(path);
-      final store = MosaicLocalStore._(
-        db,
+    } on _CorruptLocalDatabaseException {
+      candidate.close();
+      return _recoverCorruptDatabase(
+        path,
         policy: policy,
         maxFeedWindowRevisionIds: maxFeedWindowRevisionIds,
         actorIdFactory: actorIdFactory,
         actorAccessTokenFactory: actorAccessTokenFactory,
       );
+    } on Object {
+      candidate.close();
+      rethrow;
+    }
+
+    try {
       store._migrate();
       return store;
+    } on Object {
+      candidate.close();
+      rethrow;
     }
   }
 
@@ -637,9 +643,18 @@ final class MosaicLocalStore {
   }
 
   void _verifyIntegrity() {
-    final result = _db.select('pragma quick_check(1)');
+    late ResultSet result;
+    try {
+      result = _db.select('pragma quick_check(1)');
+    } on SqliteException catch (error) {
+      if (error.resultCode == SqlError.SQLITE_CORRUPT ||
+          error.resultCode == SqlError.SQLITE_NOTADB) {
+        throw const _CorruptLocalDatabaseException();
+      }
+      rethrow;
+    }
     if (result.isEmpty || result.first.values.first != 'ok') {
-      throw StateError('Local database integrity check failed.');
+      throw const _CorruptLocalDatabaseException();
     }
   }
 
@@ -775,6 +790,31 @@ final class MosaicLocalStore {
         'maxFeedWindowRevisionIds',
         'must be greater than zero',
       );
+    }
+  }
+
+  static MosaicLocalStore _recoverCorruptDatabase(
+    String path, {
+    required OutboxPolicy policy,
+    required int maxFeedWindowRevisionIds,
+    required ActorIdFactory actorIdFactory,
+    required ActorAccessTokenFactory actorAccessTokenFactory,
+  }) {
+    _quarantineCorruptDatabase(path);
+    final db = sqlite3.open(path);
+    final store = MosaicLocalStore._(
+      db,
+      policy: policy,
+      maxFeedWindowRevisionIds: maxFeedWindowRevisionIds,
+      actorIdFactory: actorIdFactory,
+      actorAccessTokenFactory: actorAccessTokenFactory,
+    );
+    try {
+      store._migrate();
+      return store;
+    } on Object {
+      db.close();
+      rethrow;
     }
   }
 
