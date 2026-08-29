@@ -6,6 +6,7 @@ on:
     paths:
       - 'apps/mosaic_app/**'
       - 'packages/event_delivery/**'
+      - 'packages/local_state/**'
       - 'packages/platform_contracts/**'
       - 'packages/platform_flutter/**'
       - 'packages/play_flutter/**'
@@ -16,6 +17,7 @@ on:
     paths:
       - 'apps/mosaic_app/**'
       - 'packages/event_delivery/**'
+      - 'packages/local_state/**'
       - 'packages/platform_contracts/**'
       - 'packages/platform_flutter/**'
       - 'packages/play_flutter/**'
