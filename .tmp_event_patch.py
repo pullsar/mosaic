@@ -10,6 +10,18 @@ def replace_once(path: str, old: str, new: str) -> None:
 
 
 replace_once(
+    'packages/local_state/lib/local_state.dart',
+    """    nextAttemptAt: (row['next_attempt_at'] as String?) case final value?
+        ? DateTime.parse(value)
+        : null,
+""",
+    """    nextAttemptAt: row['next_attempt_at'] == null
+        ? null
+        : DateTime.parse(row['next_attempt_at'] as String),
+""",
+)
+
+replace_once(
     'packages/event_delivery/lib/src/indexed_db_event_store.dart',
     """      final candidates =
           records
