@@ -46,7 +46,7 @@ MIXLI_POSTGRES_IMAGE=mixli-postgres:test bats ops/production/tests/postgres_entr
 - [ ] Validate `[global]`, `repo1-path`, `[mixli]`, and `pg1-path`. When `MIXLI_PGBACKREST_REQUIRE_REPO2_S3=1`, also require the S3 type, endpoint, bucket, access key, secret key, cipher type, and cipher passphrase keys. Never echo lines or values.
 - [ ] Delegate with `exec /usr/local/bin/docker-entrypoint.sh "$@"` so official initialization, privilege dropping, signals, arguments, and exit status remain authoritative.
 - [ ] Install `/run/mixli-secrets` as `root:root 0700`, install the wrapper executable, keep the checked-in example under `/usr/local/share/mixli/`, and make the wrapper the image `ENTRYPOINT`.
-- [ ] Rebuild the image and rerun the targeted Bats files on the server. The new wrapper and Compose contract tests must pass.
+- [ ] Rebuild the image and rerun `postgres_entrypoint.bats` on the server. The wrapper contract tests must pass; the Compose staging assertion remains RED until Task 3 routes the production mount.
 
 ## Task 3: Route production and restore containers through staging
 
