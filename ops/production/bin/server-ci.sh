@@ -5,6 +5,7 @@ umask 027
 readonly CHECKOUT="${1-}"
 readonly SHA="${2-}"
 readonly TEST_MODE="${MIXLI_CI_TEST_MODE:-0}"
+readonly ENGINE_MODE="${MIXLI_CI_ENGINE_MODE:-release}"
 readonly RETAIN_RELEASE_IMAGES_REQUESTED="${MIXLI_CI_RETAIN_RELEASE_IMAGES:-${MIXLI_CI_RETAIN_POSTGRES_IMAGE:-0}}"
 readonly SHORT_SHA="${SHA:0:12}"
 readonly FLUTTER_IMAGE="${MIXLI_FLUTTER_CI_IMAGE:-mixli-flutter-builder:3.44.7}"
@@ -27,6 +28,9 @@ readonly ROOTLESS_HOST_BATS=(
   "$CHECKOUT/ops/production/tests/nginx_config.bats"
   "$CHECKOUT/ops/production/tests/postgres_backup.bats"
   "$CHECKOUT/ops/production/tests/postgres_entrypoint.bats"
+  "$CHECKOUT/ops/production/tests/review_ci.bats"
+  "$CHECKOUT/ops/production/tests/review_request.bats"
+  "$CHECKOUT/ops/production/tests/review_status.bats"
   "$CHECKOUT/ops/production/tests/server_ci.bats"
   "$CHECKOUT/ops/production/tests/verify_script.bats"
 )
@@ -75,6 +79,14 @@ rootless_builder_exec() {
 
 rootless_docker() {
   rootless_builder_exec docker "$@"
+}
+
+ci_docker() {
+  if [[ "$ENGINE_MODE" == 'review' && "$TEST_MODE" != '1' ]]; then
+    rootless_docker "$@"
+  else
+    docker "$@"
+  fi
 }
 
 load_rootless_candidate_images() {
@@ -161,20 +173,31 @@ stop_rootless_docker() {
   return "$status"
 }
 
+prepare_ci_engine() {
+  if [[ "$ENGINE_MODE" == 'review' ]]; then
+    start_rootless_docker
+    export DOCKER_HOST="unix://$rootless_runtime/docker.sock"
+    docker info --format '{{json .SecurityOptions}}' | grep -Fq 'name=rootless'
+    [[ "$(docker info --format '{{.DockerRootDir}}')" == "$rootless_data" ]]
+  fi
+}
+
 cleanup() {
   local status="$1" cleanup_status=0 image image_cleanup_status rootless_cleanup_status
   trap - EXIT
   set +e
-  stop_rootless_docker
-  rootless_cleanup_status=$?
-  if [[ "$rootless_cleanup_status" -ne 0 ]]; then
-    printf '%s\n' 'Failed to clean the private rootless Docker daemon.' >&2
-    cleanup_status="$rootless_cleanup_status"
+  if [[ "$ENGINE_MODE" == 'release' ]]; then
+    stop_rootless_docker
+    rootless_cleanup_status=$?
+    if [[ "$rootless_cleanup_status" -ne 0 ]]; then
+      printf '%s\n' 'Failed to clean the private rootless Docker daemon.' >&2
+      cleanup_status="$rootless_cleanup_status"
+    fi
   fi
-  docker image rm "$API_TEST_IMAGE" >/dev/null 2>&1 || true
+  ci_docker image rm "$API_TEST_IMAGE" >/dev/null 2>&1 || true
   if [[ "$retain_release_images" != '1' ]]; then
     for image in "$API_CI_IMAGE" "$POSTGRES_CI_IMAGE"; do
-      docker image rm --force "$image" >/dev/null 2>&1
+      ci_docker image rm --force "$image" >/dev/null 2>&1
       image_cleanup_status=$?
       if [[ "$image_cleanup_status" -ne 0 ]]; then
         printf 'Failed to remove exact CI image tag %s.\n' "$image" >&2
@@ -183,13 +206,21 @@ cleanup() {
     done
   fi
   if [[ -n "$postgres_container" ]]; then
-    docker rm -f "$postgres_container" >/dev/null 2>&1 || true
+    ci_docker rm -f "$postgres_container" >/dev/null 2>&1 || true
   fi
   if [[ -n "$network" ]]; then
-    docker network rm "$network" >/dev/null 2>&1 || true
+    ci_docker network rm "$network" >/dev/null 2>&1 || true
   fi
   if [[ -n "$flutter_volume" ]]; then
-    docker volume rm --force "$flutter_volume" >/dev/null 2>&1 || true
+    ci_docker volume rm --force "$flutter_volume" >/dev/null 2>&1 || true
+  fi
+  if [[ "$ENGINE_MODE" == 'review' ]]; then
+    stop_rootless_docker
+    rootless_cleanup_status=$?
+    if [[ "$rootless_cleanup_status" -ne 0 ]]; then
+      printf '%s\n' 'Failed to clean the private rootless Docker daemon.' >&2
+      [[ "$cleanup_status" -ne 0 ]] || cleanup_status="$rootless_cleanup_status"
+    fi
   fi
   if [[ "$systemd_verify_root" == /tmp/mixli-systemd-verify.* && -d "$systemd_verify_root" ]]; then
     rm -rf -- "$systemd_verify_root"
@@ -211,8 +242,12 @@ cleanup() {
 
 validate_inputs() {
   [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || die_usage
+  [[ "$ENGINE_MODE" == 'release' || "$ENGINE_MODE" == 'review' ]] || die_usage
   [[ "$RETAIN_RELEASE_IMAGES_REQUESTED" == '0' ||
     "$RETAIN_RELEASE_IMAGES_REQUESTED" == '1' ]] || die_usage
+  if [[ "$ENGINE_MODE" == 'review' && "$RETAIN_RELEASE_IMAGES_REQUESTED" != '0' ]]; then
+    die_usage
+  fi
   [[ "$CHECKOUT" == /* && "$CHECKOUT" != '/' && -d "$CHECKOUT" ]] || die_usage
   [[ "$(readlink -f "$CHECKOUT")" == "$CHECKOUT" ]] || die_usage
 
@@ -280,8 +315,10 @@ infrastructure_contracts() {
   docker build -f "$CHECKOUT/ops/production/postgres/Dockerfile" \
     -t "$POSTGRES_CI_IMAGE" "$CHECKOUT/ops/production/postgres"
 
-  start_rootless_docker
-  load_rootless_candidate_images
+  if [[ "$ENGINE_MODE" == 'release' ]]; then
+    start_rootless_docker
+    load_rootless_candidate_images
+  fi
   rootless_docker build -f "$CHECKOUT/ops/production/rootless-bats.Dockerfile" \
     -t "$ROOTLESS_BATS_IMAGE" "$CHECKOUT"
 
@@ -299,11 +336,13 @@ infrastructure_contracts() {
   rootless_docker run --rm --network none \
     -v "$CHECKOUT:$CHECKOUT:ro" -w "$CHECKOUT" \
     "$ROOTLESS_BATS_IMAGE" "${ROOTLESS_CONTAINER_BATS[@]}"
-  stop_rootless_docker
+  if [[ "$ENGINE_MODE" == 'release' ]]; then
+    stop_rootless_docker
+  fi
 
   mapfile -d '' shell_files < <(
     builder_exec find "$CHECKOUT/ops/production/bin" -maxdepth 1 -type f \
-      \( -name '*.sh' -o -name 'deploy-dispatch' \) -print0
+      \( -name '*.sh' -o -name 'deploy-dispatch' -o -name 'review-dispatch' \) -print0
   )
   builder_exec shellcheck "${shell_files[@]}"
 
@@ -507,6 +546,9 @@ main() {
   validate_inputs
   trap 'cleanup $?' EXIT
   run_stage source-integrity source_integrity
+  if [[ "$TEST_MODE" != '1' ]]; then
+    prepare_ci_engine
+  fi
   run_stage infrastructure-contracts infrastructure_contracts
   run_stage api-postgres-integration api_postgres_integration
   run_stage flutter-workspace flutter_workspace

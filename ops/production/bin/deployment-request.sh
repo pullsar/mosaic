@@ -16,6 +16,8 @@ if [[ "$TEST_MODE" == '1' ]]; then
   exit 0
 fi
 
+systemctl stop 'mixli-review-*'
+
 systemd-run --quiet --no-block --collect --unit="$unit" \
   --property=Type=exec --property=TimeoutStartSec=2h \
   /opt/mixli/bin/deployment.sh "$SHA"
