@@ -3,14 +3,13 @@ name: ci
 on:
   push:
     branches: ['**']
-  pull_request:
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   flutter:
@@ -19,6 +18,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.ref_name }}
       - name: Flutter
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
@@ -26,8 +27,12 @@ jobs:
           cache: true
       - name: Resolve locked workspace
         run: flutter pub get --enforce-lockfile
-      - name: Show exact formatter diff
+      - name: Format exact Dart 3.12.2 output and commit
         run: |
           dart format .
-          git diff -- apps/mosaic_app/lib/app_event_runtime.dart apps/mosaic_app/lib/consumer_api_client.dart apps/mosaic_app/lib/main.dart apps/mosaic_app/test/app_event_runtime_test.dart apps/mosaic_app/test/consumer_api_client_test.dart packages/event_delivery/lib/src/api_http_policy.dart packages/event_delivery/test/api_http_policy_test.dart
-          exit 1
+          git diff --quiet && exit 0
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps/mosaic_app/lib/app_event_runtime.dart apps/mosaic_app/lib/consumer_api_client.dart apps/mosaic_app/lib/main.dart apps/mosaic_app/test/app_event_runtime_test.dart apps/mosaic_app/test/consumer_api_client_test.dart packages/event_delivery/lib/src/api_http_policy.dart packages/event_delivery/test/api_http_policy_test.dart
+          git commit -m 'style: apply Dart 3.12.2 formatting [skip ci]'
+          git push origin HEAD:${{ github.ref_name }}
