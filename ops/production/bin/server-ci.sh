@@ -467,7 +467,7 @@ flutter_workspace() {
   docker volume create "$flutter_volume" >/dev/null
   docker run --rm -v "$CHECKOUT:/source:ro" -v "$flutter_volume:/workspace" \
     alpine:3.22 sh -c 'cp -a /source/. /workspace/ && chown -R 1000:1000 /workspace'
-  docker run --rm -v "$flutter_volume:/workspace" -w /workspace \
+  docker run --rm --shm-size=1g -v "$flutter_volume:/workspace" -w /workspace \
     "$FLUTTER_IMAGE" bash -c \
     'set -Eeuo pipefail
      flutter pub get --offline --enforce-lockfile

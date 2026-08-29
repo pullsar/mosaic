@@ -316,3 +316,9 @@ production-builds" ]
     '"test": "node --import tsx --test --test-concurrency=1 test/**/*.test.ts"' \
     "$REPO_ROOT/apps/api/package.json"
 }
+
+@test "Flutter browser tests receive bounded shared memory" {
+  workspace="$(sed -n '/^flutter_workspace()/,/^}/p' \
+    "$REPO_ROOT/ops/production/bin/server-ci.sh")"
+  [[ "$workspace" == *'docker run --rm --shm-size=1g'* ]]
+}

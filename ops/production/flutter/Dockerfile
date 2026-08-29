@@ -10,7 +10,6 @@ RUN apt-get update \
       bash \
       ca-certificates \
       chromium \
-      chromium-sandbox \
       curl \
       git \
       openjdk-21-jdk-headless \
@@ -28,10 +27,16 @@ RUN install -d /opt/android-sdk/cmdline-tools \
     && mv /opt/android-sdk/cmdline-tools/cmdline-tools /opt/android-sdk/cmdline-tools/latest \
     && rm /tmp/android-command-line-tools.zip
 
+# Chrome cannot create a nested namespace sandbox inside the rootless CI engine.
+# The non-root container, rootless daemon, and hardened systemd unit are the CI boundary.
+RUN printf '%s\n' '#!/bin/sh' 'exec /usr/bin/chromium --no-sandbox "$@"' \
+      >/usr/local/bin/chromium-ci \
+    && chmod 0755 /usr/local/bin/chromium-ci
+
 ENV ANDROID_HOME=/opt/android-sdk \
     ANDROID_SDK_ROOT=/opt/android-sdk \
     JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 \
-    CHROME_EXECUTABLE=/usr/bin/chromium
+    CHROME_EXECUTABLE=/usr/local/bin/chromium-ci
 
 RUN yes | /opt/android-sdk/cmdline-tools/latest/bin/android \
       --sdk=/opt/android-sdk \
