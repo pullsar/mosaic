@@ -74,6 +74,7 @@ builder_exec() {
 rootless_builder_exec() {
   builder_exec env \
     HOME="$rootless_home" \
+    DOCKER_CONFIG="$rootless_home/.docker" \
     XDG_RUNTIME_DIR="$rootless_runtime" \
     DOCKER_HOST="unix://$rootless_runtime/docker.sock" \
     MIXLI_ROOTLESS_DATA="$rootless_data" \
@@ -120,9 +121,11 @@ start_rootless_docker() {
   rootless_data="$rootless_root/data"
   rootless_home="$rootless_root/home"
   install -d -o "$BUILDER_USER" -g "$BUILDER_USER" -m 0700 \
-    "$rootless_data" "$rootless_home" "$rootless_root/exec"
+    "$rootless_data" "$rootless_home" "$rootless_home/.docker" "$rootless_root/exec"
   chown "$BUILDER_USER:$BUILDER_USER" "$rootless_root" "$rootless_runtime"
   chmod 0700 "$rootless_root" "$rootless_runtime"
+  printf '{}\n' | builder_exec tee "$rootless_home/.docker/config.json" >/dev/null
+  builder_exec chmod 0600 "$rootless_home/.docker/config.json"
 
   setsid runuser -u "$BUILDER_USER" -- env \
     HOME="$rootless_home" \
@@ -184,10 +187,7 @@ prepare_ci_engine() {
   if [[ "$ENGINE_MODE" == 'review' ]]; then
     start_rootless_docker
     docker_config="$(mktemp -d /tmp/mixli-docker-config.XXXXXX)"
-    chown "$BUILDER_USER:$BUILDER_USER" "$docker_config"
-    chmod 0700 "$docker_config"
     printf '{}\n' >"$docker_config/config.json"
-    chown "$BUILDER_USER:$BUILDER_USER" "$docker_config/config.json"
     chmod 0600 "$docker_config/config.json"
     export DOCKER_CONFIG="$docker_config"
     export DOCKER_HOST="unix://$rootless_runtime/docker.sock"
