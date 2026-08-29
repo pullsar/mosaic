@@ -155,9 +155,9 @@ setup() { setup_repo_root; }
 
 @test "Prometheus configuration is readable only by its container identity" {
   provision="$REPO_ROOT/ops/production/bin/provision-host.sh"
-  grep -Fq 'install -d -o 65534 -g 65534 -m 0750 "$(target /etc/mixli/prometheus)"' \
+  grep -Fq 'install -d -o root -g 65534 -m 0750 "$(target /etc/mixli/prometheus)"' \
     "$provision"
-  grep -Fq 'install -o 65534 -g 65534 -m 0640' "$provision"
+  grep -Fq 'install -o root -g 65534 -m 0640' "$provision"
   ! grep -Eq 'chmod[[:space:]]+0?644.*prometheus|install .* -m 0?644.*prometheus' \
     "$provision"
 }
