@@ -94,8 +94,8 @@ EOF
 
 switch_web() {
   local release="$1" temporary="$ROOT/.current.$$.tmp"
-  ln -s "$release" "$temporary"
-  mv -fT "$temporary" "$ROOT/current"
+  ln -s "$release" "$temporary" || return 1
+  mv -fT "$temporary" "$ROOT/current" || return 1
 }
 
 rollback_fail_if_requested() {
@@ -108,19 +108,19 @@ rollback_fail_if_requested() {
 reload_nginx() {
   local context="${1:-deploy}"
   if [[ "$context" == 'rollback' ]]; then
-    rollback_fail_if_requested nginx
+    rollback_fail_if_requested nginx || return 1
   else
-    fail_if_requested nginx
+    fail_if_requested nginx || return 1
   fi
   [[ "$TEST_MODE" == '1' ]] && return 0
-  compose up -d --no-deps nginx
-  compose exec -T nginx nginx -t
-  compose exec -T nginx nginx -s reload
+  compose up -d --no-deps nginx || return 1
+  compose exec -T nginx nginx -t || return 1
+  compose exec -T nginx nginx -s reload || return 1
 }
 
 verify_rollback_traffic() {
   [[ -n "$stopped_pool" && -n "$previous_release_sha" ]] || return 0
-  rollback_fail_if_requested traffic
+  rollback_fail_if_requested traffic || return 1
   if [[ "$TEST_MODE" == '1' ]]; then
     log_event "rollback-traffic-verified:$stopped_pool"
     return 0
@@ -572,12 +572,12 @@ restart_old_pool() {
   service_one="api-${stopped_pool}-1"
   service_two="api-${stopped_pool}-2"
   if [[ "$TEST_MODE" == '1' ]]; then
-    log_event "old-pool-restarted:$stopped_pool"
-    log_event "old-pool-healthy:$stopped_pool"
+    log_event "old-pool-restarted:$stopped_pool" || return 1
+    log_event "old-pool-healthy:$stopped_pool" || return 1
     old_pool_stopped=0
     return 0
   fi
-  compose up -d --no-deps "$service_one" "$service_two"
+  compose up -d --no-deps "$service_one" "$service_two" || return 1
   for ((attempt = 1; attempt <= 60; attempt++)); do
     if container_is_ready "$service_one" && container_is_ready "$service_two"; then
       consecutive=$((consecutive + 1))
