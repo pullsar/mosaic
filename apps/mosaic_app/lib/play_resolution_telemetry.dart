@@ -9,10 +9,13 @@ void recordPlayResolutionTelemetry(
   required bool completed,
   bool? correct,
 }) {
-  final normalizedPlayId = _boundedText(playId, 'playId');
-  final normalizedOutcome = _boundedText(outcome, 'outcome');
-  if (attempts < 1 || attempts > 1000) {
-    throw ArgumentError.value(attempts, 'attempts', 'must be between 1 and 1000');
+  final normalizedPlayId = _boundedText(playId);
+  final normalizedOutcome = _boundedText(outcome);
+  if (normalizedPlayId == null ||
+      normalizedOutcome == null ||
+      attempts < 1 ||
+      attempts > 1000) {
+    return;
   }
   telemetry.event(MosaicEventName.playResolved, <String, Object?>{
     'playId': normalizedPlayId,
@@ -28,10 +31,7 @@ void recordPlayResolutionTelemetry(
   }
 }
 
-String _boundedText(String value, String name) {
+String? _boundedText(String value) {
   final normalized = value.trim();
-  if (normalized.isEmpty || normalized.length > 200) {
-    throw ArgumentError.value(value, name, 'must be 1 to 200 characters');
-  }
-  return normalized;
+  return normalized.isEmpty || normalized.length > 200 ? null : normalized;
 }
