@@ -55,8 +55,43 @@ jobs:
           end = source.index(end_marker, start)
           script = dedent(source[start:end]).rstrip() + '\n'
 
-          # Replace the two old whitespace-sensitive recipe operations with
-          # assertions against the actual source files.
+          helper_old = '''def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one match, found {count}: {old[:80]!r}')
+              p.write_text(text.replace(old, new, 1))
+          '''.replace('          ', '')
+          helper_new = '''def replace_once(path, old, new):
+              import re
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count == 1:
+                  p.write_text(text.replace(old, new, 1))
+                  return
+              if count > 1:
+                  raise SystemExit(f'{path}: expected one exact match, found {count}: {old[:80]!r}')
+              lines = old.splitlines(keepends=True)
+              pattern = ''.join(
+                  r'^[ \\t]*' + re.escape(line.lstrip(' \\t'))
+                  for line in lines
+              )
+              matches = list(re.finditer(pattern, text, flags=re.MULTILINE))
+              if len(matches) != 1:
+                  raise SystemExit(
+                      f'{path}: expected one indentation-tolerant match, found {len(matches)}: {old[:80]!r}'
+                  )
+              match = matches[0]
+              p.write_text(text[:match.start()] + new + text[match.end():])
+          '''.replace('          ', '')
+          if script.count(helper_old) != 1:
+              raise SystemExit('ranking recipe replace_once helper changed')
+          script = script.replace(helper_old, helper_new, 1)
+
+          # Replace the two operations whose old blocks include SQL/string
+          # indentation that should stay explicit rather than regex-normalized.
           sql_pos = script.index('"""      where event.actor_id = $1')
           sql_start = script.rfind('replace_once(', 0, sql_pos)
           sql_end = script.index('\n\n# Migration 008', sql_pos)
