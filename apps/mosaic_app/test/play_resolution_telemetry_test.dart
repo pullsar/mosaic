@@ -57,29 +57,24 @@ void main() {
     });
   });
 
-  test('invalid identities and impossible attempt counts fail before telemetry', () {
+  test('invalid identities and impossible attempt counts are dropped safely', () {
     final telemetry = _RecordingTelemetry();
 
-    expect(
-      () => recordPlayResolutionTelemetry(
-        telemetry,
-        playId: ' ',
-        outcome: 'correct',
-        attempts: 1,
-        completed: true,
-      ),
-      throwsArgumentError,
+    recordPlayResolutionTelemetry(
+      telemetry,
+      playId: ' ',
+      outcome: 'correct',
+      attempts: 1,
+      completed: true,
     );
-    expect(
-      () => recordPlayResolutionTelemetry(
-        telemetry,
-        playId: 'play',
-        outcome: 'correct',
-        attempts: 0,
-        completed: true,
-      ),
-      throwsArgumentError,
+    recordPlayResolutionTelemetry(
+      telemetry,
+      playId: 'play',
+      outcome: 'correct',
+      attempts: 0,
+      completed: true,
     );
+
     expect(telemetry.events, isEmpty);
   });
 }
