@@ -1,27 +1,40 @@
 import {Pool, type PoolClient} from 'pg';
+import {feedCandidateIdentity} from './consumer_ranking.js';
 
 const PROFILE_VERSION = 1;
 const DEFAULT_MAX_EVENTS_PER_RUN = 512;
 const MAX_EVENTS_PER_RUN = 2000;
 const RECENT_REVISION_LIMIT = 64;
-const TOPIC_SIGNAL_LIMIT = 128;
 const FORMAT_SIGNAL_LIMIT = 32;
-const MORE_LIKE_TOPIC_LIMIT = 128;
 const DISMISSAL_COUNT_CAP = 8;
 const CORRECT_RESOLUTION_STEP = 0.16;
 const INTENTIONAL_RESOLUTION_STEP = 0.1;
 const INCORRECT_RESOLUTION_STEP = 0.04;
 const RAPID_DISMISS_STEP = 0.08;
 const RAPID_DISMISS_WINDOW_MS = 5 * 60 * 1000;
+const RECENT_REVISION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const DISMISSAL_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const MORE_LIKE_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+const AFFINITY_HALF_LIFE_MS = 30 * 24 * 60 * 60 * 1000;
+const AFFINITY_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
+
+export interface ConsumerDerivedRankingProfile {
+  interactionAffinity: Record<string, number>;
+  recentPlayRevisionKeys: string[];
+  topicDismissalCounts: Record<string, number>;
+  formatDismissalCounts: Record<string, number>;
+  moreLikeTopicIds: string[];
+}
 
 export interface ConsumerSignalProjector {
   projectActor(actorId: string): Promise<number>;
+  readActorProfile(actorId: string): Promise<ConsumerDerivedRankingProfile | null>;
   rebuildActor(actorId: string): Promise<number>;
 }
 
 export interface ConsumerSignalProjectorOptions {
   maxEventsPerRun?: number;
+  clock?: () => Date;
 }
 
 type TimedAffinity = {value: number; updatedAt: string};
@@ -37,9 +50,7 @@ type ProfileState = {
   checkpointEventId: string | null;
   interactionAffinity: Record<string, TimedAffinity>;
   recentRevisions: RecentRevision[];
-  topicDismissalCounts: Record<string, TimedCount>;
   formatDismissalCounts: Record<string, TimedCount>;
-  moreLikeTopicExpiries: Record<string, string>;
   formatLastDismissedAt: Record<string, string>;
 };
 
@@ -48,9 +59,7 @@ type ProfileRow = {
   checkpoint_event_id: string | null;
   interaction_affinity: unknown;
   recent_revisions: unknown;
-  topic_dismissal_counts: unknown;
   format_dismissal_counts: unknown;
-  more_like_topic_expiries: unknown;
   format_last_dismissed_at: unknown;
 };
 
@@ -61,11 +70,18 @@ type ProjectableEventRow = {
   play_revision_id: string | null;
   payload: unknown;
   play_format: string | null;
+};
+
+type ExplicitSignalRow = {
+  signal: 'more_like_this' | 'not_interested';
+  first_received_at: string;
+  format: string | null;
   topic_ids: string[];
 };
 
 export class PostgresConsumerSignalProjector implements ConsumerSignalProjector {
   private readonly maxEventsPerRun: number;
+  private readonly clock: () => Date;
 
   constructor(
     private readonly pool: Pool,
@@ -77,6 +93,7 @@ export class PostgresConsumerSignalProjector implements ConsumerSignalProjector 
       MAX_EVENTS_PER_RUN,
       'maxEventsPerRun',
     );
+    this.clock = options.clock ?? Date.new;
   }
 
   async projectActor(actorId: string): Promise<number> {
@@ -103,6 +120,76 @@ export class PostgresConsumerSignalProjector implements ConsumerSignalProjector 
     } finally {
       client.release();
     }
+  }
+
+  async readActorProfile(actorId: string): Promise<ConsumerDerivedRankingProfile | null> {
+    const normalizedActorId = requiredText(actorId, 'actorId');
+    const result = await this.pool.query<{
+      interaction_affinity: unknown;
+      recent_revisions: unknown;
+      format_dismissal_counts: unknown;
+    }>(
+      `select interaction_affinity,
+              recent_revisions,
+              format_dismissal_counts
+         from consumer_signal_profiles
+        where actor_id = $1`,
+      [normalizedActorId],
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+
+    const now = this.clock().getTime();
+    if (!Number.isFinite(now)) throw new Error('Consumer signal clock returned an invalid time.');
+    const formatDismissalCounts = decodeCountsForRanking(row.format_dismissal_counts, now);
+    const topicDismissalCounts: Record<string, number> = {};
+    const moreLikeTopics = new Set<string>();
+    const explicit = await this.pool.query<ExplicitSignalRow>(
+      `select signal.signal,
+              signal.first_received_at::text as first_received_at,
+              revision.document ->> 'format' as format,
+              coalesce((
+                select array_agg(topic.topic_id order by topic.topic_id)
+                  from (
+                    select distinct link.topic_id
+                      from play_revision_topics link
+                     where link.play_id = signal.play_id
+                       and link.revision_id = signal.revision_id
+                  ) topic
+              ), array[]::text[]) as topic_ids
+         from actor_play_signals signal
+         join play_revisions revision
+           on revision.play_id = signal.play_id
+          and revision.revision_id = signal.revision_id
+        where signal.actor_id = $1
+          and signal.signal in ('more_like_this', 'not_interested')
+        order by signal.signal, signal.play_id`,
+      [normalizedActorId],
+    );
+
+    for (const action of explicit.rows) {
+      const receivedAt = timestampMs(action.first_received_at, 'action signal receipt');
+      const age = Math.max(0, now - receivedAt);
+      const topicIds = normalizedTopicIds(action.topic_ids);
+      if (action.signal === 'more_like_this') {
+        if (age <= MORE_LIKE_TTL_MS) {
+          for (const topicId of topicIds) moreLikeTopics.add(topicId);
+        }
+        continue;
+      }
+      if (age > DISMISSAL_TTL_MS) continue;
+      for (const topicId of topicIds) incrementCount(topicDismissalCounts, topicId);
+      const format = optionalText(action.format)?.toLowerCase();
+      if (format !== null) incrementCount(formatDismissalCounts, format);
+    }
+
+    return {
+      interactionAffinity: decodeAffinityForRanking(row.interaction_affinity, now),
+      recentPlayRevisionKeys: decodeRecentRevisionsForRanking(row.recent_revisions, now),
+      topicDismissalCounts,
+      formatDismissalCounts,
+      moreLikeTopicIds: [...moreLikeTopics].sort(),
+    };
   }
 
   async rebuildActor(actorId: string): Promise<number> {
@@ -168,9 +255,7 @@ async function loadLockedProfile(client: PoolClient, actorId: string): Promise<P
             checkpoint_event_id,
             interaction_affinity,
             recent_revisions,
-            topic_dismissal_counts,
             format_dismissal_counts,
-            more_like_topic_expiries,
             format_last_dismissed_at
        from consumer_signal_profiles
       where actor_id = $1
@@ -195,16 +280,7 @@ async function loadEvents(
             event.received_at::text as received_at,
             event.play_revision_id,
             event.payload,
-            revision.document ->> 'format' as play_format,
-            coalesce((
-              select array_agg(topic.topic_id order by topic.topic_id)
-                from (
-                  select distinct link.topic_id
-                    from play_revision_topics link
-                   where link.play_id = event.payload ->> 'playId'
-                     and link.revision_id = event.play_revision_id
-                ) topic
-            ), array[]::text[]) as topic_ids
+            revision.document ->> 'format' as play_format
        from interaction_events event
        left join play_revisions revision
          on revision.play_id = event.payload ->> 'playId'
@@ -239,44 +315,27 @@ function applyEvent(state: ProfileState, event: ProjectableEventRow): void {
   const playId = optionalText(payload?.playId);
   const revisionId = optionalText(event.play_revision_id);
   const format = optionalText(event.play_format)?.toLowerCase() ?? null;
-  const topicIds = normalizedTopicIds(event.topic_ids);
-  const hasAuthoritativePlay = playId !== null && revisionId !== null && format !== null;
 
   switch (event.event_name) {
     case 'play_visible':
-      if (hasAuthoritativePlay) {
+      if (playId !== null && revisionId !== null && format !== null) {
         rememberRecentRevision(state, playId, revisionId, event.received_at);
       }
       return;
     case 'play_resolved':
-      if (format === null) return;
-      applyResolutionAffinity(state, format, payload, event.received_at);
+      if (format !== null) {
+        applyResolutionAffinity(state, format, payload, event.received_at);
+      }
       return;
     case 'play_dismissed':
-      if (format === null || optionalText(payload?.reason) !== 'swipe') return;
-      applySwipeDismissal(state, format, receivedAt, event.received_at);
+      if (format !== null && optionalText(payload?.reason) === 'swipe') {
+        applySwipeDismissal(state, format, receivedAt, event.received_at);
+      }
       return;
     case 'play_not_interested':
-      if (format === null) return;
-      incrementTimedCount(
-        state.formatDismissalCounts,
-        format,
-        event.received_at,
-        FORMAT_SIGNAL_LIMIT,
-      );
-      for (const topicId of topicIds) {
-        incrementTimedCount(
-          state.topicDismissalCounts,
-          topicId,
-          event.received_at,
-          TOPIC_SIGNAL_LIMIT,
-        );
-      }
-      return;
     case 'more_like_this':
-      for (const topicId of topicIds) {
-        rememberMoreLikeTopic(state, topicId, receivedAt);
-      }
+      // These are canonical one-shot intents in actor_play_signals. Reading
+      // that source table prevents a new event ID from multiplying one intent.
       return;
     default:
       return;
@@ -296,8 +355,7 @@ function applyResolutionAffinity(
       ? INCORRECT_RESOLUTION_STEP
       : INTENTIONAL_RESOLUTION_STEP;
   const current = state.interactionAffinity[format]?.value ?? 0;
-  const next = current + step * (1 - current);
-  setTimedAffinity(state, format, next, receivedAt);
+  setTimedAffinity(state, format, current + step * (1 - current), receivedAt);
 }
 
 function applySwipeDismissal(
@@ -306,30 +364,23 @@ function applySwipeDismissal(
   receivedAt: Date,
   receivedAtText: string,
 ): void {
-  incrementTimedCount(
-    state.formatDismissalCounts,
-    format,
-    receivedAtText,
-    FORMAT_SIGNAL_LIMIT,
-  );
+  incrementTimedCount(state.formatDismissalCounts, format, receivedAtText);
   const previousRaw = state.formatLastDismissedAt[format];
-  const previous = previousRaw === undefined ? null : Date.parse(previousRaw);
+  const previous = previousRaw === undefined ? Number.NaN : Date.parse(previousRaw);
   if (
-    previous !== null &&
     Number.isFinite(previous) &&
     receivedAt.getTime() >= previous &&
     receivedAt.getTime() - previous <= RAPID_DISMISS_WINDOW_MS
   ) {
     const current = state.interactionAffinity[format]?.value ?? 0;
-    const next = current - RAPID_DISMISS_STEP * (1 + current);
-    setTimedAffinity(state, format, next, receivedAtText);
+    setTimedAffinity(
+      state,
+      format,
+      current - RAPID_DISMISS_STEP * (1 + current),
+      receivedAtText,
+    );
   }
-  setBoundedTextEntry(
-    state.formatLastDismissedAt,
-    format,
-    receivedAtText,
-    FORMAT_SIGNAL_LIMIT,
-  );
+  setBoundedTextEntry(state.formatLastDismissedAt, format, receivedAtText);
 }
 
 function setTimedAffinity(
@@ -338,14 +389,13 @@ function setTimedAffinity(
   value: number,
   updatedAt: string,
 ): void {
-  if (!(format in state.interactionAffinity) &&
-      Object.keys(state.interactionAffinity).length >= FORMAT_SIGNAL_LIMIT) {
+  if (
+    !(format in state.interactionAffinity) &&
+    Object.keys(state.interactionAffinity).length >= FORMAT_SIGNAL_LIMIT
+  ) {
     evictOldestTimedEntry(state.interactionAffinity);
   }
-  state.interactionAffinity[format] = {
-    value: clampSigned(value),
-    updatedAt,
-  };
+  state.interactionAffinity[format] = {value: clampSigned(value), updatedAt};
 }
 
 function rememberRecentRevision(
@@ -364,30 +414,12 @@ function rememberRecentRevision(
   }
 }
 
-function rememberMoreLikeTopic(
-  state: ProfileState,
-  topicId: string,
-  receivedAt: Date,
-): void {
-  const expiry = new Date(receivedAt.getTime() + MORE_LIKE_TTL_MS).toISOString();
-  const existing = state.moreLikeTopicExpiries[topicId];
-  if (existing !== undefined && Date.parse(existing) >= expiryMs(expiry)) return;
-  setBoundedTextEntry(
-    state.moreLikeTopicExpiries,
-    topicId,
-    expiry,
-    MORE_LIKE_TOPIC_LIMIT,
-    true,
-  );
-}
-
 function incrementTimedCount(
   target: Record<string, TimedCount>,
   key: string,
   updatedAt: string,
-  limit: number,
 ): void {
-  if (!(key in target) && Object.keys(target).length >= limit) {
+  if (!(key in target) && Object.keys(target).length >= FORMAT_SIGNAL_LIMIT) {
     evictOldestTimedEntry(target);
   }
   target[key] = {
@@ -396,41 +428,29 @@ function incrementTimedCount(
   };
 }
 
+function incrementCount(target: Record<string, number>, key: string): void {
+  target[key] = Math.min(DISMISSAL_COUNT_CAP, (target[key] ?? 0) + 1);
+}
+
 function evictOldestTimedEntry<T extends {updatedAt: string}>(target: Record<string, T>): void {
-  let oldestKey: string | null = null;
-  let oldestTime = Number.POSITIVE_INFINITY;
-  for (const [key, entry] of Object.entries(target)) {
-    const timestamp = Date.parse(entry.updatedAt);
-    const comparable = Number.isFinite(timestamp) ? timestamp : Number.NEGATIVE_INFINITY;
-    if (
-      comparable < oldestTime ||
-      (comparable === oldestTime && (oldestKey === null || key < oldestKey))
-    ) {
-      oldestKey = key;
-      oldestTime = comparable;
-    }
-  }
-  if (oldestKey !== null) delete target[oldestKey];
+  const oldest = Object.entries(target).sort(([leftKey, left], [rightKey, right]) => {
+    const time = timestampMs(left.updatedAt, 'signal update') - timestampMs(right.updatedAt, 'signal update');
+    return time !== 0 ? time : leftKey.localeCompare(rightKey);
+  })[0];
+  if (oldest !== undefined) delete target[oldest[0]];
 }
 
 function setBoundedTextEntry(
   target: Record<string, string>,
   key: string,
   value: string,
-  limit: number,
-  evictByValueTime = false,
 ): void {
-  if (!(key in target) && Object.keys(target).length >= limit) {
-    const keys = Object.keys(target);
-    keys.sort((left, right) => {
-      if (evictByValueTime) {
-        const time = expiryMs(target[left] ?? '') - expiryMs(target[right] ?? '');
-        if (time !== 0) return time;
-      }
-      return left.localeCompare(right);
-    });
-    const first = keys[0];
-    if (first !== undefined) delete target[first];
+  if (!(key in target) && Object.keys(target).length >= FORMAT_SIGNAL_LIMIT) {
+    const oldest = Object.entries(target).sort(([leftKey, left], [rightKey, right]) => {
+      const time = timestampMs(left, 'dismissal timestamp') - timestampMs(right, 'dismissal timestamp');
+      return time !== 0 ? time : leftKey.localeCompare(rightKey);
+    })[0];
+    if (oldest !== undefined) delete target[oldest[0]];
   }
   target[key] = value;
 }
@@ -447,10 +467,8 @@ async function persistProfile(
             checkpoint_event_id = $4,
             interaction_affinity = $5::jsonb,
             recent_revisions = $6::jsonb,
-            topic_dismissal_counts = $7::jsonb,
-            format_dismissal_counts = $8::jsonb,
-            more_like_topic_expiries = $9::jsonb,
-            format_last_dismissed_at = $10::jsonb,
+            format_dismissal_counts = $7::jsonb,
+            format_last_dismissed_at = $8::jsonb,
             updated_at = now()
       where actor_id = $1`,
     [
@@ -460,9 +478,7 @@ async function persistProfile(
       state.checkpointEventId,
       JSON.stringify(state.interactionAffinity),
       JSON.stringify(state.recentRevisions),
-      JSON.stringify(state.topicDismissalCounts),
       JSON.stringify(state.formatDismissalCounts),
-      JSON.stringify(state.moreLikeTopicExpiries),
       JSON.stringify(state.formatLastDismissedAt),
     ],
   );
@@ -474,9 +490,7 @@ function emptyProfile(): ProfileState {
     checkpointEventId: null,
     interactionAffinity: {},
     recentRevisions: [],
-    topicDismissalCounts: {},
     formatDismissalCounts: {},
-    moreLikeTopicExpiries: {},
     formatLastDismissedAt: {},
   };
 }
@@ -487,9 +501,7 @@ function decodeProfile(row: ProfileRow): ProfileState {
     checkpointEventId: row.checkpoint_event_id,
     interactionAffinity: decodeTimedAffinityMap(row.interaction_affinity),
     recentRevisions: decodeRecentRevisions(row.recent_revisions),
-    topicDismissalCounts: decodeTimedCountMap(row.topic_dismissal_counts),
     formatDismissalCounts: decodeTimedCountMap(row.format_dismissal_counts),
-    moreLikeTopicExpiries: decodeTextMap(row.more_like_topic_expiries),
     formatLastDismissedAt: decodeTextMap(row.format_last_dismissed_at),
   };
 }
@@ -557,6 +569,34 @@ function decodeTextMap(value: unknown): Record<string, string> {
   return result;
 }
 
+function decodeAffinityForRanking(value: unknown, now: number): Record<string, number> {
+  const record = decodeTimedAffinityMap(value);
+  const result: Record<string, number> = {};
+  for (const [format, entry] of Object.entries(record)) {
+    const age = Math.max(0, now - timestampMs(entry.updatedAt, 'affinity update'));
+    if (age > AFFINITY_MAX_AGE_MS) continue;
+    result[format] = entry.value * Math.pow(0.5, age / AFFINITY_HALF_LIFE_MS);
+  }
+  return result;
+}
+
+function decodeRecentRevisionsForRanking(value: unknown, now: number): string[] {
+  return decodeRecentRevisions(value)
+    .filter((entry) => Math.max(0, now - timestampMs(entry.receivedAt, 'recent revision')) <= RECENT_REVISION_TTL_MS)
+    .map((entry) => feedCandidateIdentity(entry.playId, entry.revisionId));
+}
+
+function decodeCountsForRanking(value: unknown, now: number): Record<string, number> {
+  const record = decodeTimedCountMap(value);
+  const result: Record<string, number> = {};
+  for (const [key, entry] of Object.entries(record)) {
+    if (Math.max(0, now - timestampMs(entry.updatedAt, 'dismissal update')) <= DISMISSAL_TTL_MS) {
+      result[key] = entry.count;
+    }
+  }
+  return result;
+}
+
 function requireRecord(value: unknown, name: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error(`${name} must be an object.`);
@@ -594,13 +634,12 @@ function parseTimestamp(value: string, name: string): Date {
   return timestamp;
 }
 
-function clampSigned(value: number): number {
-  return Math.max(-1, Math.min(1, value));
+function timestampMs(value: string, name: string): number {
+  return parseTimestamp(value, name).getTime();
 }
 
-function expiryMs(value: string): number {
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
+function clampSigned(value: number): number {
+  return Math.max(-1, Math.min(1, value));
 }
 
 function boundedInteger(value: number, min: number, max: number, name: string): number {
