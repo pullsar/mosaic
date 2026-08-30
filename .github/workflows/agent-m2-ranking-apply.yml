@@ -55,12 +55,14 @@ jobs:
           end = source.index(end_marker, start)
           script = dedent(source[start:end]).rstrip() + '\n'
 
+          # Replace the two old whitespace-sensitive recipe operations with
+          # assertions against the actual source files.
           sql_pos = script.index('"""      where event.actor_id = $1')
-          block_start = script.rfind('replace_once(', 0, sql_pos)
-          block_end = script.index('\n\n# Migration 008', sql_pos)
-          if block_start < 0:
+          sql_start = script.rfind('replace_once(', 0, sql_pos)
+          sql_end = script.index('\n\n# Migration 008', sql_pos)
+          if sql_start < 0:
               raise SystemExit('ranking recipe SQL patch block missing')
-          replacement = '''projector_path = Path(projector)
+          sql_replacement = '''projector_path = Path(projector)
           projector_text = projector_path.read_text()
           projection_where = "      where event.actor_id = $1\\n        and (\\n"
           if projector_text.count(projection_where) != 1:
@@ -70,11 +72,43 @@ jobs:
               "      where event.actor_id = $1\\n        and event.event_name in ('play_visible', 'play_resolved', 'play_dismissed')\\n        and (\\n",
               1,
           ))'''.replace('          ', '')
-          Path('/tmp/apply-ranking.sh').write_text(
-              script[:block_start] + replacement + script[block_end:]
-          )
+          script = script[:sql_start] + sql_replacement + script[sql_end:]
+
+          migration_pos = script.index('const actionsDownPool = new Pool')
+          migration_start = script.rfind('replace_once(', 0, migration_pos)
+          migration_end = script.index('\n\n# Projector regression', migration_pos)
+          if migration_start < 0:
+              raise SystemExit('ranking recipe migration patch block missing')
+          migration_replacement = '''postgres_path = Path(postgres_test)
+          postgres_text = postgres_path.read_text()
+          migration_anchor = "  await runMigration('down');\\n  const actionsDownPool = new Pool({connectionString: databaseUrl});\\n"
+          if postgres_text.count(migration_anchor) != 1:
+              raise SystemExit('postgres.test.ts: migration rollback anchor changed')
+          migration_insert = """  await runMigration('down');
+          const profileDownPool = new Pool({connectionString: databaseUrl});
+          try {
+            const afterProfileDown = await profileDownPool.query<{
+              consumer_signal_profiles: string | null;
+              actor_topic_mutes: string | null;
+            }>(
+              `select to_regclass('public.consumer_signal_profiles')::text as consumer_signal_profiles,
+                      to_regclass('public.actor_topic_mutes')::text as actor_topic_mutes`,
+            );
+            assert.equal(afterProfileDown.rows[0]?.consumer_signal_profiles, null);
+            assert.equal(afterProfileDown.rows[0]?.actor_topic_mutes, 'actor_topic_mutes');
+          } finally {
+            await profileDownPool.end();
+          }
+
+          await runMigration('down');
+          const actionsDownPool = new Pool({connectionString: databaseUrl});
+          """.replace('          ', '')
+          postgres_path.write_text(postgres_text.replace(migration_anchor, migration_insert, 1))'''.replace('          ', '')
+          script = script[:migration_start] + migration_replacement + script[migration_end:]
+
+          Path('/tmp/apply-ranking.sh').write_text(script)
           PY
-          bash /tmp/apply-ranking.sh
+          bash -e /tmp/apply-ranking.sh
       - name: Validate API and targeted Flutter surface
         run: |
           npm --prefix apps/api ci --ignore-scripts
