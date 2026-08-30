@@ -41,151 +41,15 @@ jobs:
         with:
           flutter-version: '3.44.7'
           cache: true
-      - name: Build current-source product patch
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          from textwrap import dedent
-
-          source = Path('.github/workflows/agent-m2-ranking-finalize.yml').read_text()
-          start_marker = '      - name: Apply final ranking-signal changes\n        run: |\n'
-          end_marker = '      - name: Validate API and targeted Flutter surface\n'
-          start = source.index(start_marker) + len(start_marker)
-          end = source.index(end_marker, start)
-          script = dedent(source[start:end]).rstrip() + '\n'
-
-          # The original recipe predates several permanent partial refactors.
-          # Replace stale sections against the actual branch source.
-          sql_pos = script.index('"""      where event.actor_id = $1')
-          sql_start = script.rfind('replace_once(', 0, sql_pos)
-          sql_end = script.index('\n\n# Migration 008', sql_pos)
-          sql_replacement = '''projector_path = Path(projector)
-          projector_text = projector_path.read_text()
-          projection_where = "      where event.actor_id = $1\\n        and (\\n"
-          if projector_text.count(projection_where) != 1:
-              raise SystemExit('consumer_signal_projector.ts: projection WHERE shape changed')
-          projector_path.write_text(projector_text.replace(
-              projection_where,
-              "      where event.actor_id = $1\\n        and event.event_name in ('play_visible', 'play_resolved', 'play_dismissed')\\n        and (\\n",
-              1,
-          ))'''.replace('          ', '')
-          script = script[:sql_start] + sql_replacement + script[sql_end:]
-
-          migration_pos = script.index('const actionsDownPool = new Pool')
-          migration_start = script.rfind('replace_once(', 0, migration_pos)
-          migration_end = script.index('\n\n# Projector regression', migration_pos)
-          migration_replacement = '''postgres_path = Path(postgres_test)
-          postgres_text = postgres_path.read_text()
-          anchor = "  await runMigration('down');\\n  const actionsDownPool = new Pool({connectionString: databaseUrl});\\n"
-          if postgres_text.count(anchor) != 1:
-              raise SystemExit('postgres.test.ts: migration rollback anchor changed')
-          insert = """  await runMigration('down');
-          const profileDownPool = new Pool({connectionString: databaseUrl});
-          try {
-            const afterProfileDown = await profileDownPool.query<{
-              consumer_signal_profiles: string | null;
-              actor_topic_mutes: string | null;
-            }>(
-              `select to_regclass('public.consumer_signal_profiles')::text as consumer_signal_profiles,
-                      to_regclass('public.actor_topic_mutes')::text as actor_topic_mutes`,
-            );
-            assert.equal(afterProfileDown.rows[0]?.consumer_signal_profiles, null);
-            assert.equal(afterProfileDown.rows[0]?.actor_topic_mutes, 'actor_topic_mutes');
-          } finally {
-            await profileDownPool.end();
-          }
-
-          await runMigration('down');
-          const actionsDownPool = new Pool({connectionString: databaseUrl});
-          """.replace('          ', '')
-          postgres_path.write_text(postgres_text.replace(anchor, insert, 1))'''.replace('          ', '')
-          script = script[:migration_start] + migration_replacement + script[migration_end:]
-
-          projection_start = script.index('# Projector regression expectations')
-          projection_end = script.index('# Feed-level regressions', projection_start)
-          projection_replacement = '''# Projector regression expectations against current source.
-          projection_test = Path('apps/api/test/consumer_signal_projector_postgres.test.ts')
-          projection_text = projection_test.read_text()
-          sequence = """      assert.equal(await projector.projectActor(actorId), 2);
-                assert.equal(await projector.projectActor(actorId), 2);
-                assert.equal(await projector.projectActor(actorId), 0);
-          """.replace('          ', '')
-          if projection_text.count(sequence) != 1:
-              raise SystemExit('projector test: initial batch sequence changed')
-          projection_text = projection_text.replace(
-              sequence,
-              "      assert.equal(await projector.projectActor(actorId), 2);\\n      assert.equal(await projector.projectActor(actorId), 0);\\n",
-              1,
-          )
-          concurrent_old = '      assert.equal(concurrent.reduce((sum, value) => sum + value, 0), 1);\\n'
-          if projection_text.count(concurrent_old) != 1:
-              raise SystemExit('projector test: concurrent expectation changed')
-          projection_text = projection_text.replace(
-              concurrent_old,
-              '      assert.equal(concurrent.reduce((sum, value) => sum + value, 0), 0);\\n',
-              1,
-          )
-          duplicate_call = "      assert.equal(await events.insertEvent(duplicateIntent), 'inserted');\\n      assert.equal(await projector.projectActor(actorId), 1);\\n"
-          if projection_text.count(duplicate_call) != 1:
-              raise SystemExit('projector test: duplicate intent expectation changed')
-          projection_text = projection_text.replace(
-              duplicate_call,
-              "      assert.equal(await events.insertEvent(duplicateIntent), 'inserted');\\n      assert.equal(await projector.projectActor(actorId), 0);\\n",
-              1,
-          )
-          rebuild = """      assert.equal(bounded?.formatDismissalCounts.choose, 2);
-
-                const beforeRebuild = await rawProjection(pool, actorId);
-                const rebuiltEvents = await projector.rebuildActor(actorId);
-                assert.ok(rebuiltEvents >= 5);
-          """.replace('          ', '')
-          if projection_text.count(rebuild) != 1:
-              raise SystemExit('projector test: rebuild anchor changed')
-          decay = """      assert.equal(bounded?.formatDismissalCounts.choose, 2);
-
-                const clockAnchor = Date.now();
-                const afterMoreLikeExpiry = await new PostgresConsumerSignalProjector(pool, {
-                  clock: () => new Date(clockAnchor + 15 * 24 * 60 * 60 * 1000),
-                }).readActorProfile(actorId);
-                assert.deepEqual(afterMoreLikeExpiry?.moreLikeTopicIds, []);
-                assert.equal(afterMoreLikeExpiry?.topicDismissalCounts[artTopic], 2);
-
-                const afterDismissalExpiry = await new PostgresConsumerSignalProjector(pool, {
-                  clock: () => new Date(clockAnchor + 31 * 24 * 60 * 60 * 1000),
-                }).readActorProfile(actorId);
-                assert.deepEqual(afterDismissalExpiry?.topicDismissalCounts, {});
-                assert.deepEqual(afterDismissalExpiry?.formatDismissalCounts, {});
-                assert.ok((afterDismissalExpiry?.interactionAffinity.guess ?? 0) > 0);
-
-                const afterAffinityExpiry = await new PostgresConsumerSignalProjector(pool, {
-                  clock: () => new Date(clockAnchor + 91 * 24 * 60 * 60 * 1000),
-                }).readActorProfile(actorId);
-                assert.deepEqual(afterAffinityExpiry?.interactionAffinity, {});
-                assert.deepEqual(afterAffinityExpiry?.recentPlayRevisionKeys, []);
-
-                const beforeRebuild = await rawProjection(pool, actorId);
-                const rebuiltEvents = await projector.rebuildActor(actorId);
-                assert.equal(rebuiltEvents, 2);
-          """.replace('          ', '')
-          projection_test.write_text(projection_text.replace(rebuild, decay, 1))
-
-          '''.replace('          ', '')
-          script = script[:projection_start] + projection_replacement + script[projection_end:]
-
-          # Resolution telemetry and its safe-drop regression are already
-          # committed directly to the branch; skip the stale recipe copy.
-          telemetry_start = script.index('# Client telemetry must never destabilize Play execution.')
-          reasons_start = script.index('# Preserve why a page advanced.', telemetry_start)
-          script = script[:telemetry_start] + script[reasons_start:]
-
-          Path('/tmp/apply-ranking-current.sh').write_text(script)
-          PY
-          bash -e /tmp/apply-ranking-current.sh
-      - name: Validate product changes
+      - name: Apply source-aware product finalizer
+        run: python3 tools/agent_m2_finalize.py
+      - name: Validate API and PostgreSQL behavior
         run: |
           npm --prefix apps/api ci --ignore-scripts
           npm --prefix apps/api run typecheck
           npm --prefix apps/api test
+      - name: Validate Flutter surface
+        run: |
           flutter pub get --enforce-lockfile
           dart format --output=none --set-exit-if-changed .
           flutter analyze
