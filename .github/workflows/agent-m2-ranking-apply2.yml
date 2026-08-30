@@ -63,18 +63,8 @@ jobs:
               if text.count(marker) != 1:
                   raise SystemExit('consumer_feed_test.dart: import marker changed')
               text = text.replace(marker, analytics_import + marker, 1)
-          blocked = """    expect(
-            await controller.advance(ConsumerFeedAdvanceReason.notInterested),
-            isTrue,
-          );
-          await tester.pumpAndSettle();
-"""
-          driven = """    final advance = controller.advance(
-            ConsumerFeedAdvanceReason.notInterested,
-          );
-          await tester.pumpAndSettle();
-          expect(await advance, isTrue);
-"""
+          blocked = "    expect(\n      await controller.advance(ConsumerFeedAdvanceReason.notInterested),\n      isTrue,\n    );\n    await tester.pumpAndSettle();\n"
+          driven = "    final advance = controller.advance(\n      ConsumerFeedAdvanceReason.notInterested,\n    );\n    await tester.pumpAndSettle();\n    expect(await advance, isTrue);\n"
           if text.count(blocked) != 1:
               raise SystemExit('consumer_feed_test.dart: programmatic advance regression shape changed')
           feed_test.write_text(text.replace(blocked, driven, 1))
