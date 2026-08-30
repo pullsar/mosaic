@@ -10,6 +10,7 @@ import {
   type FeedSourceBucket,
   type RankedFeedCandidate,
 } from './consumer_ranking.js';
+import type {ConsumerSignalProjector} from './consumer_signal_projector.js';
 
 const DEFAULT_PAGE_SIZE = 8;
 const MAX_PAGE_SIZE = 20;
@@ -46,7 +47,9 @@ export interface ConsumerFeedServiceOptions {
   candidateLimit?: number;
   requestIdFactory?: () => string;
   onRankingError?: (error: unknown) => void;
+  onProfileError?: (error: unknown) => void;
   assetReadiness?: FeedAssetReadinessResolver;
+  signalProjector?: ConsumerSignalProjector;
 }
 
 export class InvalidFeedCursorError extends Error {
@@ -62,7 +65,9 @@ export class ConsumerFeedService {
   private readonly candidateLimit: number;
   private readonly requestIdFactory: () => string;
   private readonly onRankingError: ((error: unknown) => void) | undefined;
+  private readonly onProfileError: ((error: unknown) => void) | undefined;
   private readonly assetReadiness: FeedAssetReadinessResolver | undefined;
+  private readonly signalProjector: ConsumerSignalProjector | undefined;
 
   constructor(
     private readonly repository: ConsumerRepository,
@@ -83,7 +88,9 @@ export class ConsumerFeedService {
     );
     this.requestIdFactory = options.requestIdFactory ?? randomUUID;
     this.onRankingError = options.onRankingError;
+    this.onProfileError = options.onProfileError;
     this.assetReadiness = options.assetReadiness;
+    this.signalProjector = options.signalProjector;
   }
 
   async getFeed(input: FeedRequest): Promise<FeedPage> {
@@ -105,6 +112,8 @@ export class ConsumerFeedService {
     }
 
     const profile = await this.repository.getFeedProfile(actorId);
+    const derived = await this.loadDerivedProfile(actorId);
+    const rankingProfile = derived === null ? profile : {...profile, ...derived};
     const candidates = await this.repository.listEligibleFeedCandidates(this.candidateLimit);
     const compatible = candidates.filter(
       (candidate) => checkPlayCompatibility(candidate.document, input.capabilities).compatible,
@@ -118,7 +127,7 @@ export class ConsumerFeedService {
     let rankingFallback = false;
     let ranked: RankedFeedCandidate[];
     try {
-      ranked = rankFeedCandidates(eligible, profile, this.rankingConfig);
+      ranked = rankFeedCandidates(eligible, rankingProfile, this.rankingConfig);
     } catch (error) {
       rankingFallback = true;
       this.reportRankingError(error);
@@ -151,11 +160,31 @@ export class ConsumerFeedService {
     return pageFromStored(stored, 0, pageSize);
   }
 
+  private async loadDerivedProfile(actorId: string) {
+    const readProfile = this.repository.getDerivedRankingProfile;
+    if (readProfile === undefined) return null;
+    try {
+      await this.signalProjector?.projectActor(actorId);
+      return await readProfile.call(this.repository, actorId);
+    } catch (error) {
+      this.reportProfileError(error);
+      return null;
+    }
+  }
+
   private reportRankingError(error: unknown): void {
     try {
       this.onRankingError?.(error);
     } catch {
       // Observability must not become another feed failure mode.
+    }
+  }
+
+  private reportProfileError(error: unknown): void {
+    try {
+      this.onProfileError?.(error);
+    } catch {
+      // Derived-profile observability must not become a feed failure mode.
     }
   }
 }
