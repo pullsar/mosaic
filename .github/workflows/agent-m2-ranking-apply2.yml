@@ -63,7 +63,21 @@ jobs:
               if text.count(marker) != 1:
                   raise SystemExit('consumer_feed_test.dart: import marker changed')
               text = text.replace(marker, analytics_import + marker, 1)
-          feed_test.write_text(text)
+          blocked = """    expect(
+            await controller.advance(ConsumerFeedAdvanceReason.notInterested),
+            isTrue,
+          );
+          await tester.pumpAndSettle();
+"""
+          driven = """    final advance = controller.advance(
+            ConsumerFeedAdvanceReason.notInterested,
+          );
+          await tester.pumpAndSettle();
+          expect(await advance, isTrue);
+"""
+          if text.count(blocked) != 1:
+              raise SystemExit('consumer_feed_test.dart: programmatic advance regression shape changed')
+          feed_test.write_text(text.replace(blocked, driven, 1))
 
           telemetry_test = Path('apps/mosaic_app/test/play_resolution_telemetry_test.dart')
           text = telemetry_test.read_text()
@@ -88,9 +102,9 @@ jobs:
           flutter pub get --enforce-lockfile
           dart format --output=none --set-exit-if-changed .
           flutter analyze
-          flutter test apps/mosaic_app/test/play_resolution_telemetry_test.dart
-          flutter test apps/mosaic_app/test/consumer_action_controls_test.dart
-          flutter test apps/mosaic_app/test/consumer_feed_test.dart
+          timeout 120s flutter test apps/mosaic_app/test/play_resolution_telemetry_test.dart
+          timeout 120s flutter test apps/mosaic_app/test/consumer_action_controls_test.dart
+          timeout 120s flutter test apps/mosaic_app/test/consumer_feed_test.dart
       - name: Commit product files only
         run: |
           git config user.name xwiz
