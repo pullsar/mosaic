@@ -5,6 +5,10 @@ on:
     branches: ['agent/m2-ranking-signals-20260830']
     paths: ['.github/workflows/agent-m2-ranking-apply2.yml']
 
+concurrency:
+  group: agent-m2-ranking-finalizer
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
