@@ -1,10 +1,10 @@
-# Mosaic — Creator Platform Specification
+# Mixli — Creator Platform Specification
 
 ## 1. Purpose
 
 The creator system is the primary supply-side moat.
 
-Mosaic should make interactive micro-content as easy to create and reuse as short-form video templates are today, without giving creators arbitrary application code.
+Mixli should make interactive micro-content as easy to create and reuse as short-form video templates are today, without giving creators arbitrary application code.
 
 The creator loop is:
 
@@ -280,7 +280,7 @@ Then:
 
 > **What do people often get wrong about phishing?**
 
-The user supplies the insight. Mosaic can suggest suitable formats such as Guess, scenario choice, or spot-the-error.
+The user supplies the insight. Mixli can suggest suitable formats such as Guess, scenario choice, or spot-the-error.
 
 The creator reviews and approves the resulting Play.
 
@@ -397,7 +397,7 @@ Creators may not publish media they are not allowed to use.
 
 ## 19. Content safety
 
-Mosaic never supports adult, erotic, or sexually explicit content.
+Mixli never supports adult, erotic, or sexually explicit content.
 
 There is no creator override or mature-content tier.
 

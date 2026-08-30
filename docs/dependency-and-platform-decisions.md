@@ -1,20 +1,20 @@
-# Mosaic — Platform & Dependency Decisions
+# Mixli — Platform & Dependency Decisions
 
 **Status:** Flutter architecture decision. Revalidate versions and licenses at adoption time.
 
 ## 1. Platform decision
 
-Mosaic's consumer application, shared Play renderer, and native creator surfaces use **Flutter + Dart**.
+Mixli's consumer application, shared Play renderer, and native creator surfaces use **Flutter + Dart**.
 
-The reason is product-specific: Mosaic depends on a continuously animated, media-heavy, gesture-heavy Play surface with custom drawing, precise interaction feedback, and a shared rendering model across iOS, Android, and web.
+The reason is product-specific: Mixli depends on a continuously animated, media-heavy, gesture-heavy Play surface with custom drawing, precise interaction feedback, and a shared rendering model across iOS, Android, and web.
 
 Flutter's current Impeller renderer is the default on iOS and modern Android and is designed for predictable shader/rendering behavior. Performance is still an engineering responsibility: the product must profile real devices and hold explicit frame/memory/media budgets.
 
-Do not describe Flutter as universally faster than every alternative. It is the selected architecture because it fits Mosaic's interaction/runtime requirements and gives the team a single high-control rendering stack.
+Do not describe Flutter as universally faster than every alternative. It is the selected architecture because it fits Mixli's interaction/runtime requirements and gives the team a single high-control rendering stack.
 
 ## 2. Selection rules
 
-A dependency belongs in Mosaic only when it materially improves one of:
+A dependency belongs in Mixli only when it materially improves one of:
 
 - frame/feed performance;
 - Play expressiveness;
@@ -37,7 +37,7 @@ Do not install the whole shortlist at bootstrap.
 
 ## 3. Approved / preferred shortlist
 
-| Area | Project | Decision | Stage | Mosaic use |
+| Area | Project | Decision | Stage | Mixli use |
 |---|---|---|---|---|
 | App/runtime | [flutter/flutter](https://github.com/flutter/flutter) | Adopt | M0 | iOS/Android/web UI and Play rendering |
 | State | [rrousselGit/riverpod](https://github.com/rrousselGit/riverpod) | Adopt | M0 | explicit app/service state and async orchestration |
@@ -132,7 +132,7 @@ See [`visual-language-and-copy-spec.md`](visual-language-and-copy-spec.md).
 
 ### Audio
 
-Application/runtime code depends on Mosaic `AudioEngine`, not directly on `flutter_soloud`.
+Application/runtime code depends on Mixli `AudioEngine`, not directly on `flutter_soloud`.
 
 Contract must support:
 
@@ -168,25 +168,25 @@ The tus protocol is a transport decision, not the creator domain model.
 
 ### Feature flags
 
-Application code uses Mosaic-owned flag keys/config interface.
+Application code uses Mixli-owned flag keys/config interface.
 
 Do not scatter GrowthBook-specific APIs throughout product code.
 
 ### Deep links
 
-Canonical Mosaic HTTPS URLs are product infrastructure.
+Canonical Mixli HTTPS URLs are product infrastructure.
 
 Use an adapter for provider-specific attribution/deferred-linking systems. Removing a vendor must never break canonical Play URLs.
 
 ### Analytics
 
-Mosaic owns the canonical event envelope and durable event stream.
+Mixli owns the canonical event envelope and durable event stream.
 
 Sentry, GrowthBook, PostHog, or another vendor may receive derived events, but ranking cannot depend on vendor-specific storage semantics.
 
 ### Similarity
 
-Ranking/search uses a Mosaic similarity interface; first backend may be pgvector inside PostgreSQL.
+Ranking/search uses a Mixli similarity interface; first backend may be pgvector inside PostgreSQL.
 
 ## 8. Package-specific notes
 
@@ -231,7 +231,7 @@ Resumability is required; the specific Dart client is not locked yet because the
 
 ### GrowthBook Flutter
 
-Use through a Mosaic flag interface. Verify current SDK/repository licensing and deployment requirements before adoption.
+Use through a Mixli flag interface. Verify current SDK/repository licensing and deployment requirements before adoption.
 
 ### Sentry
 
@@ -303,4 +303,4 @@ Before production adoption:
 
 ## 13. Decision test
 
-A dependency is justified only if removing it would force Mosaic to rebuild substantial non-differentiating infrastructure or materially worsen the Play/creator experience.
+A dependency is justified only if removing it would force Mixli to rebuild substantial non-differentiating infrastructure or materially worsen the Play/creator experience.

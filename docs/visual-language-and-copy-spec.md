@@ -1,8 +1,8 @@
-# Mosaic — Visual Language & Copy Specification
+# Mixli — Visual Language & Copy Specification
 
 ## 1. Purpose
 
-Mosaic succeeds only if the Play itself feels more immediate than the interface around it.
+Mixli succeeds only if the Play itself feels more immediate than the interface around it.
 
 The product should be understood primarily through media, direct manipulation, motion, spatial composition, and familiar controls. Text exists to orient, disambiguate, label, or reveal—not to explain the product at length.
 
@@ -195,7 +195,7 @@ Avoid:
 
 ## 6. Voice
 
-Mosaic should sound:
+Mixli should sound:
 
 - intelligent;
 - direct;
@@ -296,7 +296,7 @@ The hierarchy should rely on placement, weight, scale, and contrast—not decora
 
 ## 8. Branding
 
-Mosaic's brand should be expressed through:
+Mixli's brand should be expressed through:
 
 - quality of content selection;
 - fluid transitions;
@@ -484,7 +484,7 @@ If the answer to 2, 3, 7, or 10 is no, redesign it.
 
 ## 18. Success test
 
-A first-time user should understand Mosaic by seeing and touching it.
+A first-time user should understand Mixli by seeing and touching it.
 
 The desired reaction is not:
 

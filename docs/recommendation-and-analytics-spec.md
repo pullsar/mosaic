@@ -1,8 +1,8 @@
-# Mosaic — Recommendation & Analytics Specification
+# Mixli — Recommendation & Analytics Specification
 
 ## 1. Purpose
 
-Mosaic's recommendation system should answer:
+Mixli's recommendation system should answer:
 
 > **What is this person most likely to enjoy doing right now?**
 
@@ -500,7 +500,7 @@ Do not introduce model complexity that cannot be debugged against the product th
 
 ## 27. Success test
 
-Recommendation is working when Mosaic increasingly predicts both:
+Recommendation is working when Mixli increasingly predicts both:
 
 > **what this user cares about**
 

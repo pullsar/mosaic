@@ -1,8 +1,8 @@
-# Mosaic — Experience Design Specification
+# Mixli — Experience Design Specification
 
 ## 1. Design objective
 
-Mosaic must feel as easy to enter and leave as a short-form feed while making the content itself more participatory.
+Mixli must feel as easy to enter and leave as a short-form feed while making the content itself more participatory.
 
 The user should never feel trapped in a lesson, flow, or game they did not choose.
 
@@ -283,7 +283,7 @@ Default:
 
 **Hear**
 
-Mosaic may remember sound preference after repeated behavior.
+Mixli may remember sound preference after repeated behavior.
 
 Rules:
 
@@ -496,7 +496,7 @@ More menu includes:
 - Mute creator;
 - Report.
 
-Mosaic never offers adult, erotic, or sexually explicit content and has no mature-content toggle.
+Mixli never offers adult, erotic, or sexually explicit content and has no mature-content toggle.
 
 ## 28. Faith UX
 
@@ -554,7 +554,7 @@ Target:
 
 ## 32. Success test
 
-A first-time user should understand Mosaic by seeing and touching it, not by reading about it.
+A first-time user should understand Mixli by seeing and touching it, not by reading about it.
 
 Within the opening feed they should encounter at least two visibly different interactions and infer:
 

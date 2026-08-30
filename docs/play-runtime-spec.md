@@ -1,8 +1,8 @@
-# Mosaic — Play Runtime Specification
+# Mixli — Play Runtime Specification
 
 ## 1. Purpose
 
-The Play runtime is Mosaic's execution layer for interactive feed content.
+The Play runtime is Mixli's execution layer for interactive feed content.
 
 A Play must be declarative, portable, versioned, safe, measurable, and render identically in:
 

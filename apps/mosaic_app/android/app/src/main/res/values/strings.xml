@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Mosaic</string>
+    <string name="app_name">Mixli</string>
     <string name="permission_camera_purpose">Create a Play with your camera.</string>
     <string name="permission_microphone_purpose">Record audio for a Play.</string>
     <string name="permission_notifications_purpose">Get the updates you choose.</string>

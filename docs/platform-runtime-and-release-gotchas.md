@@ -1,4 +1,4 @@
-# Mosaic — Platform Runtime & Release Gotchas
+# Mixli — Platform Runtime & Release Gotchas
 
 This document turns platform-specific failure modes into implementation requirements. It supplements the implementation, media, trust, operability, and experience specs.
 
@@ -64,7 +64,7 @@ On resume, restore from Play state; never assume a native media controller survi
 
 ## 5. Process death is normal
 
-Mobile OSes can kill Mosaic without a graceful shutdown.
+Mobile OSes can kill Mixli without a graceful shutdown.
 
 Persist only the state needed to recover value:
 
@@ -129,7 +129,7 @@ Release engineering must maintain:
 
 Adding an SDK is therefore both an engineering and privacy-schema change.
 
-## 10. Canonical deep links are Mosaic-owned
+## 10. Canonical deep links are Mixli-owned
 
 Canonical public Play URLs must not depend on Branch or another attribution provider.
 

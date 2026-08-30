@@ -249,7 +249,7 @@ final class _MosaicAppState extends State<MosaicApp> {
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-    title: 'Mosaic',
+    title: 'Mixli',
     debugShowCheckedModeBanner: false,
     themeMode: ThemeMode.system,
     supportedLocales: MosaicOnboardingStrings.supportedLocales,

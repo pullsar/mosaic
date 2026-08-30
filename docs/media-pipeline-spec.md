@@ -1,10 +1,10 @@
-# Mosaic — Media Pipeline Specification
+# Mixli — Media Pipeline Specification
 
 ## 1. Purpose
 
 Creator supply fails if capturing, uploading, processing, or reusing media feels fragile.
 
-Mosaic media must be fast to create, resilient on poor networks, safe to publish, and predictable for the Play runtime.
+Mixli media must be fast to create, resilient on poor networks, safe to publish, and predictable for the Play runtime.
 
 ## 2. Creator acquisition sources
 
@@ -15,7 +15,7 @@ Supported acquisition paths converge on one asset pipeline:
 - microphone/audio recording;
 - device library;
 - file upload;
-- existing Mosaic asset where reuse rights allow it;
+- existing Mixli asset where reuse rights allow it;
 - approved source import later;
 - generated supporting media later under explicit provenance rules.
 
@@ -26,7 +26,7 @@ Example:
 ```text
 RECORD 7s STREET CLIP
        ↓
-USE IN MOSAIC
+USE IN MIXLI
        ↓
 SUGGEST: "Where is this?"
        ↓
@@ -81,7 +81,7 @@ Requirements:
 - retry without duplicate assets;
 - user can continue editing metadata while upload runs.
 
-Use a tus-class resumable protocol behind Mosaic's `UploadSession` contract. The specific Dart client remains replaceable and must be re-evaluated at implementation time for maintenance and platform coverage.
+Use a tus-class resumable protocol behind Mixli's `UploadSession` contract. The specific Dart client remains replaceable and must be re-evaluated at implementation time for maintenance and platform coverage.
 
 ### Background behavior
 
@@ -265,7 +265,7 @@ When remixing:
 
 - reusable structure may be copied without copying restricted media;
 - non-reusable media becomes an empty required slot;
-- reusable Mosaic media retains original attribution/rights lineage;
+- reusable Mixli media retains original attribution/rights lineage;
 - a creator cannot change inherited rights declarations for an upstream asset.
 
 ## 14. Processing architecture
@@ -329,7 +329,7 @@ Before an asset becomes recommendation-eligible:
 - rights/provenance checks according to risk;
 - human review path for flagged or high-impact content.
 
-Mosaic never offers adult, erotic, or sexually explicit content.
+Mixli never offers adult, erotic, or sexually explicit content.
 
 ## 19. Observability
 
