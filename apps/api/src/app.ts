@@ -14,6 +14,7 @@ import {
   type ConsumerRepository,
   UnknownTopicError,
 } from './consumer_repository.js';
+import type {ConsumerSignalProjector} from './consumer_signal_projector.js';
 import type {FeedAssetReadinessResolver} from './feed_asset_readiness.js';
 import type {EventInput, MosaicRepository} from './repository.js';
 
@@ -25,6 +26,7 @@ const CORS_EXPOSE_HEADERS = 'accept-ranges,content-length,content-range';
 export interface BuildAppOptions {
   repository: MosaicRepository;
   consumerRepository?: ConsumerRepository;
+  consumerSignalProjector?: ConsumerSignalProjector;
   feedAssetReadiness?: FeedAssetReadinessResolver;
   logLevel?: string;
   allowedWebOrigins?: readonly string[];
@@ -66,6 +68,14 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     ? new ConsumerFeedService(options.consumerRepository, {
         onRankingError: (error) =>
           app.log.error({err: error}, 'consumer ranking failed; using curated fallback'),
+        onProfileError: (error) =>
+          app.log.warn(
+            {err: error},
+            'consumer signal profile unavailable; using explicit preferences',
+          ),
+        ...(options.consumerSignalProjector === undefined
+          ? {}
+          : {signalProjector: options.consumerSignalProjector}),
         ...(options.feedAssetReadiness === undefined
           ? {}
           : {assetReadiness: options.feedAssetReadiness}),
