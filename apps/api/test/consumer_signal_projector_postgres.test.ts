@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {test} from 'node:test';
 import {Pool} from 'pg';
-import {PostgresConsumerRepository} from '../src/consumer_repository.js';
 import {PostgresConsumerSignalProjector} from '../src/consumer_signal_projector.js';
 import {feedCandidateIdentity} from '../src/consumer_ranking.js';
 import {PostgresRepository, type EventInput} from '../src/repository.js';
@@ -30,7 +29,6 @@ test(
     await runMigration();
     const pool = new Pool({connectionString: databaseUrl});
     const events = new PostgresRepository(pool);
-    const consumer = new PostgresConsumerRepository(pool);
     const projector = new PostgresConsumerSignalProjector(pool, {maxEventsPerRun: 2});
     const suffix = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
     const actorId = `actor_signal_${suffix}`;
@@ -106,7 +104,7 @@ test(
       assert.equal(await projector.projectActor(actorId), 2);
       assert.equal(await projector.projectActor(actorId), 0);
 
-      const first = await consumer.getDerivedRankingProfile(actorId);
+      const first = await projector.readActorProfile(actorId);
       assert.ok(first);
       assert.ok((first.interactionAffinity.guess ?? 0) > 0);
       assert.deepEqual(first.recentPlayRevisionKeys, [
@@ -116,7 +114,6 @@ test(
       assert.equal(first.topicDismissalCounts[artTopic], 1);
       assert.equal(first.formatDismissalCounts.choose, 1);
 
-      // Same revision ID on a different Play must not be marked recent.
       assert.equal(
         first.recentPlayRevisionKeys.includes(
           feedCandidateIdentity(artPlay, sharedRevision),
@@ -124,11 +121,9 @@ test(
         false,
       );
 
-      // Exact replay is rejected by canonical event identity and applies nothing.
       assert.equal(await events.insertEvent(notArt), 'duplicate');
       assert.equal(await projector.projectActor(actorId), 0);
 
-      // A second related Play supplies genuine repeated negative evidence.
       const secondNotArt = event(base, {
         eventId: `not_art_second_${suffix}`,
         event: 'play_not_interested',
@@ -141,11 +136,10 @@ test(
         projector.projectActor(actorId),
       ]);
       assert.equal(concurrent.reduce((sum, value) => sum + value, 0), 1);
-      const repeated = await consumer.getDerivedRankingProfile(actorId);
+      const repeated = await projector.readActorProfile(actorId);
       assert.equal(repeated?.topicDismissalCounts[artTopic], 2);
       assert.equal(repeated?.formatDismissalCounts.choose, 2);
 
-      // A second event ID for the same one-shot Play signal must not multiply evidence.
       const duplicateIntent = event(base, {
         eventId: `not_art_duplicate_intent_${suffix}`,
         event: 'play_not_interested',
@@ -153,8 +147,8 @@ test(
         revisionId: sharedRevision,
       });
       assert.equal(await events.insertEvent(duplicateIntent), 'inserted');
-      await projector.projectActor(actorId);
-      const bounded = await consumer.getDerivedRankingProfile(actorId);
+      assert.equal(await projector.projectActor(actorId), 1);
+      const bounded = await projector.readActorProfile(actorId);
       assert.equal(bounded?.topicDismissalCounts[artTopic], 2);
       assert.equal(bounded?.formatDismissalCounts.choose, 2);
 
@@ -195,18 +189,14 @@ async function rawProjection(pool: Pool, actorId: string): Promise<unknown> {
     checkpoint_event_id: string | null;
     interaction_affinity: unknown;
     recent_revisions: unknown;
-    topic_dismissal_counts: unknown;
     format_dismissal_counts: unknown;
-    more_like_topic_expiries: unknown;
     format_last_dismissed_at: unknown;
   }>(
     `select checkpoint_received_at::text,
             checkpoint_event_id,
             interaction_affinity,
             recent_revisions,
-            topic_dismissal_counts,
             format_dismissal_counts,
-            more_like_topic_expiries,
             format_last_dismissed_at
        from consumer_signal_profiles
       where actor_id = $1`,
