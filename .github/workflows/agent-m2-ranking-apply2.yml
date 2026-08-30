@@ -44,6 +44,39 @@ jobs:
       - name: Apply source-aware product finalizer
         run: |
           python3 tools/agent_m2_finalize.py
+          python3 - <<'PY'
+          from pathlib import Path
+
+          controls = Path('apps/mosaic_app/test/consumer_action_controls_test.dart')
+          text = controls.read_text()
+          old = "import 'package:mosaic_app/consumer_local_state.dart';\nimport 'package:mosaic_app/consumer_feed.dart';\n"
+          new = "import 'package:mosaic_app/consumer_feed.dart';\nimport 'package:mosaic_app/consumer_local_state.dart';\n"
+          if old not in text:
+              raise SystemExit('consumer_action_controls_test.dart: generated import shape changed')
+          controls.write_text(text.replace(old, new, 1))
+
+          feed_test = Path('apps/mosaic_app/test/consumer_feed_test.dart')
+          text = feed_test.read_text()
+          analytics_import = "import 'package:analytics_contract/analytics_contract.dart';\n"
+          if analytics_import not in text:
+              marker = "import 'package:event_delivery/event_delivery.dart';\n"
+              if text.count(marker) != 1:
+                  raise SystemExit('consumer_feed_test.dart: import marker changed')
+              text = text.replace(marker, analytics_import + marker, 1)
+          feed_test.write_text(text)
+
+          telemetry_test = Path('apps/mosaic_app/test/play_resolution_telemetry_test.dart')
+          text = telemetry_test.read_text()
+          if "import 'dart:async';\n" not in text:
+              text = "import 'dart:async';\n\n" + text
+          if 'void error(Object error, StackTrace stackTrace, {String? operation})' not in text:
+              marker = "  void event(String name, Map<String, Object?> payload) {\n    events.add((name: name, payload: Map<String, Object?>.of(payload)));\n  }\n"
+              if text.count(marker) != 1:
+                  raise SystemExit('play_resolution_telemetry_test.dart: event fake shape changed')
+              addition = marker + "\n  @override\n  void error(Object error, StackTrace stackTrace, {String? operation}) {}\n\n  @override\n  FutureOr<T> trace<T>(String operation, FutureOr<T> Function() body) => body();\n"
+              text = text.replace(marker, addition, 1)
+          telemetry_test.write_text(text)
+          PY
           dart format apps/mosaic_app/lib apps/mosaic_app/test
       - name: Validate API and PostgreSQL behavior
         run: |
