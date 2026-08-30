@@ -1,0 +1,97 @@
+name: agent-m2-ranking-apply
+
+on:
+  push:
+    branches: ['agent/m2-ranking-signals-20260830']
+    paths: ['.github/workflows/agent-m2-ranking-apply.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: mosaic
+          POSTGRES_USER: mosaic
+          POSTGRES_PASSWORD: mosaic
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mosaic -d mosaic"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://mosaic:mosaic@localhost:5432/mosaic
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/m2-ranking-signals-20260830
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/api/package-lock.json
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.44.7'
+          cache: true
+      - name: Execute patched product recipe
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from textwrap import dedent
+
+          source = Path('.github/workflows/agent-m2-ranking-finalize.yml').read_text()
+          start_marker = '      - name: Apply final ranking-signal changes\n        run: |\n'
+          end_marker = '      - name: Validate API and targeted Flutter surface\n'
+          start = source.index(start_marker) + len(start_marker)
+          end = source.index(end_marker, start)
+          script = dedent(source[start:end]).rstrip() + '\n'
+
+          sql_pos = script.index('"""      where event.actor_id = $1')
+          block_start = script.rfind('replace_once(', 0, sql_pos)
+          block_end = script.index('\n\n# Migration 008', sql_pos)
+          if block_start < 0:
+              raise SystemExit('ranking recipe SQL patch block missing')
+          replacement = '''projector_path = Path(projector)
+          projector_text = projector_path.read_text()
+          projection_where = "      where event.actor_id = $1\\n        and (\\n"
+          if projector_text.count(projection_where) != 1:
+              raise SystemExit('consumer_signal_projector.ts: projection WHERE shape changed')
+          projector_path.write_text(projector_text.replace(
+              projection_where,
+              "      where event.actor_id = $1\\n        and event.event_name in ('play_visible', 'play_resolved', 'play_dismissed')\\n        and (\\n",
+              1,
+          ))'''.replace('          ', '')
+          Path('/tmp/apply-ranking.sh').write_text(
+              script[:block_start] + replacement + script[block_end:]
+          )
+          PY
+          bash /tmp/apply-ranking.sh
+      - name: Validate API and targeted Flutter surface
+        run: |
+          npm --prefix apps/api ci --ignore-scripts
+          npm --prefix apps/api run typecheck
+          npm --prefix apps/api test
+          flutter pub get --enforce-lockfile
+          dart format --output=none --set-exit-if-changed .
+          flutter analyze
+          flutter test apps/mosaic_app/test/play_resolution_telemetry_test.dart
+          flutter test apps/mosaic_app/test/consumer_action_controls_test.dart
+          flutter test apps/mosaic_app/test/consumer_feed_test.dart
+      - name: Commit product files only
+        run: |
+          git config user.name xwiz
+          git config user.email c.opata@robosyslive.com
+          git add apps/api apps/mosaic_app
+          git diff --cached --check
+          git diff --cached --quiet && { echo 'No product changes staged'; exit 1; }
+          git commit -m 'feat(m2): complete live ranking signal loop'
+          git push origin HEAD:agent/m2-ranking-signals-20260830
