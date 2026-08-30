@@ -8,6 +8,7 @@ import {
   checkPlayCompatibility,
   parseClientCapabilities,
 } from './contracts/compatibility.js';
+import {ConsumerActionEventError} from './consumer_actions.js';
 import {ConsumerFeedService, InvalidFeedCursorError} from './consumer_feed.js';
 import {
   type ConsumerRepository,
@@ -132,8 +133,15 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     const event = parseEvent(request.body);
     if (!event) return reply.code(400).send({error: 'invalid_event'});
     if (!(await requireActorAccess(options.repository, request, reply, event.actorId))) return;
-    const status = await options.repository.insertEvent(event);
-    return reply.code(status === 'inserted' ? 202 : 200).send({status});
+    try {
+      const status = await options.repository.insertEvent(event);
+      return reply.code(status === 'inserted' ? 202 : 200).send({status});
+    } catch (error) {
+      if (error instanceof ConsumerActionEventError) {
+        return reply.code(400).send({error: 'invalid_consumer_action'});
+      }
+      throw error;
+    }
   });
 
   app.post('/v1/plays/:playId/revisions/:revisionId', async (request, reply) => {
@@ -176,6 +184,17 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       if (actorId === null) return reply.code(400).send({error: 'invalid_actor'});
       if (!(await requireActorAccess(options.repository, request, reply, actorId))) return;
       return consumerRepository.getTopicPreferences(actorId);
+    });
+
+    app.get('/v1/actors/:actorId/actions/:playId', async (request, reply) => {
+      const params = request.params as {actorId?: string; playId?: string};
+      const actorId = boundedText(params.actorId, 200);
+      const playId = boundedText(params.playId, 200);
+      if (actorId === null || playId === null) {
+        return reply.code(400).send({error: 'invalid_action_state_request'});
+      }
+      if (!(await requireActorAccess(options.repository, request, reply, actorId))) return;
+      return consumerRepository.getActionState(actorId, playId);
     });
 
     app.put('/v1/actors/:actorId/preferences', async (request, reply) => {

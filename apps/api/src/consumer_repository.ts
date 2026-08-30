@@ -16,6 +16,24 @@ export interface TopicPreferences {
   learningTopicIds: string[];
 }
 
+export interface FeedConsumerProfile extends TopicPreferences {
+  mutedTopicIds: string[];
+  notInterestedPlayIds: string[];
+}
+
+export interface PlayActionState {
+  playId: string;
+  saved: boolean;
+  savedRevisionId: string | null;
+  moreLikeThis: boolean;
+  notInterested: boolean;
+}
+
+export interface ConsumerActionState {
+  play: PlayActionState;
+  mutedTopicIds: string[];
+}
+
 export interface FeedDecisionInput {
   requestId: string;
   actorId: string;
@@ -51,6 +69,8 @@ export interface ConsumerRepository {
     learningTopicIds: readonly string[],
   ): Promise<void>;
   getTopicPreferences(actorId: string): Promise<TopicPreferences>;
+  getFeedProfile(actorId: string): Promise<FeedConsumerProfile>;
+  getActionState(actorId: string, playId: string): Promise<ConsumerActionState>;
   listEligibleFeedCandidates(limit?: number): Promise<FeedCandidate[]>;
   persistFeedDecision(input: FeedDecisionInput): Promise<void>;
   readFeedDecisionPage(
@@ -136,6 +156,95 @@ export class PostgresConsumerRepository implements ConsumerRepository {
       learningTopicIds: result.rows
         .filter((row) => row.kind === 'learning')
         .map((row) => row.topic_id),
+    };
+  }
+
+  async getFeedProfile(actorId: string): Promise<FeedConsumerProfile> {
+    const normalizedActorId = requiredText(actorId, 'actorId');
+    const result = await this.pool.query<{
+      interest_topic_ids: string[];
+      learning_topic_ids: string[];
+      muted_topic_ids: string[];
+      not_interested_play_ids: string[];
+    }>(
+      `select
+         coalesce((
+           select array_agg(topic_id order by topic_id)
+             from actor_topic_preferences
+            where actor_id = $1 and kind = 'interest'
+         ), array[]::text[]) as interest_topic_ids,
+         coalesce((
+           select array_agg(topic_id order by topic_id)
+             from actor_topic_preferences
+            where actor_id = $1 and kind = 'learning'
+         ), array[]::text[]) as learning_topic_ids,
+         coalesce((
+           select array_agg(topic_id order by topic_id)
+             from actor_topic_mutes
+            where actor_id = $1 and muted = true
+         ), array[]::text[]) as muted_topic_ids,
+         coalesce((
+           select array_agg(play_id order by play_id)
+             from actor_play_signals
+            where actor_id = $1 and signal = 'not_interested'
+         ), array[]::text[]) as not_interested_play_ids`,
+      [normalizedActorId],
+    );
+    const row = result.rows[0];
+    return {
+      interestTopicIds: row?.interest_topic_ids ?? [],
+      learningTopicIds: row?.learning_topic_ids ?? [],
+      mutedTopicIds: row?.muted_topic_ids ?? [],
+      notInterestedPlayIds: row?.not_interested_play_ids ?? [],
+    };
+  }
+
+  async getActionState(actorId: string, playId: string): Promise<ConsumerActionState> {
+    const normalizedActorId = requiredText(actorId, 'actorId');
+    const normalizedPlayId = requiredText(playId, 'playId');
+    const result = await this.pool.query<{
+      saved: boolean;
+      saved_revision_id: string | null;
+      more_like_this: boolean;
+      not_interested: boolean;
+      muted_topic_ids: string[];
+    }>(
+      `select
+         coalesce((
+           select saved
+             from actor_saved_plays
+            where actor_id = $1 and play_id = $2
+         ), false) as saved,
+         (
+           select revision_id
+             from actor_saved_plays
+            where actor_id = $1 and play_id = $2 and saved = true
+         ) as saved_revision_id,
+         exists(
+           select 1 from actor_play_signals
+            where actor_id = $1 and play_id = $2 and signal = 'more_like_this'
+         ) as more_like_this,
+         exists(
+           select 1 from actor_play_signals
+            where actor_id = $1 and play_id = $2 and signal = 'not_interested'
+         ) as not_interested,
+         coalesce((
+           select array_agg(topic_id order by topic_id)
+             from actor_topic_mutes
+            where actor_id = $1 and muted = true
+         ), array[]::text[]) as muted_topic_ids`,
+      [normalizedActorId, normalizedPlayId],
+    );
+    const row = result.rows[0];
+    return {
+      play: {
+        playId: normalizedPlayId,
+        saved: row?.saved ?? false,
+        savedRevisionId: row?.saved_revision_id ?? null,
+        moreLikeThis: row?.more_like_this ?? false,
+        notInterested: row?.not_interested ?? false,
+      },
+      mutedTopicIds: row?.muted_topic_ids ?? [],
     };
   }
 

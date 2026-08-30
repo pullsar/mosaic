@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {buildApp} from '../src/app.js';
 import {
+  type ConsumerActionState,
   type ConsumerRepository,
+  type FeedConsumerProfile,
   type FeedDecisionInput,
   type StoredFeedDecisionPage,
   type TopicPreferences,
@@ -64,6 +66,10 @@ class ConsumerMemoryRepository implements ConsumerRepository {
     ['piano', 'Piano'],
   ]);
   preferences = new Map<string, TopicPreferences>();
+  mutedTopicIds = new Map<string, string[]>();
+  notInterestedPlayIds = new Map<string, string[]>();
+  savedPlayIds = new Set<string>();
+  moreLikePlayIds = new Set<string>();
   decisions = new Map<string, FeedDecisionInput>();
   candidates: FeedCandidate[] = [
     {
@@ -127,6 +133,27 @@ class ConsumerMemoryRepository implements ConsumerRepository {
     );
   }
 
+  async getFeedProfile(actorId: string): Promise<FeedConsumerProfile> {
+    return {
+      ...(await this.getTopicPreferences(actorId)),
+      mutedTopicIds: [...(this.mutedTopicIds.get(actorId) ?? [])],
+      notInterestedPlayIds: [...(this.notInterestedPlayIds.get(actorId) ?? [])],
+    };
+  }
+
+  async getActionState(actorId: string, playId: string): Promise<ConsumerActionState> {
+    return {
+      play: {
+        playId,
+        saved: this.savedPlayIds.has(playId),
+        savedRevisionId: this.savedPlayIds.has(playId) ? 'rev_1' : null,
+        moreLikeThis: this.moreLikePlayIds.has(playId),
+        notInterested: (this.notInterestedPlayIds.get(actorId) ?? []).includes(playId),
+      },
+      mutedTopicIds: [...(this.mutedTopicIds.get(actorId) ?? [])],
+    };
+  }
+
   async listEligibleFeedCandidates(limit = 200): Promise<FeedCandidate[]> {
     return this.candidates.slice(0, limit);
   }
@@ -169,7 +196,7 @@ class ConsumerMemoryRepository implements ConsumerRepository {
   }
 }
 
-test('anonymous topic preferences and feed require the current actor credential', async () => {
+test('anonymous preferences, action state and feed require the current actor credential', async () => {
   const coreRepository = new CoreRepository();
   const consumerRepository = new ConsumerMemoryRepository();
   const app = buildApp({
@@ -222,6 +249,39 @@ test('anonymous topic preferences and feed require the current actor credential'
   assert.deepEqual(preferences.json(), {
     interestTopicIds: ['travel'],
     learningTopicIds: ['piano'],
+  });
+
+  consumerRepository.savedPlayIds.add('play_travel');
+  consumerRepository.moreLikePlayIds.add('play_travel');
+  consumerRepository.mutedTopicIds.set('actor_a', ['piano']);
+  const unauthenticatedActions = await app.inject({
+    method: 'GET',
+    url: '/v1/actors/actor_a/actions/play_travel',
+  });
+  assert.equal(unauthenticatedActions.statusCode, 401);
+
+  const spoofedActions = await app.inject({
+    method: 'GET',
+    url: '/v1/actors/actor_a/actions/play_travel',
+    headers: {authorization: `Bearer ${otherToken}`},
+  });
+  assert.equal(spoofedActions.statusCode, 403);
+
+  const actions = await app.inject({
+    method: 'GET',
+    url: '/v1/actors/actor_a/actions/play_travel',
+    headers: actorAuthorization,
+  });
+  assert.equal(actions.statusCode, 200);
+  assert.deepEqual(actions.json(), {
+    play: {
+      playId: 'play_travel',
+      saved: true,
+      savedRevisionId: 'rev_1',
+      moreLikeThis: true,
+      notInterested: false,
+    },
+    mutedTopicIds: ['piano'],
   });
 
   const unknown = await app.inject({

@@ -65,6 +65,19 @@ final class _MemoryConsumerState implements ConsumerLocalState {
 
   @override
   Future<void> clearRecentFeed() async {}
+
+  @override
+  Future<ConsumerPlayActionState?> readPlayActionState(String playId) async =>
+      null;
+
+  @override
+  Future<void> writePlayActionState(ConsumerPlayActionState state) async {}
+
+  @override
+  Future<List<String>> readMutedTopicIds() async => const <String>[];
+
+  @override
+  Future<void> writeMutedTopicIds(Iterable<String> topicIds) async {}
 }
 
 ConsumerRuntime _runtime(

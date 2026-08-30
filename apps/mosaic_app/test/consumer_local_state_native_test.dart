@@ -46,7 +46,7 @@ void main() {
   );
 
   test(
-    'onboarding preferences and completion survive native database reopen',
+    'onboarding, actions and muted topics survive native database reopen',
     () async {
       final directory = await Directory.systemTemp.createTemp(
         'mosaic_onboarding_',
@@ -67,24 +67,56 @@ void main() {
         ),
       );
       await state.writeOnboardingCompleted(true);
+      await state.writePlayActionState(
+        ConsumerPlayActionState(
+          playId: 'play_a',
+          savedRevisionId: 'rev_a',
+          saved: true,
+          moreLikeThis: true,
+          notInterested: false,
+          updatedAt: DateTime.utc(2026, 8, 29, 20),
+        ),
+      );
+      await state.writeMutedTopicIds(const ['science', 'history', 'science']);
       store.close();
 
       store = MosaicLocalStore.open(path);
       state = SqliteConsumerLocalState(store);
       final restored = await state.readPreferences();
+      final action = await state.readPlayActionState('play_a');
       expect(await state.readOnboardingCompleted(), isTrue);
       expect(restored.interestTopicIds, const ['science', 'travel']);
       expect(restored.learningTopicIds, const ['history']);
+      expect(action?.saved, isTrue);
+      expect(action?.savedRevisionId, 'rev_a');
+      expect(action?.moreLikeThis, isTrue);
+      expect(action?.notInterested, isFalse);
+      expect(await state.readMutedTopicIds(), const ['history', 'science']);
 
+      await state.writePlayActionState(
+        action!.copyWith(
+          saved: false,
+          clearSavedRevisionId: true,
+          notInterested: true,
+          updatedAt: DateTime.utc(2026, 8, 29, 21),
+        ),
+      );
+      await state.writeMutedTopicIds(const ['science']);
       await state.writeOnboardingCompleted(false);
       store.close();
 
       store = MosaicLocalStore.open(path);
       state = SqliteConsumerLocalState(store);
       final reopened = await state.readPreferences();
+      final reopenedAction = await state.readPlayActionState('play_a');
       expect(await state.readOnboardingCompleted(), isFalse);
       expect(reopened.interestTopicIds, const ['science', 'travel']);
       expect(reopened.learningTopicIds, const ['history']);
+      expect(reopenedAction?.saved, isFalse);
+      expect(reopenedAction?.savedRevisionId, isNull);
+      expect(reopenedAction?.moreLikeThis, isTrue);
+      expect(reopenedAction?.notInterested, isTrue);
+      expect(await state.readMutedTopicIds(), const ['science']);
       store.close();
     },
   );

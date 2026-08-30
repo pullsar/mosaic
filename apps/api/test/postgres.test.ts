@@ -260,8 +260,42 @@ test('PostgreSQL media lifecycle is immutable, leased and stale-worker safe', {s
   }
 });
 
-test('canvas, image, actor access, consumer and media migrations roll back in order and cleanly reapply', {skip: !databaseUrl}, async () => {
+test('actions, canvas, image, actor access, consumer and media migrations roll back in order and cleanly reapply', {skip: !databaseUrl}, async () => {
   await runMigration('up');
+
+  await runMigration('down');
+  const actionsDownPool = new Pool({connectionString: databaseUrl});
+  try {
+    const afterActionsDown = await actionsDownPool.query<{
+      actor_play_actions: string | null;
+      actor_topic_mutes: string | null;
+      canvas_assets: string | null;
+      actor_access_credentials: string | null;
+      purpose_check: string | null;
+    }>(
+      `select to_regclass('public.actor_play_actions')::text as actor_play_actions,
+              to_regclass('public.actor_topic_mutes')::text as actor_topic_mutes,
+              to_regclass('public.canvas_assets')::text as canvas_assets,
+              to_regclass('public.actor_access_credentials')::text as actor_access_credentials,
+              (
+                select pg_get_constraintdef(oid)
+                from pg_constraint
+                where conname = 'media_derivatives_purpose_check'
+              ) as purpose_check`,
+    );
+    assert.equal(afterActionsDown.rows[0]?.actor_play_actions, null);
+    assert.equal(afterActionsDown.rows[0]?.actor_topic_mutes, null);
+    assert.equal(afterActionsDown.rows[0]?.canvas_assets, 'canvas_assets');
+    assert.equal(
+      afterActionsDown.rows[0]?.actor_access_credentials,
+      'actor_access_credentials',
+    );
+    const purposeCheck = afterActionsDown.rows[0]?.purpose_check;
+    assert.ok(purposeCheck);
+    assert.equal(purposeCheck.includes("'image'"), true);
+  } finally {
+    await actionsDownPool.end();
+  }
 
   await runMigration('down');
   const canvasDownPool = new Pool({connectionString: databaseUrl});

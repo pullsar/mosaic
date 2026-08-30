@@ -2,6 +2,87 @@ import 'package:play_schema/play_schema.dart';
 
 import 'consumer_api_client.dart';
 
+final class ConsumerPlayActionState {
+  ConsumerPlayActionState({
+    required String playId,
+    String? savedRevisionId,
+    this.saved = false,
+    this.moreLikeThis = false,
+    this.notInterested = false,
+    required this.updatedAt,
+  }) : playId = _requiredString(playId, 'playId', 200),
+       savedRevisionId = _optionalString(
+         savedRevisionId,
+         'savedRevisionId',
+         200,
+       ) {
+    if (saved && this.savedRevisionId == null) {
+      throw const FormatException('savedRevisionId is required when saved');
+    }
+  }
+
+  final String playId;
+  final String? savedRevisionId;
+  final bool saved;
+  final bool moreLikeThis;
+  final bool notInterested;
+  final DateTime updatedAt;
+
+  ConsumerPlayActionState copyWith({
+    String? savedRevisionId,
+    bool clearSavedRevisionId = false,
+    bool? saved,
+    bool? moreLikeThis,
+    bool? notInterested,
+    DateTime? updatedAt,
+  }) => ConsumerPlayActionState(
+    playId: playId,
+    savedRevisionId: clearSavedRevisionId
+        ? null
+        : savedRevisionId ?? this.savedRevisionId,
+    saved: saved ?? this.saved,
+    moreLikeThis: moreLikeThis ?? this.moreLikeThis,
+    notInterested: notInterested ?? this.notInterested,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'playId': playId,
+    'savedRevisionId': savedRevisionId,
+    'saved': saved,
+    'moreLikeThis': moreLikeThis,
+    'notInterested': notInterested,
+    'updatedAt': updatedAt.toUtc().toIso8601String(),
+  };
+
+  static ConsumerPlayActionState fromJson(Map<String, Object?> json) {
+    final saved = json['saved'];
+    final moreLikeThis = json['moreLikeThis'];
+    final notInterested = json['notInterested'];
+    if (saved is! bool || moreLikeThis is! bool || notInterested is! bool) {
+      throw const FormatException('consumer action flags must be booleans');
+    }
+    final updatedAtRaw = json['updatedAt'];
+    if (updatedAtRaw is! String) {
+      throw const FormatException('updatedAt must be a string');
+    }
+    final updatedAt = DateTime.tryParse(updatedAtRaw)?.toUtc();
+    if (updatedAt == null) throw const FormatException('updatedAt is invalid');
+    return ConsumerPlayActionState(
+      playId: _requiredJsonString(json, 'playId', 200),
+      savedRevisionId: _optionalString(
+        json['savedRevisionId'],
+        'savedRevisionId',
+        200,
+      ),
+      saved: saved,
+      moreLikeThis: moreLikeThis,
+      notInterested: notInterested,
+      updatedAt: updatedAt,
+    );
+  }
+}
+
 final class ConsumerFeedResume {
   ConsumerFeedResume({
     this.requestId,
@@ -178,6 +259,14 @@ abstract interface class ConsumerLocalState {
   Future<void> writeRecentFeed(ConsumerFeedCache state);
 
   Future<void> clearRecentFeed();
+
+  Future<ConsumerPlayActionState?> readPlayActionState(String playId);
+
+  Future<void> writePlayActionState(ConsumerPlayActionState state);
+
+  Future<List<String>> readMutedTopicIds();
+
+  Future<void> writeMutedTopicIds(Iterable<String> topicIds);
 }
 
 final class DisabledConsumerLocalState implements ConsumerLocalState {
@@ -214,6 +303,29 @@ final class DisabledConsumerLocalState implements ConsumerLocalState {
 
   @override
   Future<void> clearRecentFeed() async {}
+
+  @override
+  Future<ConsumerPlayActionState?> readPlayActionState(String playId) async =>
+      null;
+
+  @override
+  Future<void> writePlayActionState(ConsumerPlayActionState state) async {}
+
+  @override
+  Future<List<String>> readMutedTopicIds() async => const [];
+
+  @override
+  Future<void> writeMutedTopicIds(Iterable<String> topicIds) async {}
+}
+
+String _requiredJsonString(
+  Map<String, Object?> json,
+  String key,
+  int maxLength,
+) {
+  final value = json[key];
+  if (value is! String) throw FormatException('$key must be a string');
+  return _requiredString(value, key, maxLength);
 }
 
 String _requiredString(String value, String field, int maxLength) {

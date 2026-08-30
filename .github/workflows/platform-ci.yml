@@ -53,6 +53,9 @@ jobs:
       - name: Test event delivery IndexedDB in Chrome
         working-directory: packages/event_delivery
         run: dart test --platform chrome test_web
+      - name: Test app consumer state IndexedDB in Chrome
+        working-directory: apps/mosaic_app
+        run: flutter test --platform chrome test/consumer_local_state_web_test.dart
       - name: Test platform contracts
         working-directory: packages/platform_contracts
         run: dart test

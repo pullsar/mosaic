@@ -10,6 +10,9 @@ import 'package:sqlite3/sqlite3.dart';
 final RegExp _actorAccessTokenPattern = RegExp(r'^[A-Za-z0-9_-]{43}$');
 
 const _consumerOnboardingCompletedKey = 'consumer.onboarding_completed.v1';
+const _consumerMutedTopicsKey = 'consumer.muted_topics.v1';
+const _consumerPlayActionKeyPrefix = 'consumer.play_action.v1:';
+const _maxConsumerMutedTopics = 512;
 
 enum InterestKind { interest, learning }
 
@@ -56,6 +59,24 @@ final class RecentFeedCacheState {
 
   final String requestId;
   final List<Map<String, Object?>> items;
+  final DateTime updatedAt;
+}
+
+final class LocalConsumerPlayActionState {
+  const LocalConsumerPlayActionState({
+    required this.playId,
+    this.savedRevisionId,
+    required this.saved,
+    required this.moreLikeThis,
+    required this.notInterested,
+    required this.updatedAt,
+  });
+
+  final String playId;
+  final String? savedRevisionId;
+  final bool saved;
+  final bool moreLikeThis;
+  final bool notInterested;
   final DateTime updatedAt;
 }
 
@@ -306,6 +327,116 @@ final class MosaicLocalStore {
         ]);
       }
     });
+  }
+
+  void saveConsumerPlayActionState(LocalConsumerPlayActionState state) {
+    final playId = _boundedConsumerText(state.playId, 'playId');
+    final savedRevisionId = state.savedRevisionId == null
+        ? null
+        : _boundedConsumerText(state.savedRevisionId!, 'savedRevisionId');
+    if (state.saved && savedRevisionId == null) {
+      throw const FormatException('savedRevisionId is required when saved');
+    }
+    _setMetadata(
+      '$_consumerPlayActionKeyPrefix$playId',
+      jsonEncode(<String, Object?>{
+        'playId': playId,
+        'savedRevisionId': savedRevisionId,
+        'saved': state.saved,
+        'moreLikeThis': state.moreLikeThis,
+        'notInterested': state.notInterested,
+        'updatedAt': state.updatedAt.toUtc().toIso8601String(),
+      }),
+    );
+  }
+
+  LocalConsumerPlayActionState? loadConsumerPlayActionState(String playId) {
+    final normalizedPlayId = _boundedConsumerText(playId, 'playId');
+    final key = '$_consumerPlayActionKeyPrefix$normalizedPlayId';
+    final encoded = _metadata(key);
+    if (encoded == null) return null;
+    try {
+      final decoded = jsonDecode(encoded);
+      if (decoded is! Map) throw const FormatException('invalid action state');
+      final state = decoded.cast<String, Object?>();
+      final storedPlayId = _boundedConsumerText(
+        state['playId'] as String,
+        'playId',
+      );
+      if (storedPlayId != normalizedPlayId) {
+        throw const FormatException('action state identity mismatch');
+      }
+      final saved = state['saved'];
+      final moreLikeThis = state['moreLikeThis'];
+      final notInterested = state['notInterested'];
+      final updatedAtRaw = state['updatedAt'];
+      if (saved is! bool ||
+          moreLikeThis is! bool ||
+          notInterested is! bool ||
+          updatedAtRaw is! String) {
+        throw const FormatException('invalid action state');
+      }
+      final updatedAt = DateTime.tryParse(updatedAtRaw)?.toUtc();
+      if (updatedAt == null) throw const FormatException('invalid updatedAt');
+      final rawRevision = state['savedRevisionId'];
+      final savedRevisionId = rawRevision == null
+          ? null
+          : _boundedConsumerText(rawRevision as String, 'savedRevisionId');
+      if (saved && savedRevisionId == null) {
+        throw const FormatException('saved revision missing');
+      }
+      return LocalConsumerPlayActionState(
+        playId: storedPlayId,
+        savedRevisionId: savedRevisionId,
+        saved: saved,
+        moreLikeThis: moreLikeThis,
+        notInterested: notInterested,
+        updatedAt: updatedAt,
+      );
+    } on Object {
+      _db.execute('delete from metadata where key = ?', [key]);
+      return null;
+    }
+  }
+
+  void replaceConsumerMutedTopics(Iterable<String> topicIds) {
+    final normalized =
+        topicIds
+            .map((value) => _boundedConsumerText(value, 'topicId'))
+            .toSet()
+            .toList(growable: false)
+          ..sort();
+    if (normalized.length > _maxConsumerMutedTopics) {
+      throw RangeError.range(
+        normalized.length,
+        0,
+        _maxConsumerMutedTopics,
+        'topicIds',
+      );
+    }
+    _setMetadata(_consumerMutedTopicsKey, jsonEncode(normalized));
+  }
+
+  Set<String> consumerMutedTopics() {
+    final encoded = _metadata(_consumerMutedTopicsKey);
+    if (encoded == null) return <String>{};
+    try {
+      final decoded = jsonDecode(encoded);
+      if (decoded is! List || decoded.length > _maxConsumerMutedTopics) {
+        throw const FormatException('invalid muted topics');
+      }
+      final result = <String>{};
+      for (final value in decoded) {
+        if (value is! String) throw const FormatException('invalid topic ID');
+        result.add(_boundedConsumerText(value, 'topicId'));
+      }
+      return result;
+    } on Object {
+      _db.execute('delete from metadata where key = ?', [
+        _consumerMutedTopicsKey,
+      ]);
+      return <String>{};
+    }
   }
 
   void saveFeedResume({
@@ -847,6 +978,14 @@ final class MosaicLocalStore {
       }
     }
   }
+}
+
+String _boundedConsumerText(String value, String name) {
+  final normalized = value.trim();
+  if (normalized.isEmpty || normalized.length > 200) {
+    throw ArgumentError.value(value, name, 'must be 1 to 200 characters');
+  }
+  return normalized;
 }
 
 PendingEvent _pendingEventFromRow(Row row) {

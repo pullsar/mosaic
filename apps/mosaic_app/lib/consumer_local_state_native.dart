@@ -108,4 +108,40 @@ final class SqliteConsumerLocalState implements ConsumerLocalState {
 
   @override
   Future<void> clearRecentFeed() async => _store.clearRecentFeedCache();
+
+  @override
+  Future<ConsumerPlayActionState?> readPlayActionState(String playId) async {
+    final state = _store.loadConsumerPlayActionState(playId);
+    if (state == null) return null;
+    return ConsumerPlayActionState(
+      playId: state.playId,
+      savedRevisionId: state.savedRevisionId,
+      saved: state.saved,
+      moreLikeThis: state.moreLikeThis,
+      notInterested: state.notInterested,
+      updatedAt: state.updatedAt,
+    );
+  }
+
+  @override
+  Future<void> writePlayActionState(ConsumerPlayActionState state) async {
+    _store.saveConsumerPlayActionState(
+      LocalConsumerPlayActionState(
+        playId: state.playId,
+        savedRevisionId: state.savedRevisionId,
+        saved: state.saved,
+        moreLikeThis: state.moreLikeThis,
+        notInterested: state.notInterested,
+        updatedAt: state.updatedAt,
+      ),
+    );
+  }
+
+  @override
+  Future<List<String>> readMutedTopicIds() async =>
+      _store.consumerMutedTopics().toList()..sort();
+
+  @override
+  Future<void> writeMutedTopicIds(Iterable<String> topicIds) async =>
+      _store.replaceConsumerMutedTopics(topicIds);
 }

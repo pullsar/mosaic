@@ -1,5 +1,9 @@
 import {timingSafeEqual} from 'node:crypto';
 import {Pool} from 'pg';
+import {
+  isConsumerActionEvent,
+  projectConsumerActionEvent,
+} from './consumer_actions.js';
 
 export interface EventInput {
   eventId: string;
@@ -28,6 +32,15 @@ export interface MosaicRepository {
   getPlayRevision(playId: string, revisionId: string): Promise<unknown | null>;
   insertEvent(event: EventInput): Promise<'inserted' | 'duplicate'>;
 }
+
+const INSERT_EVENT_SQL = `insert into interaction_events (
+   event_id, event_name, event_version, occurred_at, actor_id, session_id,
+   feed_request_id, play_revision_id, payload
+ ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)
+ on conflict (event_id) do nothing
+ returning received_at::text as received_at`;
+
+type InsertedEventRow = {received_at: string};
 
 export class PostgresRepository implements MosaicRepository {
   constructor(private readonly pool: Pool) {}
@@ -136,26 +149,53 @@ export class PostgresRepository implements MosaicRepository {
   }
 
   async insertEvent(event: EventInput): Promise<'inserted' | 'duplicate'> {
-    const result = await this.pool.query(
-      `insert into interaction_events (
-         event_id, event_name, event_version, occurred_at, actor_id, session_id,
-         feed_request_id, play_revision_id, payload
-       ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)
-       on conflict (event_id) do nothing`,
-      [
-        event.eventId,
-        event.event,
-        event.version,
-        event.occurredAt,
-        event.actorId,
-        event.sessionId,
-        event.feedRequestId ?? null,
-        event.playRevisionId ?? null,
-        JSON.stringify(event.payload),
-      ],
-    );
-    return result.rowCount === 1 ? 'inserted' : 'duplicate';
+    if (!isConsumerActionEvent(event.event)) {
+      const result = await this.pool.query<InsertedEventRow>(
+        INSERT_EVENT_SQL,
+        eventValues(event),
+      );
+      return result.rowCount === 1 ? 'inserted' : 'duplicate';
+    }
+
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      const result = await client.query<InsertedEventRow>(
+        INSERT_EVENT_SQL,
+        eventValues(event),
+      );
+      if (result.rowCount !== 1) {
+        await client.query('commit');
+        return 'duplicate';
+      }
+      const receivedAt = result.rows[0]?.received_at;
+      if (receivedAt === undefined) {
+        throw new Error('Inserted event did not return server receipt time.');
+      }
+      await projectConsumerActionEvent(client, event, receivedAt);
+      await client.query('commit');
+      return 'inserted';
+    } catch (error) {
+      await client.query('rollback').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
   }
+}
+
+function eventValues(event: EventInput): unknown[] {
+  return [
+    event.eventId,
+    event.event,
+    event.version,
+    event.occurredAt,
+    event.actorId,
+    event.sessionId,
+    event.feedRequestId ?? null,
+    event.playRevisionId ?? null,
+    JSON.stringify(event.payload),
+  ];
 }
 
 function constantTimeDigestEquals(left: string, right: string): boolean {

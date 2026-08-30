@@ -11,6 +11,8 @@ import 'package:play_schema/play_schema.dart';
 import 'app_event_runtime.dart';
 import 'asset_delivery_client.dart';
 import 'asset_delivery_warm.dart';
+import 'consumer_action_controller.dart';
+import 'consumer_action_controls.dart';
 import 'consumer_api_client.dart';
 import 'consumer_feed.dart';
 import 'consumer_onboarding.dart';
@@ -54,7 +56,10 @@ final class MosaicApp extends StatefulWidget {
 final class _MosaicAppState extends State<MosaicApp> {
   final ActiveMediaCoordinator _mediaCoordinator = ActiveMediaCoordinator();
   final SoLoudAudioEngine _audioEngine = SoLoudAudioEngine();
+  final ConsumerFeedController _feedController = ConsumerFeedController();
   late final AppEventRuntime _eventRuntime;
+  late final ConsumerApiClient? _consumerApi;
+  late final ConsumerActionController _actionController;
   late final AssetDeliveryClient? _assetDelivery;
   late final AssetMetadataWarmController? _metadataWarmer;
   late final ConsumerRuntime _consumerRuntime;
@@ -104,8 +109,15 @@ final class _MosaicAppState extends State<MosaicApp> {
             ),
           );
 
+    _consumerApi = _createConsumerApi(_eventRuntime);
+    _actionController = ConsumerActionController(
+      eventRuntime: _eventRuntime,
+      localState: _eventRuntime.resources.consumerLocalState,
+      api: _consumerApi,
+      onError: _reportEventRuntimeError,
+    );
     _consumerRuntime = ConsumerRuntime(
-      api: _createConsumerApi(_eventRuntime),
+      api: _consumerApi,
       localState: _eventRuntime.resources.consumerLocalState,
       capabilities: consumerCapabilitiesForAssetDelivery(_assetDelivery),
       onError: _reportEventRuntimeError,
@@ -138,6 +150,7 @@ final class _MosaicAppState extends State<MosaicApp> {
   void dispose() {
     _cancelWarmWindow();
     _lifecycle.dispose();
+    _actionController.dispose();
     _consumerRuntime.close();
     _assetDelivery?.close();
     unawaited(_disposeResources());
@@ -208,11 +221,19 @@ final class _MosaicAppState extends State<MosaicApp> {
       semanticResumeEpoch: _semanticResumeEpoch,
       onVideoPlaybackEvent: videoDiagnostics.call,
     );
-    return PlaySurface(
+    final surface = PlaySurface(
       key: ValueKey<String>('play:${item.playId}:${item.revisionId}'),
       play: item.play,
       mediaBuilder: media.call,
       onDirectManipulationChanged: onDirectManipulationChanged,
+    );
+    return ConsumerActionControls(
+      child: surface,
+      item: item,
+      feedRequestId: feedRequestId,
+      controller: _actionController,
+      onAdvance: _feedController.advance,
+      active: active,
     );
   }
 
@@ -292,6 +313,7 @@ final class _MosaicAppState extends State<MosaicApp> {
       child: ConsumerFeed(
         runtime: _consumerRuntime,
         itemBuilder: _buildFeedPlay,
+        controller: _feedController,
         onEvent: _recordFeedEvent,
         onWarmWindow: _warmFeedWindow,
         onCancelWarmWindow: _cancelWarmWindow,
