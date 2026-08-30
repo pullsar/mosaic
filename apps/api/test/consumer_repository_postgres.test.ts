@@ -4,6 +4,7 @@ import {test} from 'node:test';
 import {Pool} from 'pg';
 import {PostgresConsumerRepository, UnknownTopicError} from '../src/consumer_repository.js';
 import {defaultConsumerRankingConfig, rankFeedCandidates} from '../src/consumer_ranking.js';
+import {PostgresRepository} from '../src/repository.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 
@@ -22,12 +23,13 @@ async function runMigration(): Promise<void> {
 }
 
 test(
-  'PostgreSQL consumer repository replaces explicit preferences and persists explainable decisions',
+  'PostgreSQL consumer repository replaces preferences, reads actions and persists decisions',
   {skip: !databaseUrl},
   async () => {
     await runMigration();
     const pool = new Pool({connectionString: databaseUrl});
     const repo = new PostgresConsumerRepository(pool);
+    const eventRepo = new PostgresRepository(pool);
     const suffix = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
     const actorId = `actor_feed_${suffix}`;
     const travelTopic = `travel_${suffix}`;
@@ -77,6 +79,63 @@ test(
       assert.deepEqual(await repo.getTopicPreferences(actorId), {
         interestTopicIds: [travelTopic],
         learningTopicIds: [pianoTopic],
+      });
+
+      const eventBase = {
+        version: 1,
+        actorId,
+        sessionId: `session_${suffix}`,
+        playRevisionId: revisionId,
+      } as const;
+      assert.equal(
+        await eventRepo.insertEvent({
+          ...eventBase,
+          eventId: `save_${suffix}`,
+          event: 'play_saved',
+          occurredAt: '2026-08-29T20:00:00Z',
+          payload: {playId: travelPlay},
+        }),
+        'inserted',
+      );
+      await eventRepo.insertEvent({
+        ...eventBase,
+        eventId: `more_${suffix}`,
+        event: 'more_like_this',
+        occurredAt: '2026-08-29T20:01:00Z',
+        payload: {playId: travelPlay},
+      });
+      await eventRepo.insertEvent({
+        ...eventBase,
+        eventId: `not_${suffix}`,
+        event: 'play_not_interested',
+        occurredAt: '2026-08-29T20:02:00Z',
+        payload: {playId: pianoPlay},
+      });
+      await eventRepo.insertEvent({
+        eventId: `mute_${suffix}`,
+        event: 'topic_muted',
+        version: 1,
+        occurredAt: '2026-08-29T20:03:00Z',
+        actorId,
+        sessionId: `session_${suffix}`,
+        payload: {topicId: pianoTopic},
+      });
+
+      assert.deepEqual(await repo.getActionState(actorId, travelPlay), {
+        play: {
+          playId: travelPlay,
+          saved: true,
+          savedRevisionId: revisionId,
+          moreLikeThis: true,
+          notInterested: false,
+        },
+        mutedTopicIds: [pianoTopic],
+      });
+      assert.deepEqual(await repo.getFeedProfile(actorId), {
+        interestTopicIds: [travelTopic],
+        learningTopicIds: [pianoTopic],
+        mutedTopicIds: [pianoTopic],
+        notInterestedPlayIds: [pianoPlay],
       });
 
       const search = await repo.searchTopics('pIaNo', 10);

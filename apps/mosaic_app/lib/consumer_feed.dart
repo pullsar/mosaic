@@ -9,6 +9,20 @@ import 'consumer_api_client.dart';
 import 'consumer_local_state.dart';
 import 'consumer_runtime.dart';
 
+final class ConsumerFeedController {
+  Future<bool> Function()? _advance;
+  bool get attached => _advance != null;
+  Future<bool> advance() async {
+    final callback = _advance;
+    return callback == null ? false : callback();
+  }
+
+  void _attach(Future<bool> Function() callback) => _advance = callback;
+  void _detach(Future<bool> Function() callback) {
+    if (identical(_advance, callback)) _advance = null;
+  }
+}
+
 typedef ConsumerFeedItemBuilder =
     Widget Function(
       BuildContext context,
@@ -39,6 +53,7 @@ final class ConsumerFeed extends StatefulWidget {
   const ConsumerFeed({
     required this.runtime,
     required this.itemBuilder,
+    this.controller,
     this.onEvent,
     this.onWarmWindow,
     this.onCancelWarmWindow,
@@ -57,6 +72,7 @@ final class ConsumerFeed extends StatefulWidget {
 
   final ConsumerRuntime runtime;
   final ConsumerFeedItemBuilder itemBuilder;
+  final ConsumerFeedController? controller;
   final ConsumerFeedEventSink? onEvent;
   final ConsumerFeedWarmWindowCallback? onWarmWindow;
   final VoidCallback? onCancelWarmWindow;
@@ -118,7 +134,17 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
   @override
   void initState() {
     super.initState();
+    widget.controller?._attach(_requestAdvance);
     unawaited(_bootstrap());
+  }
+
+  @override
+  void didUpdateWidget(covariant ConsumerFeed oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.controller, widget.controller)) {
+      oldWidget.controller?._detach(_requestAdvance);
+      widget.controller?._attach(_requestAdvance);
+    }
   }
 
   Future<void> _bootstrap() async {
@@ -274,6 +300,33 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
         _entries.add(_FeedEntry(requestId: requestId, item: item));
       }
     }
+  }
+
+  Future<bool> _requestAdvance() async {
+    if (!mounted || _entries.isEmpty || _directManipulationActive) {
+      return false;
+    }
+    final currentIdentity = _entries[_currentIndex].analyticsIdentity;
+    Future<bool> advanceLoaded() async {
+      if (!mounted ||
+          _entries.isEmpty ||
+          _currentIndex >= _entries.length ||
+          _entries[_currentIndex].analyticsIdentity != currentIdentity ||
+          _currentIndex + 1 >= _entries.length) {
+        return false;
+      }
+      await _pageController.nextPage(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+      );
+      return true;
+    }
+
+    if (await advanceLoaded()) return true;
+    final cursor = _nextCursor;
+    if (cursor == null || _fetching) return false;
+    await _fetchPage(cursor, epoch: _loadEpoch);
+    return advanceLoaded();
   }
 
   void _onPageChanged(int index) {
@@ -497,6 +550,7 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
   @override
   void dispose() {
     _loadEpoch += 1;
+    widget.controller?._detach(_requestAdvance);
     widget.onCancelWarmWindow?.call();
     _pageController.dispose();
     super.dispose();

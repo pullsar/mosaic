@@ -75,6 +75,69 @@ final class ConsumerPreferences {
   };
 }
 
+final class ConsumerRemotePlayActionState {
+  ConsumerRemotePlayActionState({
+    required String playId,
+    required this.saved,
+    String? savedRevisionId,
+    required this.moreLikeThis,
+    required this.notInterested,
+  }) : playId = _requiredText(playId, 'playId', 200),
+       savedRevisionId = savedRevisionId == null
+           ? null
+           : _requiredText(savedRevisionId, 'savedRevisionId', 200) {
+    if (saved && this.savedRevisionId == null) {
+      throw const FormatException('savedRevisionId is required when saved');
+    }
+  }
+
+  final String playId;
+  final bool saved;
+  final String? savedRevisionId;
+  final bool moreLikeThis;
+  final bool notInterested;
+
+  factory ConsumerRemotePlayActionState.fromJson(Map<String, Object?> json) {
+    final saved = json['saved'];
+    final moreLikeThis = json['moreLikeThis'];
+    final notInterested = json['notInterested'];
+    if (saved is! bool || moreLikeThis is! bool || notInterested is! bool) {
+      throw const FormatException('action flags must be booleans');
+    }
+    final rawRevision = json['savedRevisionId'];
+    if (rawRevision != null && rawRevision is! String) {
+      throw const FormatException('savedRevisionId must be a string or null');
+    }
+    return ConsumerRemotePlayActionState(
+      playId: _requiredJsonString(json, 'playId', 200),
+      saved: saved,
+      savedRevisionId: rawRevision as String?,
+      moreLikeThis: moreLikeThis,
+      notInterested: notInterested,
+    );
+  }
+}
+
+final class ConsumerRemoteActionState {
+  ConsumerRemoteActionState({
+    required this.play,
+    required List<String> mutedTopicIds,
+  }) : mutedTopicIds = List.unmodifiable(
+         _topicIds(mutedTopicIds, 'mutedTopicIds'),
+       );
+
+  final ConsumerRemotePlayActionState play;
+  final List<String> mutedTopicIds;
+
+  factory ConsumerRemoteActionState.fromJson(Map<String, Object?> json) =>
+      ConsumerRemoteActionState(
+        play: ConsumerRemotePlayActionState.fromJson(
+          _jsonObject(json['play'], 'action play state'),
+        ),
+        mutedTopicIds: _jsonStringList(json['mutedTopicIds'], 'mutedTopicIds'),
+      );
+}
+
 enum ConsumerFeedSourceBucket {
   known('known'),
   wildcard('wildcard'),
@@ -331,6 +394,48 @@ final class ConsumerApiClient {
     return ConsumerApiSuccess(preferences);
   }
 
+  Future<ConsumerApiResult<ConsumerRemoteActionState>> getActionState(
+    String playId,
+  ) async {
+    final normalizedPlayId = playId.trim();
+    if (normalizedPlayId.isEmpty || normalizedPlayId.length > 200) {
+      throw ArgumentError.value(
+        playId,
+        'playId',
+        'must be 1 to 200 characters',
+      );
+    }
+    final registrationFailure =
+        await _ensureRegistered<ConsumerRemoteActionState>();
+    if (registrationFailure != null) return registrationFailure;
+    final response = await _send(
+      () => _client.get(
+        _actionStateEndpoint(normalizedPlayId),
+        headers: actorAuthorizationHeaders(_actorAccess.accessToken),
+      ),
+    );
+    if (response == null) {
+      return const ConsumerApiFailure(ConsumerApiFailureKind.retryable);
+    }
+    if (response.statusCode != 200) {
+      return _failureForResponse(response);
+    }
+    try {
+      final state = ConsumerRemoteActionState.fromJson(
+        _decodeResponseObject(response.body),
+      );
+      if (state.play.playId != normalizedPlayId) {
+        throw const FormatException('action state Play identity mismatch');
+      }
+      return ConsumerApiSuccess(state);
+    } on Object {
+      return const ConsumerApiFailure(
+        ConsumerApiFailureKind.malformedResponse,
+        statusCode: 200,
+      );
+    }
+  }
+
   Future<ConsumerApiResult<ConsumerFeedPage>> fetchFeed({
     required PlayCapabilityEnvelope capabilities,
     String? cursor,
@@ -384,6 +489,11 @@ final class ConsumerApiClient {
       );
     }
   }
+
+  Uri _actionStateEndpoint(String playId) => _policy.resolve(
+    'v1/actors/${Uri.encodeComponent(_actorAccess.actorId)}/actions/'
+    '${Uri.encodeComponent(playId)}',
+  );
 
   Uri get _preferencesEndpoint => _policy.resolve(
     'v1/actors/${Uri.encodeComponent(_actorAccess.actorId)}/preferences',

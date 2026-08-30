@@ -7,8 +7,13 @@ abstract final class MosaicEventName {
   static const playCompleted = 'play_completed';
   static const playDismissed = 'play_dismissed';
   static const playSaved = 'play_saved';
+  static const playUnsaved = 'play_unsaved';
   static const playShared = 'play_shared';
   static const moreLikeThis = 'more_like_this';
+  static const playNotInterested = 'play_not_interested';
+  static const topicMuted = 'topic_muted';
+  static const topicUnmuted = 'topic_unmuted';
+  static const playReported = 'play_reported';
   static const mediaPlayback = 'media_playback';
 }
 

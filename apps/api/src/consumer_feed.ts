@@ -104,7 +104,7 @@ export class ConsumerFeedService {
       return pageFromStored(page, decoded.offset, pageSize);
     }
 
-    const preferences = await this.repository.getTopicPreferences(actorId);
+    const profile = await this.repository.getFeedProfile(actorId);
     const candidates = await this.repository.listEligibleFeedCandidates(this.candidateLimit);
     const compatible = candidates.filter(
       (candidate) => checkPlayCompatibility(candidate.document, input.capabilities).compatible,
@@ -112,15 +112,17 @@ export class ConsumerFeedService {
     const deliverable = this.assetReadiness === undefined
       ? compatible
       : await this.assetReadiness.filterDeliverable(compatible);
+    const notInterested = new Set(profile.notInterestedPlayIds);
+    const eligible = deliverable.filter((candidate) => !notInterested.has(candidate.playId));
 
     let rankingFallback = false;
     let ranked: RankedFeedCandidate[];
     try {
-      ranked = rankFeedCandidates(deliverable, preferences, this.rankingConfig);
+      ranked = rankFeedCandidates(eligible, profile, this.rankingConfig);
     } catch (error) {
       rankingFallback = true;
       this.reportRankingError(error);
-      ranked = curatedFallbackCandidates(deliverable);
+      ranked = curatedFallbackCandidates(eligible);
     }
 
     const window = selectFeedWindow(ranked, this.windowSize);

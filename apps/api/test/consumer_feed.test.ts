@@ -7,7 +7,9 @@ import {
   selectFeedWindow,
 } from '../src/consumer_feed.js';
 import type {
+  ConsumerActionState,
   ConsumerRepository,
+  FeedConsumerProfile,
   FeedDecisionInput,
   StoredFeedDecisionPage,
   TopicPreferences,
@@ -69,6 +71,8 @@ function candidate(
 
 class MemoryConsumerRepository implements ConsumerRepository {
   preferences: TopicPreferences = {interestTopicIds: [], learningTopicIds: []};
+  mutedTopicIds: string[] = [];
+  notInterestedPlayIds: string[] = [];
   candidates: FeedCandidate[] = [];
   decisions = new Map<
     string,
@@ -92,6 +96,27 @@ class MemoryConsumerRepository implements ConsumerRepository {
 
   async getTopicPreferences(): Promise<TopicPreferences> {
     return this.preferences;
+  }
+
+  async getFeedProfile(): Promise<FeedConsumerProfile> {
+    return {
+      ...this.preferences,
+      mutedTopicIds: [...this.mutedTopicIds],
+      notInterestedPlayIds: [...this.notInterestedPlayIds],
+    };
+  }
+
+  async getActionState(_actorId: string, playId: string): Promise<ConsumerActionState> {
+    return {
+      play: {
+        playId,
+        saved: false,
+        savedRevisionId: null,
+        moreLikeThis: false,
+        notInterested: this.notInterestedPlayIds.includes(playId),
+      },
+      mutedTopicIds: [...this.mutedTopicIds],
+    };
   }
 
   async listEligibleFeedCandidates(limit = 200): Promise<FeedCandidate[]> {
@@ -246,6 +271,30 @@ test('compatible but known-undeliverable candidates are removed before ranking a
   assert.deepEqual(
     repository.decisions.get('readiness_request')?.ranked.map((item) => item.playId),
     ['ready'],
+  );
+});
+
+test('Not interested and muted topics are excluded before ranking and persistence', async () => {
+  const repository = new MemoryConsumerRepository();
+  repository.preferences = {interestTopicIds: ['travel'], learningTopicIds: []};
+  repository.notInterestedPlayIds = ['dismissed'];
+  repository.mutedTopicIds = ['music'];
+  repository.candidates = [
+    candidate('kept', 'r1', {topicIds: ['travel'], curatedOrder: 1}),
+    candidate('dismissed', 'r2', {topicIds: ['travel'], curatedOrder: 2}),
+    candidate('muted', 'r3', {topicIds: ['music'], curatedOrder: 3}),
+  ];
+  const service = new ConsumerFeedService(repository, {
+    windowSize: 3,
+    candidateLimit: 3,
+    requestIdFactory: () => 'actions_request',
+  });
+
+  const page = await service.getFeed({actorId: 'actor_actions', capabilities, limit: 3});
+  assert.deepEqual(page.items.map((item) => item.playId), ['kept']);
+  assert.deepEqual(
+    repository.decisions.get('actions_request')?.ranked.map((item) => item.playId),
+    ['kept'],
   );
 });
 

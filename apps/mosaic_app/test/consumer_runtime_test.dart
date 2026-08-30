@@ -132,6 +132,19 @@ final class _MemoryConsumerState implements ConsumerLocalState {
     clearRecentCalls += 1;
     recent = null;
   }
+
+  @override
+  Future<ConsumerPlayActionState?> readPlayActionState(String playId) async =>
+      null;
+
+  @override
+  Future<void> writePlayActionState(ConsumerPlayActionState state) async {}
+
+  @override
+  Future<List<String>> readMutedTopicIds() async => const <String>[];
+
+  @override
+  Future<void> writeMutedTopicIds(Iterable<String> topicIds) async {}
 }
 
 ConsumerApiClient _client(http.Client client) => ConsumerApiClient(
