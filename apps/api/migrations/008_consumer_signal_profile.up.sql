@@ -7,12 +7,8 @@ create table if not exists consumer_signal_profiles (
     check (jsonb_typeof(interaction_affinity) = 'object'),
   recent_revisions jsonb not null default '[]'::jsonb
     check (jsonb_typeof(recent_revisions) = 'array'),
-  topic_dismissal_counts jsonb not null default '{}'::jsonb
-    check (jsonb_typeof(topic_dismissal_counts) = 'object'),
   format_dismissal_counts jsonb not null default '{}'::jsonb
     check (jsonb_typeof(format_dismissal_counts) = 'object'),
-  more_like_topic_expiries jsonb not null default '{}'::jsonb
-    check (jsonb_typeof(more_like_topic_expiries) = 'object'),
   format_last_dismissed_at jsonb not null default '{}'::jsonb
     check (jsonb_typeof(format_last_dismissed_at) = 'object'),
   updated_at timestamptz not null default now(),
