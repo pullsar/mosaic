@@ -1,10 +1,19 @@
 import {Pool, type PoolClient} from 'pg';
-import type {FeedCandidate, FeedSourceBucket, RankedFeedCandidate} from './consumer_ranking.js';
+import {
+  feedCandidateIdentity,
+  type FeedCandidate,
+  type FeedSourceBucket,
+  type RankedFeedCandidate,
+} from './consumer_ranking.js';
 
 const MAX_PREFERENCE_TOPICS = 64;
 const MAX_CANDIDATES = 500;
 const MAX_PAGE_SIZE = 50;
 const EXPIRED_DECISION_CLEANUP_BATCH = 100;
+const RECENT_REVISION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const DISMISSAL_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const AFFINITY_HALF_LIFE_MS = 30 * 24 * 60 * 60 * 1000;
+const AFFINITY_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
 
 export interface TopicSummary {
   id: string;
@@ -19,6 +28,14 @@ export interface TopicPreferences {
 export interface FeedConsumerProfile extends TopicPreferences {
   mutedTopicIds: string[];
   notInterestedPlayIds: string[];
+}
+
+export interface DerivedConsumerRankingProfile {
+  interactionAffinity: Record<string, number>;
+  recentPlayRevisionKeys: string[];
+  topicDismissalCounts: Record<string, number>;
+  formatDismissalCounts: Record<string, number>;
+  moreLikeTopicIds: string[];
 }
 
 export interface PlayActionState {
@@ -70,6 +87,7 @@ export interface ConsumerRepository {
   ): Promise<void>;
   getTopicPreferences(actorId: string): Promise<TopicPreferences>;
   getFeedProfile(actorId: string): Promise<FeedConsumerProfile>;
+  getDerivedRankingProfile?(actorId: string): Promise<DerivedConsumerRankingProfile | null>;
   getActionState(actorId: string, playId: string): Promise<ConsumerActionState>;
   listEligibleFeedCandidates(limit?: number): Promise<FeedCandidate[]>;
   persistFeedDecision(input: FeedDecisionInput): Promise<void>;
@@ -196,6 +214,38 @@ export class PostgresConsumerRepository implements ConsumerRepository {
       learningTopicIds: row?.learning_topic_ids ?? [],
       mutedTopicIds: row?.muted_topic_ids ?? [],
       notInterestedPlayIds: row?.not_interested_play_ids ?? [],
+    };
+  }
+
+  async getDerivedRankingProfile(
+    actorId: string,
+  ): Promise<DerivedConsumerRankingProfile | null> {
+    const normalizedActorId = requiredText(actorId, 'actorId');
+    const result = await this.pool.query<{
+      interaction_affinity: unknown;
+      recent_revisions: unknown;
+      topic_dismissal_counts: unknown;
+      format_dismissal_counts: unknown;
+      more_like_topic_expiries: unknown;
+    }>(
+      `select interaction_affinity,
+              recent_revisions,
+              topic_dismissal_counts,
+              format_dismissal_counts,
+              more_like_topic_expiries
+         from consumer_signal_profiles
+        where actor_id = $1`,
+      [normalizedActorId],
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    const now = Date.now();
+    return {
+      interactionAffinity: decodeAffinityForRanking(row.interaction_affinity, now),
+      recentPlayRevisionKeys: decodeRecentRevisionsForRanking(row.recent_revisions, now),
+      topicDismissalCounts: decodeCountsForRanking(row.topic_dismissal_counts, now),
+      formatDismissalCounts: decodeCountsForRanking(row.format_dismissal_counts, now),
+      moreLikeTopicIds: decodeMoreLikeTopicsForRanking(row.more_like_topic_expiries, now),
     };
   }
 
@@ -467,6 +517,94 @@ async function insertPreferences(
        from unnest($3::text[]) as selected(topic_id)`,
     [actorId, kind, topicIds],
   );
+}
+
+function decodeAffinityForRanking(value: unknown, now: number): Record<string, number> {
+  const record = requireRecord(value, 'interaction affinity');
+  const result: Record<string, number> = {};
+  for (const [format, raw] of Object.entries(record)) {
+    const entry = requireRecord(raw, `interaction affinity ${format}`);
+    const affinity = entry.value;
+    const updatedAt = timestampMs(entry.updatedAt, `interaction affinity ${format}`);
+    if (typeof affinity !== 'number' || !Number.isFinite(affinity)) {
+      throw new Error('Consumer interaction affinity profile is corrupt.');
+    }
+    const age = Math.max(0, now - updatedAt);
+    if (age > AFFINITY_MAX_AGE_MS) continue;
+    const decay = Math.pow(0.5, age / AFFINITY_HALF_LIFE_MS);
+    result[format] = clampSigned(affinity) * decay;
+  }
+  return result;
+}
+
+function decodeRecentRevisionsForRanking(value: unknown, now: number): string[] {
+  if (!Array.isArray(value) || value.length > 64) {
+    throw new Error('Consumer recent-revision profile is corrupt.');
+  }
+  const result: string[] = [];
+  for (const raw of value) {
+    const entry = requireRecord(raw, 'recent revision');
+    const playId = requiredProfileText(entry.playId, 'recent revision playId');
+    const revisionId = requiredProfileText(entry.revisionId, 'recent revision revisionId');
+    const receivedAt = timestampMs(entry.receivedAt, 'recent revision receivedAt');
+    if (Math.max(0, now - receivedAt) <= RECENT_REVISION_TTL_MS) {
+      result.push(feedCandidateIdentity(playId, revisionId));
+    }
+  }
+  return result;
+}
+
+function decodeCountsForRanking(value: unknown, now: number): Record<string, number> {
+  const record = requireRecord(value, 'dismissal counts');
+  const result: Record<string, number> = {};
+  for (const [key, raw] of Object.entries(record)) {
+    const entry = requireRecord(raw, `dismissal count ${key}`);
+    const count = entry.count;
+    const updatedAt = timestampMs(entry.updatedAt, `dismissal count ${key}`);
+    if (!Number.isInteger(count) || (count as number) < 0 || (count as number) > 8) {
+      throw new Error('Consumer dismissal profile is corrupt.');
+    }
+    if (Math.max(0, now - updatedAt) <= DISMISSAL_TTL_MS && (count as number) > 0) {
+      result[key] = count as number;
+    }
+  }
+  return result;
+}
+
+function decodeMoreLikeTopicsForRanking(value: unknown, now: number): string[] {
+  const record = requireRecord(value, 'More Like This topics');
+  const result: string[] = [];
+  for (const [topicId, expiry] of Object.entries(record)) {
+    if (timestampMs(expiry, `More Like This ${topicId}`) > now) result.push(topicId);
+  }
+  return result.sort();
+}
+
+function requireRecord(value: unknown, name: string): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`${name} must be an object.`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function requiredProfileText(value: unknown, name: string): string {
+  if (typeof value !== 'string') throw new Error(`${name} is invalid.`);
+  const normalized = value.trim();
+  if (normalized.length === 0 || normalized.length > 200) {
+    throw new Error(`${name} is invalid.`);
+  }
+  return normalized;
+}
+
+function timestampMs(value: unknown, name: string): number {
+  if (typeof value !== 'string') throw new Error(`${name} is invalid.`);
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) throw new Error(`${name} is invalid.`);
+  return parsed;
+}
+
+function clampSigned(value: number): number {
+  return Math.max(-1, Math.min(1, value));
 }
 
 function normalizeTopicIds(values: readonly string[], name: string): string[] {
