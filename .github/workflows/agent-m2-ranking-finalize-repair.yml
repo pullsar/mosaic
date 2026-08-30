@@ -1,0 +1,48 @@
+name: agent-m2-ranking-finalize-repair
+
+on:
+  push:
+    branches: ['agent/m2-ranking-signals-20260830']
+    paths: ['.github/workflows/agent-m2-ranking-finalize-repair.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/m2-ranking-signals-20260830
+      - name: Repair exact SQL patch assertion
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/agent-m2-ranking-finalize.yml')
+          text = path.read_text()
+          start_marker = "replace_once(\n    projector,\n    \"\"\"      where event.actor_id = $1"
+          end_marker = "\n\n# Migration 008"
+          start = text.index(start_marker)
+          end = text.index(end_marker, start)
+          replacement = '''projector_path = Path(projector)
+          projector_text = projector_path.read_text()
+          projection_where = "      where event.actor_id = $1\\n        and (\\n"
+          if projector_text.count(projection_where) != 1:
+              raise SystemExit('consumer_signal_projector.ts: projection WHERE shape changed')
+          projector_path.write_text(projector_text.replace(
+              projection_where,
+              "      where event.actor_id = $1\\n        and event.event_name in ('play_visible', 'play_resolved', 'play_dismissed')\\n        and (\\n",
+              1,
+          ))'''.replace('          ', '')
+          path.write_text(text[:start] + replacement + text[end:])
+          PY
+          rm .github/workflows/agent-m2-ranking-finalize-repair.yml
+          git config user.name xwiz
+          git config user.email c.opata@robosyslive.com
+          git add -A
+          git diff --cached --check
+          git commit -m 'ci: repair ranking finalizer assertion'
+          git push origin HEAD:agent/m2-ranking-signals-20260830
