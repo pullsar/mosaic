@@ -161,11 +161,11 @@ export class ConsumerFeedService {
   }
 
   private async loadDerivedProfile(actorId: string) {
-    const readProfile = this.repository.getDerivedRankingProfile;
-    if (readProfile === undefined) return null;
+    const projector = this.signalProjector;
+    if (projector === undefined) return null;
     try {
-      await this.signalProjector?.projectActor(actorId);
-      return await readProfile.call(this.repository, actorId);
+      await projector.projectActor(actorId);
+      return await projector.readActorProfile(actorId);
     } catch (error) {
       this.reportProfileError(error);
       return null;
