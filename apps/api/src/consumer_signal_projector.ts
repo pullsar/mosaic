@@ -93,7 +93,7 @@ export class PostgresConsumerSignalProjector implements ConsumerSignalProjector 
       MAX_EVENTS_PER_RUN,
       'maxEventsPerRun',
     );
-    this.clock = options.clock ?? Date.new;
+    this.clock = options.clock ?? (() => new Date());
   }
 
   async projectActor(actorId: string): Promise<number> {
@@ -179,8 +179,8 @@ export class PostgresConsumerSignalProjector implements ConsumerSignalProjector 
       }
       if (age > DISMISSAL_TTL_MS) continue;
       for (const topicId of topicIds) incrementCount(topicDismissalCounts, topicId);
-      const format = optionalText(action.format)?.toLowerCase();
-      if (format !== null) incrementCount(formatDismissalCounts, format);
+      const format = optionalText(action.format);
+      if (format !== null) incrementCount(formatDismissalCounts, format.toLowerCase());
     }
 
     return {
@@ -286,6 +286,7 @@ async function loadEvents(
          on revision.play_id = event.payload ->> 'playId'
         and revision.revision_id = event.play_revision_id
       where event.actor_id = $1
+        and event.event_name in ('play_visible', 'play_resolved', 'play_dismissed')
         and (
           $2::timestamptz is null
           or event.received_at > $2::timestamptz

@@ -19,6 +19,7 @@ import 'consumer_onboarding.dart';
 import 'consumer_runtime.dart';
 import 'event_runtime_resources_factory.dart';
 import 'onboarding_localizations.dart';
+import 'play_resolution_telemetry.dart';
 
 const _apiBaseUrl = String.fromEnvironment('MOSAIC_API_BASE_URL');
 const _allowInsecureLocalApi = bool.fromEnvironment(
@@ -225,6 +226,14 @@ final class _MosaicAppState extends State<MosaicApp> {
       key: ValueKey<String>('play:${item.playId}:${item.revisionId}'),
       play: item.play,
       mediaBuilder: media.call,
+      onResolved: (resolution) => recordPlayResolutionTelemetry(
+        telemetry,
+        playId: item.playId,
+        outcome: resolution.outcome,
+        attempts: resolution.session.attempts,
+        completed: resolution.session.ended,
+        correct: resolution.wasCorrect,
+      ),
       onDirectManipulationChanged: onDirectManipulationChanged,
     );
     return ConsumerActionControls(

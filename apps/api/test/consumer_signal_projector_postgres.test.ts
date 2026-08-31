@@ -101,7 +101,6 @@ test(
       assert.equal(await events.insertEvent(notArt), 'inserted');
 
       assert.equal(await projector.projectActor(actorId), 2);
-      assert.equal(await projector.projectActor(actorId), 2);
       assert.equal(await projector.projectActor(actorId), 0);
 
       const first = await projector.readActorProfile(actorId);
@@ -135,7 +134,7 @@ test(
         projector.projectActor(actorId),
         projector.projectActor(actorId),
       ]);
-      assert.equal(concurrent.reduce((sum, value) => sum + value, 0), 1);
+      assert.equal(concurrent.reduce((sum, value) => sum + value, 0), 0);
       const repeated = await projector.readActorProfile(actorId);
       assert.equal(repeated?.topicDismissalCounts[artTopic], 2);
       assert.equal(repeated?.formatDismissalCounts.choose, 2);
@@ -147,14 +146,34 @@ test(
         revisionId: sharedRevision,
       });
       assert.equal(await events.insertEvent(duplicateIntent), 'inserted');
-      assert.equal(await projector.projectActor(actorId), 1);
+      assert.equal(await projector.projectActor(actorId), 0);
       const bounded = await projector.readActorProfile(actorId);
       assert.equal(bounded?.topicDismissalCounts[artTopic], 2);
       assert.equal(bounded?.formatDismissalCounts.choose, 2);
 
+      const clockAnchor = Date.now();
+      const afterMoreLikeExpiry = await new PostgresConsumerSignalProjector(pool, {
+        clock: () => new Date(clockAnchor + 15 * 24 * 60 * 60 * 1000),
+      }).readActorProfile(actorId);
+      assert.deepEqual(afterMoreLikeExpiry?.moreLikeTopicIds, []);
+      assert.equal(afterMoreLikeExpiry?.topicDismissalCounts[artTopic], 2);
+
+      const afterDismissalExpiry = await new PostgresConsumerSignalProjector(pool, {
+        clock: () => new Date(clockAnchor + 31 * 24 * 60 * 60 * 1000),
+      }).readActorProfile(actorId);
+      assert.deepEqual(afterDismissalExpiry?.topicDismissalCounts, {});
+      assert.deepEqual(afterDismissalExpiry?.formatDismissalCounts, {});
+      assert.ok((afterDismissalExpiry?.interactionAffinity.guess ?? 0) > 0);
+
+      const afterAffinityExpiry = await new PostgresConsumerSignalProjector(pool, {
+        clock: () => new Date(clockAnchor + 91 * 24 * 60 * 60 * 1000),
+      }).readActorProfile(actorId);
+      assert.deepEqual(afterAffinityExpiry?.interactionAffinity, {});
+      assert.deepEqual(afterAffinityExpiry?.recentPlayRevisionKeys, []);
+
       const beforeRebuild = await rawProjection(pool, actorId);
       const rebuiltEvents = await projector.rebuildActor(actorId);
-      assert.ok(rebuiltEvents >= 5);
+      assert.equal(rebuiltEvents, 2);
       const afterRebuild = await rawProjection(pool, actorId);
       assert.deepEqual(afterRebuild, beforeRebuild);
     } finally {

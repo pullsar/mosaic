@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:analytics_contract/analytics_contract.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mosaic_app/play_resolution_telemetry.dart';
@@ -10,6 +12,12 @@ final class _RecordingTelemetry implements Telemetry {
   void event(String name, Map<String, Object?> payload) {
     events.add((name: name, payload: Map<String, Object?>.of(payload)));
   }
+
+  @override
+  void error(Object error, StackTrace stackTrace, {String? operation}) {}
+
+  @override
+  FutureOr<T> trace<T>(String operation, FutureOr<T> Function() body) => body();
 }
 
 void main() {
@@ -35,46 +43,52 @@ void main() {
     });
   });
 
-  test('terminal resolution also records completion without inventing correctness', () {
-    final telemetry = _RecordingTelemetry();
+  test(
+    'terminal resolution also records completion without inventing correctness',
+    () {
+      final telemetry = _RecordingTelemetry();
 
-    recordPlayResolutionTelemetry(
-      telemetry,
-      playId: 'play_choose',
-      outcome: 'option_a',
-      attempts: 1,
-      completed: true,
-    );
+      recordPlayResolutionTelemetry(
+        telemetry,
+        playId: 'play_choose',
+        outcome: 'option_a',
+        attempts: 1,
+        completed: true,
+      );
 
-    expect(
-      telemetry.events.map((event) => event.name),
-      <String>[MosaicEventName.playResolved, MosaicEventName.playCompleted],
-    );
-    expect(telemetry.events.first.payload.containsKey('correct'), isFalse);
-    expect(telemetry.events.last.payload, <String, Object?>{
-      'playId': 'play_choose',
-      'attempts': 1,
-    });
-  });
+      expect(telemetry.events.map((event) => event.name), <String>[
+        MosaicEventName.playResolved,
+        MosaicEventName.playCompleted,
+      ]);
+      expect(telemetry.events.first.payload.containsKey('correct'), isFalse);
+      expect(telemetry.events.last.payload, <String, Object?>{
+        'playId': 'play_choose',
+        'attempts': 1,
+      });
+    },
+  );
 
-  test('invalid identities and impossible attempt counts are dropped safely', () {
-    final telemetry = _RecordingTelemetry();
+  test(
+    'invalid identities and impossible attempt counts are dropped safely',
+    () {
+      final telemetry = _RecordingTelemetry();
 
-    recordPlayResolutionTelemetry(
-      telemetry,
-      playId: ' ',
-      outcome: 'correct',
-      attempts: 1,
-      completed: true,
-    );
-    recordPlayResolutionTelemetry(
-      telemetry,
-      playId: 'play',
-      outcome: 'correct',
-      attempts: 0,
-      completed: true,
-    );
+      recordPlayResolutionTelemetry(
+        telemetry,
+        playId: ' ',
+        outcome: 'correct',
+        attempts: 1,
+        completed: true,
+      );
+      recordPlayResolutionTelemetry(
+        telemetry,
+        playId: 'play',
+        outcome: 'correct',
+        attempts: 0,
+        completed: true,
+      );
 
-    expect(telemetry.events, isEmpty);
-  });
+      expect(telemetry.events, isEmpty);
+    },
+  );
 }

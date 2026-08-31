@@ -6,6 +6,7 @@ import 'package:mosaic_app/app_event_runtime.dart';
 import 'package:mosaic_app/consumer_action_controller.dart';
 import 'package:mosaic_app/consumer_action_controls.dart';
 import 'package:mosaic_app/consumer_api_client.dart';
+import 'package:mosaic_app/consumer_feed.dart';
 import 'package:mosaic_app/consumer_local_state.dart';
 import 'package:mosaic_app/event_runtime_resources.dart';
 import 'package:play_schema/play_schema.dart';
@@ -103,9 +104,11 @@ final class _Harness {
   late final ConsumerActionController controller;
   var eventId = 0;
   var advances = 0;
+  final advanceReasons = <ConsumerFeedAdvanceReason>[];
 
-  Future<bool> advance() async {
+  Future<bool> advance(ConsumerFeedAdvanceReason reason) async {
     advances += 1;
+    advanceReasons.add(reason);
     return true;
   }
 
@@ -165,6 +168,9 @@ void main() {
       MosaicEventName.playNotInterested,
     );
     expect(harness.advances, 1);
+    expect(harness.advanceReasons, <ConsumerFeedAdvanceReason>[
+      ConsumerFeedAdvanceReason.notInterested,
+    ]);
   });
 
   testWidgets('muting the current topic is durable and advances', (
@@ -183,6 +189,30 @@ void main() {
     expect(harness.outbox.events.single.event, MosaicEventName.topicMuted);
     expect(harness.controller.isTopicMuted('testing'), isTrue);
     expect(harness.advances, 1);
+    expect(harness.advanceReasons, <ConsumerFeedAdvanceReason>[
+      ConsumerFeedAdvanceReason.topicMuted,
+    ]);
+  });
+
+  testWidgets('Report advances with an explicit non-swipe reason', (
+    tester,
+  ) async {
+    final harness = _Harness();
+    addTearDown(harness.close);
+
+    await tester.pumpWidget(_app(harness));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey<String>('play-action-more')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Report'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Spam'));
+    await tester.pumpAndSettle();
+
+    expect(harness.advances, 1);
+    expect(harness.advanceReasons, <ConsumerFeedAdvanceReason>[
+      ConsumerFeedAdvanceReason.reported,
+    ]);
   });
 
   testWidgets('muted topics remain reachable and reversible', (tester) async {

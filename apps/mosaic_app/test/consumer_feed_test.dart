@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:analytics_contract/analytics_contract.dart';
 import 'package:event_delivery/event_delivery.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -121,10 +122,12 @@ Widget _app(
   ConsumerFeedItemBuilder? itemBuilder,
   ConsumerFeedEventSink? onEvent,
   ConsumerFeedWarmWindowCallback? onWarmWindow,
+  ConsumerFeedController? controller,
   int pageSize = 6,
 }) => MaterialApp(
   home: ConsumerFeed(
     runtime: runtime,
+    controller: controller,
     pageSize: pageSize,
     onEvent: onEvent,
     onWarmWindow: onWarmWindow,
@@ -412,6 +415,50 @@ void main() {
       find.byKey(const ValueKey<String>('active:event_1:true')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('programmatic advance cannot masquerade as a swipe dismissal', (
+    tester,
+  ) async {
+    final state = _MemoryConsumerState();
+    final controller = ConsumerFeedController();
+    final dismissals = <Map<String, Object?>>[];
+    final runtime = _runtime(
+      state,
+      (cursor, call) => http.Response(
+        jsonEncode(
+          _page('request_reason', [_item('reason_0'), _item('reason_1')], null),
+        ),
+        200,
+      ),
+    );
+    addTearDown(runtime.close);
+
+    await tester.pumpWidget(
+      _app(
+        runtime,
+        controller: controller,
+        onEvent:
+            (
+              event, {
+              required feedRequestId,
+              required playRevisionId,
+              required payload,
+            }) {
+              if (event == MosaicEventName.playDismissed) {
+                dismissals.add(Map<String, Object?>.of(payload));
+              }
+            },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final advance = controller.advance(ConsumerFeedAdvanceReason.notInterested);
+    await tester.pumpAndSettle();
+    expect(await advance, isTrue);
+
+    expect(dismissals, hasLength(1));
+    expect(dismissals.single['reason'], 'not_interested');
   });
 
   testWidgets('rapid swipes coalesce persistence behind one active write', (
