@@ -56,6 +56,17 @@ setup_file() {
   [ "$status" -eq 0 ]
 }
 
+@test "Nginx alone joins a non-masqueraded edge network for published ingress" {
+  run jq -e '
+    . as $cfg |
+    ($cfg.networks.edge.internal != true) and
+    ($cfg.networks.edge.driver_opts."com.docker.network.bridge.enable_ip_masquerade" == "false") and
+    ($cfg.services.nginx.networks | has("edge")) and
+    ([.services | to_entries[] | select(.value.networks | has("edge")) | .key] == ["nginx"])
+  ' <<<"$CONFIG_JSON"
+  [ "$status" -eq 0 ]
+}
+
 @test "database and APIs have outbound-only network access for R2 and push providers" {
   run jq -e '
     . as $cfg |
