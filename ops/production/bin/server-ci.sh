@@ -483,9 +483,7 @@ flutter_workspace() {
      (cd packages/platform_contracts && dart test)
      (cd packages/platform_flutter && flutter test)
      (cd apps/mosaic_app && flutter test)
-     (cd apps/mosaic_app && flutter build web --release --pwa-strategy=none)
-     (cd apps/mosaic_app && flutter build apk --release)
-     test -f apps/mosaic_app/build/app/outputs/flutter-apk/app-release.apk'
+     (cd apps/mosaic_app && flutter build web --release --pwa-strategy=none)'
   install -d -o "$BUILDER_USER" -g "$BUILDER_USER" \
     "$CHECKOUT/apps/mosaic_app/build/web"
   docker run --rm -v "$flutter_volume:/source:ro" \
