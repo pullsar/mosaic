@@ -1,8 +1,5 @@
 import type {Pool, PoolClient} from 'pg';
-import {
-  PostgresCanvasAssetRepository,
-  type CanvasAssetDocument,
-} from './canvas_asset.js';
+import {PostgresCanvasAssetRepository} from './canvas_asset.js';
 
 export const productionStarterPrefix = 'mixli_starter_';
 export const productionStarterCount = 6;
@@ -177,7 +174,7 @@ const canvasAssets = [
       {type: 'circle', x: 0.87, y: 0.46, radius: 0.07, fill: true, tone: 'accent'},
     ],
   },
-] as const satisfies readonly CanvasAssetDocument[];
+] as const;
 
 const choiceSpecs: readonly ChoiceSpec[] = [
   {
@@ -369,7 +366,7 @@ export async function verifyProductionCatalog(
       where catalog.play_id like $1 and catalog.state = 'eligible'`,
     [`${productionStarterPrefix}%`],
   );
-  const knownAssets = new Set(canvasAssets.map((asset) => asset.id));
+  const knownAssets = new Set<string>(canvasAssets.map((asset) => asset.id));
   for (const row of documents.rows) {
     if (!Array.isArray(row.assets) || row.assets.length !== 1) {
       throw new Error(`Starter Play ${row.play_id} must reference one canvas`);
