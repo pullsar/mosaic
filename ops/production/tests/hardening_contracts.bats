@@ -96,12 +96,18 @@ setup() { setup_repo_root; }
 
 @test "deployment origin smoke uses explicit local trust and SNI" {
   smoke="$(sed -n '/^smoke_release()/,/^}/p' "$REPO_ROOT/ops/production/bin/deployment.sh")"
+  origin_ip="$(sed -n '/^nginx_origin_ip()/,/^}/p' "$REPO_ROOT/ops/production/bin/deployment.sh")"
   [[ "$smoke" == *'--cacert "$ORIGIN_CA"'* ]]
-  [[ "$smoke" == *'--resolve api.mixli.app:443:127.0.0.1'* ]]
-  [[ "$smoke" == *'--resolve mixli.app:443:127.0.0.1'* ]]
+  [[ "$smoke" == *'origin_ip="$(nginx_origin_ip)"'* ]]
+  [[ "$smoke" == *'--resolve "api.mixli.app:443:$origin_ip"'* ]]
+  [[ "$smoke" == *'--resolve "mixli.app:443:$origin_ip"'* ]]
   [[ "$smoke" == *'--retry-all-errors'* ]]
   [[ "$(grep -Fc -- '--retry-max-time 30' <<<"$smoke")" -ge 2 ]]
+  [[ "$smoke" != *'127.0.0.1'* ]]
   [[ "$smoke" != *'--insecure'* ]]
+  [[ "$origin_ip" == *'compose ps -q nginx'* ]]
+  [[ "$origin_ip" == *'docker inspect'* ]]
+  [[ "$origin_ip" == *'mixli_backend'* ]]
 }
 
 @test "monitoring secrets are staged with identity-specific modes" {
