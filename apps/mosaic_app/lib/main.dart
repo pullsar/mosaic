@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:analytics_contract/analytics_contract.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -15,10 +16,11 @@ import 'consumer_action_controller.dart';
 import 'consumer_action_controls.dart';
 import 'consumer_api_client.dart';
 import 'consumer_feed.dart';
-import 'consumer_onboarding.dart';
 import 'consumer_runtime.dart';
 import 'consumer_search.dart';
 import 'event_runtime_resources_factory.dart';
+import 'guest_engagement.dart';
+import 'guest_home.dart';
 import 'onboarding_localizations.dart';
 import 'play_resolution_telemetry.dart';
 
@@ -65,6 +67,7 @@ final class _MosaicAppState extends State<MosaicApp> {
   late final AssetDeliveryClient? _assetDelivery;
   late final AssetMetadataWarmController? _metadataWarmer;
   late final ConsumerRuntime _consumerRuntime;
+  late final GuestEngagementController _guestEngagement;
   late final CachingPlayVisualAssetResolver _visualResolver;
   late final PlayVideoAssetResolver _videoResolver;
   late final PlayVideoPosterResolver? _videoPosterResolver;
@@ -125,6 +128,13 @@ final class _MosaicAppState extends State<MosaicApp> {
       capabilities: consumerCapabilitiesForAssetDelivery(_assetDelivery),
       onError: _reportEventRuntimeError,
     );
+    final localState = _eventRuntime.resources.consumerLocalState;
+    _guestEngagement = GuestEngagementController(
+      store: localState is GuestEngagementStore
+          ? localState
+          : MemoryGuestEngagementStore(),
+    );
+    unawaited(_guestEngagement.initialize());
     _visualPrefetch = PlayVisualPrefetchController(
       resolver: _visualResolver,
       maxAssets: 4,
@@ -154,6 +164,7 @@ final class _MosaicAppState extends State<MosaicApp> {
     _cancelWarmWindow();
     _lifecycle.dispose();
     _actionController.dispose();
+    _guestEngagement.dispose();
     _consumerRuntime.close();
     _assetDelivery?.close();
     unawaited(_disposeResources());
@@ -344,6 +355,14 @@ final class _MosaicAppState extends State<MosaicApp> {
     required String playRevisionId,
     required Map<String, Object?> payload,
   }) {
+    if (event == MosaicEventName.playVisible) {
+      unawaited(
+        _guestEngagement.recordVisible(
+          feedRequestId: feedRequestId,
+          revisionId: playRevisionId,
+        ),
+      );
+    }
     _eventRuntime
         .telemetryForPlay(
           feedRequestId: feedRequestId,
@@ -414,9 +433,11 @@ final class _MosaicAppState extends State<MosaicApp> {
         MosaicSettingsRoute.deleteAccount: (_) =>
             const _ReservedSettingsPage('Delete account'),
       },
-      home: ConsumerOnboardingGate(
-        runtime: _consumerRuntime,
-        child: Stack(
+      home: Builder(
+        builder: (homeContext) => GuestHome(
+          engagement: _guestEngagement,
+          onSearch: () => unawaited(_openSearch(homeContext)),
+          child: Stack(
           fit: StackFit.expand,
           children: <Widget>[
             ConsumerFeed(
@@ -430,43 +451,26 @@ final class _MosaicAppState extends State<MosaicApp> {
               onWarmWindow: _warmFeedWindow,
               onCancelWarmWindow: _cancelWarmWindow,
             ),
-            SafeArea(
-              minimum: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-              child: Align(
-                alignment: AlignmentDirectional.topCenter,
-                child: Row(
-                  children: <Widget>[
-                    if (scope != null)
-                      Flexible(
-                        child: InputChip(
-                          key: const ValueKey<String>('search-scope'),
-                          avatar: Icon(
-                            scope.intent.intent == ConsumerSearchIntent.learning
-                                ? Icons.school_outlined
-                                : Icons.explore_outlined,
-                            size: 18,
-                          ),
-                          label: Text(
-                            scope.label,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          onDeleted: () => setState(() => _searchScope = null),
-                        ),
-                      )
-                    else
-                      const Spacer(),
-                    if (scope != null) const Spacer(),
-                    IconButton.filledTonal(
-                      key: const ValueKey<String>('open-search'),
-                      tooltip: 'Search',
-                      onPressed: () => unawaited(_openSearch(context)),
-                      icon: const Icon(Icons.search_rounded),
+            if (scope != null)
+              SafeArea(
+                minimum: const EdgeInsetsDirectional.fromSTEB(12, 58, 12, 0),
+                child: Align(
+                  alignment: AlignmentDirectional.topStart,
+                  child: InputChip(
+                    key: const ValueKey<String>('search-scope'),
+                    avatar: Icon(
+                      scope.intent.intent == ConsumerSearchIntent.learning
+                          ? Icons.school_outlined
+                          : Icons.explore_outlined,
+                      size: 18,
                     ),
-                  ],
+                    label: Text(scope.label, overflow: TextOverflow.ellipsis),
+                    onDeleted: () => setState(() => _searchScope = null),
+                  ),
                 ),
               ),
-            ),
           ],
+          ),
         ),
       ),
     );
