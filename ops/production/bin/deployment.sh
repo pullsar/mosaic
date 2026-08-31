@@ -648,6 +648,24 @@ backup_and_migrate() {
   log_event "migrated:$SHA"
 }
 
+bootstrap_catalog() {
+  fail_if_requested catalog
+  if [[ "$TEST_MODE" == '1' ]]; then
+    log_event 'catalog-ready'
+    return 0
+  fi
+  if [[ "$target_pool" == 'blue' ]]; then
+    MIXLI_API_BLUE_IMAGE="mixli-api:$SHA" MIXLI_API_BLUE_RELEASE_SHA="$SHA" \
+      compose run --rm --no-deps api-blue-1 \
+        node dist/bootstrap_catalog.js apply
+  else
+    MIXLI_API_GREEN_IMAGE="mixli-api:$SHA" MIXLI_API_GREEN_RELEASE_SHA="$SHA" \
+      compose run --rm --no-deps api-green-1 \
+        node dist/bootstrap_catalog.js apply
+  fi
+  log_event 'catalog-ready'
+}
+
 start_candidate() {
   local service_one="api-${target_pool}-1" service_two="api-${target_pool}-2"
   [[ "$TEST_MODE" == '1' ]] && return 0
@@ -846,6 +864,7 @@ main() {
   validate_runtime_compose
   prepare_database
   backup_and_migrate "$current_sha"
+  bootstrap_catalog
   start_candidate
   wait_for_candidate
 
