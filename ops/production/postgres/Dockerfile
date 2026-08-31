@@ -2,6 +2,7 @@ FROM postgres:18.3-bookworm
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      ca-certificates \
       pgbackrest \
     && rm -rf /var/lib/apt/lists/* \
     && install -d -o postgres -g postgres -m 0750 \
