@@ -109,7 +109,7 @@ rollback_fail_if_requested() {
 }
 
 reload_nginx() {
-  local context="${1:-deploy}"
+  local context="${1:-deploy}" attempt
   if [[ "$context" == 'rollback' ]]; then
     rollback_fail_if_requested nginx || return 1
   else
@@ -118,6 +118,13 @@ reload_nginx() {
   ensure_cloudflare_boundary "$context" || return 1
   [[ "$TEST_MODE" == '1' ]] && return 0
   compose up -d --no-deps nginx || return 1
+  for ((attempt = 1; attempt <= 50; attempt++)); do
+    if compose exec -T nginx test -s /var/run/nginx.pid >/dev/null 2>&1; then
+      break
+    fi
+    sleep 0.1
+  done
+  compose exec -T nginx test -s /var/run/nginx.pid || return 1
   compose exec -T nginx nginx -t -c /etc/nginx/mixli/nginx.conf || return 1
   compose exec -T nginx nginx -s reload -c /etc/nginx/mixli/nginx.conf || return 1
 }
