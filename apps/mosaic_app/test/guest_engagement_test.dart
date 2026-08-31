@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mosaic_app/guest_engagement.dart';
 
 final class _MemoryGuestStore implements GuestEngagementStore {
-  _MemoryGuestStore({this.state, this.readGate});
+  _MemoryGuestStore({this.readGate});
 
   GuestEngagementState? state;
   final Completer<GuestEngagementState?>? readGate;
