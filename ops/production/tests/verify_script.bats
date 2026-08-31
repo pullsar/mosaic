@@ -12,11 +12,12 @@ setup() {
   [[ "$output" == *'PASS command availability'* ]]
   [[ "$output" == *'PASS HTTP and TLS'* ]]
   [[ "$output" == *'PASS API release header'* ]]
+  [[ "$output" == *'PASS guest catalog'* ]]
   [[ "$output" == *'PASS container health'* ]]
   [[ "$output" == *'PASS migration status'* ]]
   [[ "$output" == *'PASS backup and WAL freshness'* ]]
   [[ "$output" == *'PASS firewall policy'* ]]
-  [[ "$output" == *'7 passed, 0 failed'* ]]
+  [[ "$output" == *'8 passed, 0 failed'* ]]
 
   run env MIXLI_VERIFY_TEST_MODE=1 "$VERIFY" --public
   [ "$status" -eq 0 ]
@@ -34,7 +35,13 @@ setup() {
     "$VERIFY" --origin
   [ "$status" -ne 0 ]
   [[ "$output" == *'FAIL container health'* ]]
-  [[ "$output" == *'6 passed, 1 failed'* ]]
+  [[ "$output" == *'7 passed, 1 failed'* ]]
+}
+
+@test "origin verifier requires six guest catalog topics" {
+  check="$(sed -n '/^check_guest_catalog()/,/^}/p' "$VERIFY")"
+  [[ "$check" == *"curl_endpoint api.mixli.app '/v1/topics?limit=6'"* ]]
+  [[ "$check" == *"jq '.topics | length'"* ]]
 }
 
 @test "production verifier never emits environment or secret values" {
