@@ -103,6 +103,7 @@ jobs:
         run: |
           git config user.name xwiz
           git config user.email c.opata@robosyslive.com
+          rm -rf apps/api/node_modules
           git add apps/api apps/mosaic_app
           git diff --cached --check
           git diff --cached --quiet && { echo 'No product changes staged'; exit 1; }
