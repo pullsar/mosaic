@@ -134,6 +134,12 @@ check_release_header() {
   [[ "$actual" == "$expected" ]]
 }
 
+check_guest_catalog() {
+  local topics
+  topics="$(curl_endpoint api.mixli.app '/v1/topics?limit=6')"
+  [[ "$(jq '.topics | length' <<<"$topics")" -ge 6 ]]
+}
+
 container_id() {
   compose ps -q "$1"
 }
@@ -219,6 +225,7 @@ main() {
   run_check 'API release header' check_release_header
 
   if [[ "$MODE" == '--origin' ]]; then
+    run_check 'guest catalog' check_guest_catalog
     run_check 'container health' check_containers
     run_check 'migration status' check_migrations
     run_check 'backup and WAL freshness' check_backup_wal
