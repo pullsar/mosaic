@@ -278,6 +278,30 @@ deploy() {
   [ "$(cat "$TEST_ROOT/runtime/compose.yaml")" = "compose:$SHA" ]
 }
 
+@test "catalog bootstrap succeeds after migration and before candidate readiness" {
+  run deploy "$SHA"
+  [ "$status" -eq 0 ]
+
+  migration_line="$(grep -n "^migrated:$SHA$" \
+    "$TEST_ROOT/log/deploy-events.log" | cut -d: -f1)"
+  catalog_line="$(grep -n '^catalog-ready$' \
+    "$TEST_ROOT/log/deploy-events.log" | cut -d: -f1)"
+  ready_line="$(grep -n '^ready:green:1$' \
+    "$TEST_ROOT/log/deploy-events.log" | cut -d: -f1)"
+
+  [ -n "$migration_line" ] && [ -n "$catalog_line" ] && [ -n "$ready_line" ]
+  [ "$migration_line" -lt "$catalog_line" ]
+  [ "$catalog_line" -lt "$ready_line" ]
+}
+
+@test "catalog failure never switches API or web" {
+  MIXLI_TEST_FAIL_STAGE=catalog run deploy "$SHA"
+  [ "$status" -ne 0 ]
+  [ "$(readlink "$TEST_ROOT/current")" = "$TEST_ROOT/releases/$OLD_SHA" ]
+  [ "$(cat "$TEST_ROOT/runtime/api-upstream.conf")" = 'old-upstream' ]
+  ! grep -q "^deployed:$SHA:" "$TEST_ROOT/log/deploy-events.log"
+}
+
 @test "existing exact checkout ownership is normalized before CI reuse" {
   script="$REPO_ROOT/ops/production/bin/deployment.sh"
   prepare="$(sed -n '/^prepare_checkout()/,/^}/p' "$script")"
