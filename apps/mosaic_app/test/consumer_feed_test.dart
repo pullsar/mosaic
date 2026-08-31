@@ -151,6 +151,40 @@ Widget _app(
 );
 
 void main() {
+  testWidgets('failed empty feed offers friendly retry', (tester) async {
+    final runtime = _runtime(
+      _MemoryConsumerState(),
+      (cursor, call) => http.Response('{"error":"temporary"}', 503),
+    );
+    addTearDown(runtime.close);
+
+    await tester.pumpWidget(_app(runtime));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Fresh Plays are loading'), findsOneWidget);
+    expect(find.text('Try again'), findsOneWidget);
+    expect(find.byIcon(Icons.refresh_rounded), findsOneWidget);
+    expect(find.text('Topics unavailable'), findsNothing);
+  });
+
+  testWidgets('successful empty feed offers a labeled refresh', (tester) async {
+    final runtime = _runtime(
+      _MemoryConsumerState(),
+      (cursor, call) => http.Response(
+        jsonEncode(_page('request_empty', const <ConsumerFeedItem>[], null)),
+        200,
+      ),
+    );
+    addTearDown(runtime.close);
+
+    await tester.pumpWidget(_app(runtime));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Nothing fresh yet'), findsOneWidget);
+    expect(find.text('Come back soon for a new mix.'), findsOneWidget);
+    expect(find.text('Refresh'), findsOneWidget);
+  });
+
   testWidgets('restores cached visible position before a failed refresh', (
     tester,
   ) async {
