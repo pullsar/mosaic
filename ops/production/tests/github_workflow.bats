@@ -6,6 +6,7 @@ setup() {
   setup_repo_root
   REVIEW_WORKFLOW="$REPO_ROOT/.github/workflows/review-dispatch.yml"
   DEPLOY_WORKFLOW="$REPO_ROOT/.github/workflows/deploy-production.yml"
+  ANDROID_WORKFLOW="$REPO_ROOT/.github/workflows/android-release.yml"
   IOS_WORKFLOW="$REPO_ROOT/.github/workflows/ios-release.yml"
 }
 
@@ -53,20 +54,27 @@ setup() {
   ! grep -Fq 'workflow_dispatch:' "$DEPLOY_WORKFLOW"
   grep -Fq 'branches: [main]' "$DEPLOY_WORKFLOW"
   ! grep -Fq 'MIXLI_DEPLOY_' "$REVIEW_WORKFLOW"
+  ! grep -Fq 'MIXLI_DEPLOY_' "$ANDROID_WORKFLOW"
+  ! grep -Fq 'MIXLI_REVIEW_' "$ANDROID_WORKFLOW"
   ! grep -Fq 'MIXLI_DEPLOY_' "$IOS_WORKFLOW"
   grep -Fq 'GitHub production environment branch protection is defense in depth' \
     "$REPO_ROOT/ops/production/README.md"
 }
 
 @test "mobile platform CI is manual or release-only" {
-  grep -Fq 'workflow_dispatch:' "$IOS_WORKFLOW"
-  grep -Fq 'types: [published]' "$IOS_WORKFLOW"
-  ! grep -Eq '^[[:space:]]+(push|pull_request|pull_request_target):' "$IOS_WORKFLOW"
+  for workflow in "$ANDROID_WORKFLOW" "$IOS_WORKFLOW"; do
+    grep -Fq 'workflow_dispatch:' "$workflow"
+    grep -Fq 'release:' "$workflow"
+    grep -Fq 'types: [published]' "$workflow"
+    ! grep -Eq '^[[:space:]]+(push|pull_request|pull_request_target):' "$workflow"
+    ! grep -Fq 'environment: production' "$workflow"
+  done
 }
 
-@test "only PR dispatch main deploy and exceptional iOS workflows remain" {
+@test "only dispatch and exceptional mobile workflows remain" {
   [ -f "$REPO_ROOT/.github/workflows/review-dispatch.yml" ]
   [ -f "$REPO_ROOT/.github/workflows/deploy-production.yml" ]
+  [ -f "$REPO_ROOT/.github/workflows/android-release.yml" ]
   [ -f "$REPO_ROOT/.github/workflows/ios-release.yml" ]
   [ ! -e "$REPO_ROOT/.github/workflows/server-ci.yml" ]
   [ ! -e "$REPO_ROOT/.github/workflows/platform-ci.yml" ]
@@ -104,4 +112,23 @@ setup() {
   grep -Fq 'flutter build ios --simulator --no-codesign' "$workflow"
   ! grep -Eq '^[[:space:]]+(push|pull_request|pull_request_target):' "$workflow"
   ! grep -Fq 'environment: production' "$workflow"
+}
+
+@test "Android builds only an exact requested release artifact with least privilege" {
+  workflow="$ANDROID_WORKFLOW"
+  grep -Fq 'contents: read' "$workflow"
+  grep -Fq 'runs-on: ubuntu-latest' "$workflow"
+  grep -Fq 'timeout-minutes: 30' "$workflow"
+  grep -Fq "github.event_name == 'release' && github.event.release.tag_name || inputs.ref" "$workflow"
+  grep -Fq "default: main" "$workflow"
+  grep -Fq "flutter-version: '3.44.7'" "$workflow"
+  grep -Fq 'flutter pub get --enforce-lockfile' "$workflow"
+  grep -Fq 'flutter build apk --release' "$workflow"
+  grep -Fq 'test -f build/app/outputs/flutter-apk/app-release.apk' "$workflow"
+  grep -Fq 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02' "$workflow"
+  grep -Fq 'path: apps/mosaic_app/build/app/outputs/flutter-apk/app-release.apk' "$workflow"
+  grep -Fq 'if-no-files-found: error' "$workflow"
+  grep -Fq 'retention-days: 7' "$workflow"
+  grep -Fq 'persist-credentials: false' "$workflow"
+  ! grep -Eq 'secrets\.|MIXLI_(DEPLOY|REVIEW|R2|DATABASE|CLOUDFLARE)' "$workflow"
 }

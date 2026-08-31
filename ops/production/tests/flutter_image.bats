@@ -37,45 +37,27 @@ setup() {
   [[ "$output" == *"enable-web: true"* ]]
 }
 
-@test "pins the Android and browser toolchain inside the Flutter image" {
-  probe_volume="mixli-flutter-cmake-probe-${BATS_TEST_NUMBER}-$$"
-  grep -Fq 'ARG ANDROID_CMDLINE_TOOLS_VERSION=15859902' "$DOCKERFILE"
-  grep -Fq 'ARG ANDROID_CMDLINE_TOOLS_SHA256=4e4c464f145a7512b57d088ac6c278c03c9eea610886b35a5e0804e74eedf583' "$DOCKERFILE"
+@test "server Flutter image contains browser tooling but no mobile build toolchain" {
   grep -Fq 'CHROME_EXECUTABLE=/usr/local/bin/chromium-ci' "$DOCKERFILE"
   grep -Fq -- '--no-sandbox' "$DOCKERFILE"
-  grep -Fq "'platforms/android-35'" "$DOCKERFILE"
-  grep -Fq "'platforms/android-36'" "$DOCKERFILE"
-  grep -Fq 'platforms/android-37.0' "$DOCKERFILE"
-  grep -Fq 'build-tools/36.0.0' "$DOCKERFILE"
-  grep -Fq 'build-tools/37.0.0' "$DOCKERFILE"
-  grep -Fq 'cmake/3.22.1' "$DOCKERFILE"
-  grep -Fq 'ndk/28.2.13676358' "$DOCKERFILE"
+  grep -Fq 'flutter precache --web' "$DOCKERFILE"
+  ! grep -Fq 'ANDROID_CMDLINE_TOOLS' "$DOCKERFILE"
+  ! grep -Fq 'ANDROID_HOME' "$DOCKERFILE"
+  ! grep -Fq 'ANDROID_SDK_ROOT' "$DOCKERFILE"
+  ! grep -Fq 'JAVA_HOME' "$DOCKERFILE"
+  ! grep -Fq 'openjdk-' "$DOCKERFILE"
+  ! grep -Fq 'cmake/' "$DOCKERFILE"
+  ! grep -Fq 'ndk/' "$DOCKERFILE"
+  ! grep -Fq 'precache --web --android' "$DOCKERFILE"
 
-  docker volume create "$probe_volume" >/dev/null
-  docker run --rm -v "$probe_volume:/probe" alpine:3.22 \
-    sh -c 'chown -R 1000:1000 /probe'
-  run docker run --rm -v "$probe_volume:/probe" "$IMAGE" bash -lc '
-    test "$ANDROID_SDK_ROOT" = /opt/android-sdk
-    java -version
-    "$CHROME_EXECUTABLE" --version
+  run docker run --rm "$IMAGE" bash -lc '
+    test -z "${ANDROID_HOME:-}"
+    test -z "${ANDROID_SDK_ROOT:-}"
+    test -z "${JAVA_HOME:-}"
+    test ! -e /opt/android-sdk
     test -x "$CHROME_EXECUTABLE"
-    test -x /opt/android-sdk/platform-tools/adb
-    test -x /opt/android-sdk/build-tools/36.0.0/aapt2
-    test -x /opt/android-sdk/build-tools/37.0.0/aapt2
-    test -x /opt/android-sdk/cmake/3.22.1/bin/cmake
-    /opt/android-sdk/cmake/3.22.1/bin/cmake --version
-    mkdir -p /probe/apps/mosaic_app/android/app
-    printf "%s\n" \
-      "import java.io.File; class CmakeProbe { public static void main(String[] args) throws Exception { int status = new ProcessBuilder(\"/opt/android-sdk/cmake/3.22.1/bin/cmake\", \"--version\").directory(new File(\"/probe/apps/mosaic_app/android/app\")).inheritIO().start().waitFor(); if (status != 0) throw new RuntimeException(\"cmake exited \" + status); } }" \
-      >/probe/CmakeProbe.java
-    java /probe/CmakeProbe.java
-    test -d /opt/android-sdk/platforms/android-35
-    test -d /opt/android-sdk/platforms/android-36
-    test -d /opt/android-sdk/platforms/android-37.0
-    test -d /opt/android-sdk/ndk/28.2.13676358
+    "$CHROME_EXECUTABLE" --version
   '
-
-  docker volume rm --force "$probe_volume" >/dev/null
   [ "$status" -eq 0 ]
 }
 

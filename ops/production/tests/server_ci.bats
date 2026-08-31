@@ -119,7 +119,6 @@ production-builds" ]
     'packages/play_flutter' \
     'packages/platform_flutter' \
     'flutter build web --release --pwa-strategy=none' \
-    'flutter build apk --release' \
     'apps/api/Dockerfile'; do
     grep -Fq -- "$required" "$script"
   done
@@ -247,6 +246,14 @@ production-builds" ]
   [ "$status" -eq 42 ]
   [[ "$output" == *"Failed to remove exact CI image tag mixli-postgres-ci:$SHA."* ]]
   grep -Fxq "image rm --force mixli-postgres-ci:$SHA" "$COMMAND_LOG"
+}
+
+@test "server release gate builds web but excludes Android artifact assembly" {
+  workspace="$(sed -n '/^flutter_workspace()/,/^}/p' \
+    "$REPO_ROOT/ops/production/bin/server-ci.sh")"
+  [[ "$workspace" == *'flutter build web --release --pwa-strategy=none'* ]]
+  [[ "$workspace" != *'flutter build apk'* ]]
+  [[ "$workspace" != *'app-release.apk'* ]]
 }
 
 @test "accepts only release or review engine modes" {
