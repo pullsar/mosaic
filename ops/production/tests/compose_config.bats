@@ -122,3 +122,15 @@ setup_file() {
   ' <<<"$CONFIG_JSON"
   [ "$status" -eq 0 ]
 }
+
+@test "all API replicas receive the strict Mixli browser origin allowlist" {
+  run jq -e '
+    . as $cfg |
+    ["api-blue-1", "api-blue-2", "api-green-1", "api-green-2"] | all(
+      . as $service |
+      $cfg.services[$service].environment.MOSAIC_WEB_ORIGINS ==
+        "https://mixli.app,https://www.mixli.app"
+    )
+  ' <<<"$CONFIG_JSON"
+  [ "$status" -eq 0 ]
+}

@@ -17,11 +17,13 @@ setup() {
   [[ "$output" == *'PASS migration status'* ]]
   [[ "$output" == *'PASS backup and WAL freshness'* ]]
   [[ "$output" == *'PASS firewall policy'* ]]
-  [[ "$output" == *'8 passed, 0 failed'* ]]
+  [[ "$output" == *'PASS guest browser API'* ]]
+  [[ "$output" == *'9 passed, 0 failed'* ]]
 
   run env MIXLI_VERIFY_TEST_MODE=1 "$VERIFY" --public
   [ "$status" -eq 0 ]
-  [[ "$output" == *'3 passed, 0 failed'* ]]
+  [[ "$output" == *'PASS guest browser API'* ]]
+  [[ "$output" == *'4 passed, 0 failed'* ]]
 }
 
 @test "production verifier rejects unsupported modes" {
@@ -35,7 +37,7 @@ setup() {
     "$VERIFY" --origin
   [ "$status" -ne 0 ]
   [[ "$output" == *'FAIL container health'* ]]
-  [[ "$output" == *'7 passed, 1 failed'* ]]
+  [[ "$output" == *'8 passed, 1 failed'* ]]
 }
 
 @test "origin verifier requires six guest catalog topics" {
@@ -64,4 +66,13 @@ setup() {
 @test "WAL freshness uses the configured database role and database" {
   check="$(sed -n '/^check_backup_wal()/,/^}/p' "$VERIFY")"
   [[ "$check" == *'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'* ]]
+}
+
+@test "production verifier proves the Flutter web actor preflight" {
+  check="$(sed -n '/^check_guest_browser_api()/,/^}/p' "$VERIFY")"
+  [[ "$check" == *'curl_preflight_headers api.mixli.app /v1/actors'* ]]
+  [[ "$check" == *'https://mixli.app'* ]]
+  [[ "$check" == *'access-control-allow-origin'* ]]
+  [[ "$check" == *'authorization'* ]]
+  [[ "$check" == *'content-type'* ]]
 }
