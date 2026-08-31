@@ -82,6 +82,13 @@ encoded in `DATABASE_URL`.
 | `/etc/mixli/cloudflare/origin-ca.pem` | Public Cloudflare RSA Origin CA root, installed from the pinned official PEM in `ops/production/cloudflare/`, used only as the local origin-verification trust anchor |
 | `/etc/mixli/postgres/pgbackrest.conf` | Runtime copy with bucket-scoped R2 key, secret, endpoint, and an independent repository cipher passphrase |
 
+`MOSAIC_WEB_ORIGINS` is non-secret operator configuration in
+`/etc/mixli/env/production.env`, not in `api.env`. Production defaults to the
+exact apex and redirect origins (`https://mixli.app,https://www.mixli.app`).
+Override it in the production environment file for another deployment; the
+Compose `environment` mapping intentionally takes precedence over the API
+service `env_file`.
+
 Check metadata without reading values:
 
 ```bash

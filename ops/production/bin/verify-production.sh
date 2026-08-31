@@ -105,6 +105,7 @@ curl_preflight_headers() {
     --header 'Access-Control-Request-Headers: content-type,authorization'
     --dump-header -
     --output /dev/null
+    --write-out $'\n%{http_code}'
   )
   if [[ "$MODE" == '--origin' ]]; then
     origin_ip="$(nginx_origin_ip)"
@@ -158,14 +159,26 @@ check_release_header() {
 }
 
 check_guest_browser_api() {
-  local headers allowed_origin allowed_headers
-  headers="$(curl_preflight_headers api.mixli.app /v1/actors)"
+  local response headers status_code allowed_origin allowed_methods allowed_headers
+  local allow_credentials
+  response="$(curl_preflight_headers api.mixli.app /v1/actors)"
+  status_code="${response##*$'\n'}"
+  headers="${response%$'\n'*}"
   allowed_origin="$(awk '
     tolower($0) ~ /^access-control-allow-origin:/ {
       value=$0
       sub(/^[^:]+:[[:space:]]*/, "", value)
       sub(/\r$/, "", value)
       print value
+      exit
+    }' <<<"$headers")"
+  allowed_methods="$(awk '
+    tolower($0) ~ /^access-control-allow-methods:/ {
+      value=$0
+      sub(/^[^:]+:[[:space:]]*/, "", value)
+      sub(/\r$/, "", value)
+      gsub(/[[:space:]]/, "", value)
+      print tolower(value)
       exit
     }' <<<"$headers")"
   allowed_headers="$(awk '
@@ -177,9 +190,17 @@ check_guest_browser_api() {
       print tolower(value)
       exit
     }' <<<"$headers")"
+  allow_credentials="$(awk '
+    tolower($0) ~ /^access-control-allow-credentials:/ {
+      print $0
+      exit
+    }' <<<"$headers")"
+  [[ "$status_code" == '204' ]]
   [[ "$allowed_origin" == 'https://mixli.app' ]]
+  [[ ",$allowed_methods," == *',post,'* ]]
   [[ ",$allowed_headers," == *',content-type,'* ]]
   [[ ",$allowed_headers," == *',authorization,'* ]]
+  [[ -z "$allow_credentials" ]]
 }
 
 check_guest_catalog() {

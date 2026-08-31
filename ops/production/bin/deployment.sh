@@ -720,9 +720,64 @@ nginx_origin_ip() {
   printf '%s\n' "$origin_ip"
 }
 
+check_guest_preflight() {
+  local url="$1"
+  shift
+  local response headers status_code allowed_origin allowed_methods allowed_headers
+  local allow_credentials
+  response="$(curl --fail --silent --show-error --max-time 15 \
+    --retry 20 --retry-delay 1 --retry-max-time 30 --retry-all-errors \
+    --request OPTIONS \
+    --header 'Origin: https://mixli.app' \
+    --header 'Access-Control-Request-Method: POST' \
+    --header 'Access-Control-Request-Headers: content-type,authorization' \
+    --dump-header - --output /dev/null --write-out $'\n%{http_code}' \
+    "$@" "$url")"
+  status_code="${response##*$'\n'}"
+  headers="${response%$'\n'*}"
+  allowed_origin="$(awk '
+    tolower($0) ~ /^access-control-allow-origin:/ {
+      value=$0
+      sub(/^[^:]+:[[:space:]]*/, "", value)
+      sub(/\r$/, "", value)
+      print value
+      exit
+    }' <<<"$headers")"
+  allowed_methods="$(awk '
+    tolower($0) ~ /^access-control-allow-methods:/ {
+      value=$0
+      sub(/^[^:]+:[[:space:]]*/, "", value)
+      sub(/\r$/, "", value)
+      gsub(/[[:space:]]/, "", value)
+      print tolower(value)
+      exit
+    }' <<<"$headers")"
+  allowed_headers="$(awk '
+    tolower($0) ~ /^access-control-allow-headers:/ {
+      value=$0
+      sub(/^[^:]+:[[:space:]]*/, "", value)
+      sub(/\r$/, "", value)
+      gsub(/[[:space:]]/, "", value)
+      print tolower(value)
+      exit
+    }' <<<"$headers")"
+  allow_credentials="$(awk '
+    tolower($0) ~ /^access-control-allow-credentials:/ {
+      print $0
+      exit
+    }' <<<"$headers")"
+  [[ "$status_code" == '204' ]]
+  [[ "$allowed_origin" == 'https://mixli.app' ]]
+  [[ ",$allowed_methods," == *',post,'* ]]
+  [[ ",$allowed_headers," == *',content-type,'* ]]
+  [[ ",$allowed_headers," == *',authorization,'* ]]
+  [[ -z "$allow_credentials" ]]
+}
+
 smoke_release() {
   local origin_ip
   fail_if_requested public-smoke
+  fail_if_requested guest-preflight
   [[ "$TEST_MODE" == '1' ]] && return 0
   origin_ip="$(nginx_origin_ip)"
   curl --fail --silent --show-error --max-time 10 \
@@ -733,8 +788,11 @@ smoke_release() {
     --retry 20 --retry-delay 1 --retry-max-time 30 --retry-all-errors \
     --cacert "$ORIGIN_CA" --resolve "mixli.app:443:$origin_ip" \
     https://mixli.app/ >/dev/null
+  check_guest_preflight https://api.mixli.app/v1/actors \
+    --cacert "$ORIGIN_CA" --resolve "api.mixli.app:443:$origin_ip"
   curl --fail --silent --show-error --max-time 15 https://api.mixli.app/ready >/dev/null
   curl --fail --silent --show-error --max-time 15 https://mixli.app/ >/dev/null
+  check_guest_preflight https://api.mixli.app/v1/actors
 }
 
 stop_old_pool() {
