@@ -79,7 +79,7 @@ encoded in `DATABASE_URL`.
 | `/etc/mixli/secrets/alertmanager-webhook-url` | Private notification receiver URL |
 | `/etc/mixli/cloudflare/origin.pem` | Origin CA certificate for apex and required subdomains |
 | `/etc/mixli/cloudflare/origin.key` | Origin CA private key |
-| `/etc/mixli/cloudflare/origin-ca.pem` | Public Cloudflare Origin CA root used only as the local origin-verification trust anchor |
+| `/etc/mixli/cloudflare/origin-ca.pem` | Public Cloudflare RSA Origin CA root, installed from the pinned official PEM in `ops/production/cloudflare/`, used only as the local origin-verification trust anchor |
 | `/etc/mixli/postgres/pgbackrest.conf` | Runtime copy with bucket-scoped R2 key, secret, endpoint, and an independent repository cipher passphrase |
 
 Check metadata without reading values:
@@ -792,8 +792,9 @@ container at `/srv/mixli/data/postgres` during validation.
   both files. Nginx mounts that parent directory, so `docker compose exec -T
   nginx nginx -t -c /etc/nginx/mixli/nginx.conf` validates the replacement
   inodes before `docker compose exec -T nginx nginx -s reload`. Verify the
-  origin with `curl --cacert /etc/mixli/cloudflare/origin-ca.pem --resolve
-  api.mixli.app:443:127.0.0.1 https://api.mixli.app/ready`; never use an
+  origin through the Nginx container's private `mixli_backend` address with
+  `curl --cacert /etc/mixli/cloudflare/origin-ca.pem --resolve
+  api.mixli.app:443:<nginx-private-ip> https://api.mixli.app/ready`; never use an
   insecure TLS option. Revoke the old certificate only after public strict-TLS
   verification.
 - Administrator key: append the new public key, prove a new independent session

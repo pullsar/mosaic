@@ -170,16 +170,17 @@ ensure_cloudflare_boundary() {
 }
 
 verify_rollback_traffic() {
-  local headers observed_release
+  local headers observed_release origin_ip
   [[ -n "$stopped_pool" && -n "$previous_release_sha" ]] || return 0
   rollback_fail_if_requested traffic || return 1
   if [[ "$TEST_MODE" == '1' ]]; then
     observed_release="${MIXLI_TEST_ROLLBACK_RELEASE_SHA:-$previous_release_sha}"
   else
+    origin_ip="$(nginx_origin_ip)" || return 1
     headers="$(mktemp /tmp/mixli-rollback-headers.XXXXXX)" || return 1
     if ! curl --fail --silent --show-error --max-time 10 \
       --dump-header "$headers" --output /dev/null \
-      --cacert "$ORIGIN_CA" --resolve api.mixli.app:443:127.0.0.1 \
+      --cacert "$ORIGIN_CA" --resolve "api.mixli.app:443:$origin_ip" \
       https://api.mixli.app/ready; then
       rm -f -- "$headers"
       return 1

@@ -26,6 +26,17 @@ compose() {
   docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
 }
 
+nginx_origin_ip() {
+  local container_id origin_ip
+  container_id="$(compose ps -q nginx)"
+  [[ -n "$container_id" ]]
+  origin_ip="$(docker inspect --format \
+    '{{with index .NetworkSettings.Networks "mixli_backend"}}{{.IPAddress}}{{end}}' \
+    "$container_id")"
+  [[ "$origin_ip" =~ ^[0-9]+(\.[0-9]+){3}$ ]]
+  printf '%s\n' "$origin_ip"
+}
+
 run_check() {
   local label="$1" implementation="$2"
   if [[ "$TEST_MODE" == '1' ]]; then
@@ -57,10 +68,11 @@ check_commands() {
 }
 
 curl_endpoint() {
-  local host="$1" path="$2"
+  local host="$1" path="$2" origin_ip
   if [[ "$MODE" == '--origin' ]]; then
+    origin_ip="$(nginx_origin_ip)"
     curl --fail --silent --show-error --max-time 15 \
-      --cacert "$ORIGIN_CA" --resolve "$host:443:127.0.0.1" \
+      --cacert "$ORIGIN_CA" --resolve "$host:443:$origin_ip" \
       "https://$host$path"
   else
     curl --fail --silent --show-error --max-time 15 "https://$host$path"
@@ -68,10 +80,11 @@ curl_endpoint() {
 }
 
 curl_headers() {
-  local host="$1" path="$2"
+  local host="$1" path="$2" origin_ip
   if [[ "$MODE" == '--origin' ]]; then
+    origin_ip="$(nginx_origin_ip)"
     curl --fail --silent --show-error --max-time 15 \
-      --cacert "$ORIGIN_CA" --resolve "$host:443:127.0.0.1" \
+      --cacert "$ORIGIN_CA" --resolve "$host:443:$origin_ip" \
       --dump-header - --output /dev/null "https://$host$path"
   else
     curl --fail --silent --show-error --max-time 15 \

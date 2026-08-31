@@ -54,6 +54,9 @@ install_layout() {
     "$(target /etc/mixli/nginx/nginx.conf)"
   install -m 0644 "$SOURCE_ROOT/ops/production/nginx/conf.d/mixli.conf" \
     "$(target /etc/mixli/nginx/conf.d/mixli.conf)"
+  install -o root -g root -m 0644 \
+    "$SOURCE_ROOT/ops/production/cloudflare/origin-ca-rsa.pem" \
+    "$(target /etc/mixli/cloudflare/origin-ca.pem)"
   real_ip_config="$(target /etc/mixli/nginx/cloudflare-real-ip.conf)"
   [[ ! -L "$real_ip_config" ]]
   if [[ ! -e "$real_ip_config" ]]; then
