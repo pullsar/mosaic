@@ -161,9 +161,9 @@ setup() { setup_repo_root; }
 @test "production Nginx validation and reload use the running config path" {
   local script
   for script in deployment.sh update-cloudflare-ips.sh; do
-    grep -Fq 'nginx -c /etc/nginx/mixli/nginx.conf -t' \
+    grep -Fq 'nginx -t -c /etc/nginx/mixli/nginx.conf' \
       "$REPO_ROOT/ops/production/bin/$script"
-    grep -Fq 'nginx -c /etc/nginx/mixli/nginx.conf -s reload' \
+    grep -Fq 'nginx -s reload -c /etc/nginx/mixli/nginx.conf' \
       "$REPO_ROOT/ops/production/bin/$script"
   done
 }
