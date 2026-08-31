@@ -344,7 +344,8 @@ deploy() {
   [ ! -e "$TEST_ROOT/current" ]
   [ ! -L "$TEST_ROOT/current" ]
   [ ! -e "$TEST_ROOT/runtime/compose.yaml" ]
-  grep -Fq 'rm --stop --force nginx api-blue-1 api-blue-2 api-green-1 api-green-2' \
+  grep -Fq \
+    'rm --stop --force nginx api-blue-1 api-blue-2 api-green-1 api-green-2 prometheus alertmanager grafana node-exporter cadvisor nginx-exporter postgres-exporter' \
     "$COMMAND_LOG"
   runtime_line="$(grep -n '^candidate-runtime-removed$' \
     "$TEST_ROOT/log/deploy-events.log" | cut -d: -f1)"

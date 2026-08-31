@@ -129,6 +129,29 @@ reload_nginx() {
   compose exec -T nginx nginx -s reload -c /etc/nginx/mixli/nginx.conf || return 1
 }
 
+start_auxiliary_services() {
+  local service attempt running
+  local -a services=(
+    prometheus alertmanager grafana node-exporter cadvisor nginx-exporter
+    postgres-exporter
+  )
+  fail_if_requested auxiliary-services || return 1
+  compose up -d --no-deps "${services[@]}" || return 1
+  [[ "$TEST_MODE" == '1' ]] && return 0
+
+  for service in "${services[@]}"; do
+    running=0
+    for ((attempt = 1; attempt <= 50; attempt++)); do
+      if [[ -n "$(compose ps -q "$service")" ]]; then
+        running=1
+        break
+      fi
+      sleep 0.1
+    done
+    [[ "$running" == '1' ]] || return 1
+  done
+}
+
 ensure_cloudflare_boundary() {
   local context="${1:-deploy}" rules
   if [[ "$TEST_MODE" == '1' ]]; then
@@ -352,8 +375,12 @@ cleanup_first_deploy_runtime() {
   local remaining
   [[ "$compose_changed" == '1' && "$compose_had_previous" == '0' ]] || return 0
   rollback_fail_if_requested candidate-runtime || return 1
-  compose rm --stop --force nginx api-blue-1 api-blue-2 api-green-1 api-green-2 || return 1
-  remaining="$(compose ps -q nginx api-blue-1 api-blue-2 api-green-1 api-green-2)" || return 1
+  compose rm --stop --force nginx api-blue-1 api-blue-2 api-green-1 api-green-2 \
+    prometheus alertmanager grafana node-exporter cadvisor nginx-exporter \
+    postgres-exporter || return 1
+  remaining="$(compose ps -q nginx api-blue-1 api-blue-2 api-green-1 api-green-2 \
+    prometheus alertmanager grafana node-exporter cadvisor nginx-exporter \
+    postgres-exporter)" || return 1
   [[ -z "$remaining" ]] || return 1
   candidate_runtime_cleaned=1
   log_event 'candidate-runtime-removed' || return 1
@@ -803,6 +830,7 @@ main() {
   reload_nginx
 
   smoke_release
+  start_auxiliary_services
   prune_releases "$SHA" "$current_sha"
   set_env_value MIXLI_ACTIVE_POOL "$target_pool"
   stop_old_pool "$current_pool"
