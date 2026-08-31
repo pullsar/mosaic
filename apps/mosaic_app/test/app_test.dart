@@ -9,10 +9,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('What are you into?'), findsNothing);
-    expect(
-      find.byKey(const ValueKey<String>('guest-home')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const ValueKey<String>('guest-home')), findsOneWidget);
     expect(
       find.byKey(const ValueKey<String>('feed-empty-retry')),
       findsOneWidget,

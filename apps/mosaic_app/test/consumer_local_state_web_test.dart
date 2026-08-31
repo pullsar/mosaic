@@ -16,40 +16,40 @@ String _playActionMetadataKey(String playId) =>
     'play_action.v1.${sha256.convert(utf8.encode(playId.trim()))}';
 
 void main() {
-  test('guest engagement survives IndexedDB reopen and cleans corruption', () async {
-    final name = _databaseName();
-    var store = await IndexedDbEventStore.open(databaseName: name);
-    try {
-      var state = IndexedDbConsumerLocalState(store);
-      final dismissedAt = DateTime.utc(2026, 8, 31, 12);
-      await state.writeGuestEngagement(
-        GuestEngagementState(
-          seenIdentities: List<String>.generate(
-            5,
-            (index) => 'request\u0000rev_$index',
+  test(
+    'guest engagement survives IndexedDB reopen and cleans corruption',
+    () async {
+      final name = _databaseName();
+      var store = await IndexedDbEventStore.open(databaseName: name);
+      try {
+        var state = IndexedDbConsumerLocalState(store);
+        final dismissedAt = DateTime.utc(2026, 8, 31, 12);
+        await state.writeGuestEngagement(
+          GuestEngagementState(
+            seenIdentities: List<String>.generate(
+              5,
+              (index) => 'request\u0000rev_$index',
+            ),
+            dismissedAt: dismissedAt,
           ),
-          dismissedAt: dismissedAt,
-        ),
-      );
-      await store.close();
+        );
+        await store.close();
 
-      store = await IndexedDbEventStore.open(databaseName: name);
-      state = IndexedDbConsumerLocalState(store);
-      final restored = await state.readGuestEngagement();
-      expect(restored?.seenIdentities, hasLength(5));
-      expect(restored?.dismissedAt, dismissedAt);
+        store = await IndexedDbEventStore.open(databaseName: name);
+        state = IndexedDbConsumerLocalState(store);
+        final restored = await state.readGuestEngagement();
+        expect(restored?.seenIdentities, hasLength(5));
+        expect(restored?.dismissedAt, dismissedAt);
 
-      await store.writeConsumerMetadata('guest_engagement.v1', '{broken');
-      expect(await state.readGuestEngagement(), isNull);
-      expect(
-        await store.readConsumerMetadata('guest_engagement.v1'),
-        isNull,
-      );
-    } finally {
-      await store.close();
-      await IndexedDbEventStore.deleteDatabase(name);
-    }
-  });
+        await store.writeConsumerMetadata('guest_engagement.v1', '{broken');
+        expect(await state.readGuestEngagement(), isNull);
+        expect(await store.readConsumerMetadata('guest_engagement.v1'), isNull);
+      } finally {
+        await store.close();
+        await IndexedDbEventStore.deleteDatabase(name);
+      }
+    },
+  );
 
   test('web action state and muted topics survive IndexedDB reopen', () async {
     final name = _databaseName();

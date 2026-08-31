@@ -8,38 +8,41 @@ import 'package:mosaic_app/consumer_local_state_native.dart';
 import 'package:mosaic_app/guest_engagement.dart';
 
 void main() {
-  test('guest engagement survives SQLite reopen and cleans corruption', () async {
-    final directory = await Directory.systemTemp.createTemp('mosaic_guest_');
-    addTearDown(() async {
-      if (await directory.exists()) await directory.delete(recursive: true);
-    });
-    final path = '${directory.path}/mosaic.sqlite3';
-    final dismissedAt = DateTime.utc(2026, 8, 31, 12);
+  test(
+    'guest engagement survives SQLite reopen and cleans corruption',
+    () async {
+      final directory = await Directory.systemTemp.createTemp('mosaic_guest_');
+      addTearDown(() async {
+        if (await directory.exists()) await directory.delete(recursive: true);
+      });
+      final path = '${directory.path}/mosaic.sqlite3';
+      final dismissedAt = DateTime.utc(2026, 8, 31, 12);
 
-    var store = MosaicLocalStore.open(path);
-    var state = SqliteConsumerLocalState(store);
-    await state.writeGuestEngagement(
-      GuestEngagementState(
-        seenIdentities: List<String>.generate(
-          5,
-          (index) => 'request\u0000rev_$index',
+      var store = MosaicLocalStore.open(path);
+      var state = SqliteConsumerLocalState(store);
+      await state.writeGuestEngagement(
+        GuestEngagementState(
+          seenIdentities: List<String>.generate(
+            5,
+            (index) => 'request\u0000rev_$index',
+          ),
+          dismissedAt: dismissedAt,
         ),
-        dismissedAt: dismissedAt,
-      ),
-    );
-    store.close();
+      );
+      store.close();
 
-    store = MosaicLocalStore.open(path);
-    state = SqliteConsumerLocalState(store);
-    final restored = await state.readGuestEngagement();
-    expect(restored?.seenIdentities, hasLength(5));
-    expect(restored?.dismissedAt, dismissedAt);
+      store = MosaicLocalStore.open(path);
+      state = SqliteConsumerLocalState(store);
+      final restored = await state.readGuestEngagement();
+      expect(restored?.seenIdentities, hasLength(5));
+      expect(restored?.dismissedAt, dismissedAt);
 
-    store.saveGuestEngagementJson('{broken');
-    expect(await state.readGuestEngagement(), isNull);
-    expect(store.loadGuestEngagementJson(), isNull);
-    store.close();
-  });
+      store.saveGuestEngagementJson('{broken');
+      expect(await state.readGuestEngagement(), isNull);
+      expect(store.loadGuestEngagementJson(), isNull);
+      store.close();
+    },
+  );
 
   test(
     'native consumer adapter preserves distinct preferences and resume state',

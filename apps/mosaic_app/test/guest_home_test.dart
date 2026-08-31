@@ -35,11 +35,7 @@ Widget _app({
       ),
       child: Directionality(
         textDirection: direction,
-        child: GuestHome(
-          engagement: controller,
-          onSearch: () {},
-          child: child,
-        ),
+        child: GuestHome(engagement: controller, onSearch: () {}, child: child),
       ),
     ),
   ),
@@ -61,9 +57,7 @@ void main() {
     expect(find.text('Your Mixli is getting good'), findsNothing);
   });
 
-  testWidgets('eligible guest sees a dismissible signup sheet', (
-    tester,
-  ) async {
+  testWidgets('eligible guest sees a dismissible signup sheet', (tester) async {
     final controller = await _controller(eligible: true);
     addTearDown(controller.dispose);
     await tester.pumpWidget(

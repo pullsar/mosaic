@@ -15,9 +15,9 @@ final class GuestEngagementState {
   final DateTime? dismissedAt;
 
   Map<String, Object?> toJson() => <String, Object?>{
-        'seenIdentities': seenIdentities,
-        'dismissedAt': dismissedAt?.toUtc().toIso8601String(),
-      };
+    'seenIdentities': seenIdentities,
+    'dismissedAt': dismissedAt?.toUtc().toIso8601String(),
+  };
 
   factory GuestEngagementState.fromJson(Map<String, Object?> json) {
     final rawIdentities = json['seenIdentities'];
@@ -82,8 +82,8 @@ final class GuestEngagementController extends ChangeNotifier {
   GuestEngagementController({
     required GuestEngagementStore store,
     DateTime Function()? clock,
-  })  : _store = store,
-        _clock = clock ?? DateTime.now;
+  }) : _store = store,
+       _clock = clock ?? DateTime.now;
 
   static const int promptThreshold = 5;
   static const Duration promptCooldown = Duration(days: 7);
@@ -182,9 +182,7 @@ final class GuestEngagementController extends ChangeNotifier {
 
   Future<void> _persist() {
     final snapshot = _state;
-    final write = _writeTail.then(
-      (_) => _store.writeGuestEngagement(snapshot),
-    );
+    final write = _writeTail.then((_) => _store.writeGuestEngagement(snapshot));
     _writeTail = write.catchError((Object _) {});
     return write;
   }
