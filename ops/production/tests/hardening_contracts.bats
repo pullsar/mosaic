@@ -158,6 +158,16 @@ setup() { setup_repo_root; }
   [ "$replace_line" -lt "$reload_line" ]
 }
 
+@test "production Nginx validation and reload use the running config path" {
+  local script
+  for script in deployment.sh update-cloudflare-ips.sh; do
+    grep -Fq 'nginx -c /etc/nginx/mixli/nginx.conf -t' \
+      "$REPO_ROOT/ops/production/bin/$script"
+    grep -Fq 'nginx -c /etc/nginx/mixli/nginx.conf -s reload' \
+      "$REPO_ROOT/ops/production/bin/$script"
+  done
+}
+
 @test "textfile metrics are least-privilege readable and absence alerts" {
   for script in backup.sh restore-verify.sh; do
     grep -Fq 'install -d -o 65534 -g 65534 -m 0750 "$METRICS_DIR"' \
