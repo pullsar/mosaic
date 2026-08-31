@@ -55,7 +55,11 @@ setup() {
   [ "$output" = "queued:mixli-deploy-${SHA:0:12}" ]
   grep -Fq 'fetch --prune origin main' "$request"
   grep -Fq 'merge-base --is-ancestor "$SHA" origin/main' "$request"
-  grep -Fq 'DEPLOY_RUNNER="$CHECKOUT/ops/production/bin/deployment.sh"' "$request"
+  grep -Fq 'RUNNER_ROOT="$RUNNERS/$SHA"' "$request"
+  grep -Fq 'DEPLOY_RUNNER="$RUNNER_ROOT/deployment.sh"' "$request"
+  grep -Fq 'CI_RUNNER="$RUNNER_ROOT/server-ci.sh"' "$request"
+  grep -Fq 'show "$SHA:$source"' "$request"
+  grep -Fq -- '--setenv=MIXLI_CI_RUNNER="$CI_RUNNER"' "$request"
   grep -Fq '"$DEPLOY_RUNNER" "$SHA"' "$request"
   ! grep -Fq '/opt/mixli/bin/deployment.sh "$SHA"' "$request"
 }

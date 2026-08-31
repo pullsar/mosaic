@@ -414,6 +414,37 @@ export async function verifyProductionCatalog(
   if (documents.rows.length !== starterPlays.length) {
     throw new Error('Starter Play revisions are incomplete');
   }
+
+  const topicLinks = await pool.query<{
+    play_id: string;
+    revision_id: string;
+    topic_id: string;
+    role: string;
+  }>(
+    `select play_id, revision_id, topic_id, role
+       from play_revision_topics
+      where play_id = any($1::text[])`,
+    [starterPlays.map((play) => play.id)],
+  );
+  const expectedTopicLinks = new Set(
+    starterPlays.flatMap((play) =>
+      play.topics.map(
+        (topic) => `${play.id}\u0000${play.revisionId}\u0000${topic}\u0000interest`,
+      ),
+    ),
+  );
+  const actualTopicLinks = new Set(
+    topicLinks.rows.map(
+      (link) =>
+        `${link.play_id}\u0000${link.revision_id}\u0000${link.topic_id}\u0000${link.role}`,
+    ),
+  );
+  if (
+    actualTopicLinks.size !== expectedTopicLinks.size ||
+    [...expectedTopicLinks].some((identity) => !actualTopicLinks.has(identity))
+  ) {
+    throw new Error('Starter Play topic links differ from release content');
+  }
   return {eligiblePlays, canvasAssets: canvasAssetCount};
 }
 
