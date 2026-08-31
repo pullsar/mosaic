@@ -42,6 +42,7 @@ setup() {
   check="$(sed -n '/^check_guest_catalog()/,/^}/p' "$VERIFY")"
   [[ "$check" == *"curl_endpoint api.mixli.app '/v1/topics?limit=6'"* ]]
   [[ "$check" == *"jq '.topics | length'"* ]]
+  [[ "$check" == *'node dist/bootstrap_catalog.js verify'* ]]
 }
 
 @test "production verifier never emits environment or secret values" {

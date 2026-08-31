@@ -334,19 +334,38 @@ export async function applyProductionCatalog(
 export async function verifyProductionCatalog(
   pool: Pool,
 ): Promise<ProductionCatalogStatus> {
-  const eligible = await pool.query<{count: number}>(
-    `select count(*)::int as count
+  const catalog = await pool.query<{
+    play_id: string;
+    revision_id: string;
+    state: string;
+  }>(
+    `select play_id, revision_id, state
        from feed_catalog_entries
-      where play_id like $1 and state = 'eligible'`,
+      where play_id like $1`,
     [`${productionStarterPrefix}%`],
   );
+  const expectedCatalog = new Set(
+    starterPlays.map((play) => `${play.id}\u0000${play.revisionId}`),
+  );
+  const actualCatalog = new Set(
+    catalog.rows
+      .filter((row) => row.state === 'eligible')
+      .map((row) => `${row.play_id}\u0000${row.revision_id}`),
+  );
+  if (
+    catalog.rows.length !== expectedCatalog.size ||
+    actualCatalog.size !== expectedCatalog.size ||
+    [...expectedCatalog].some((identity) => !actualCatalog.has(identity))
+  ) {
+    throw new Error('Starter Play catalog does not match the exact release set');
+  }
   const assets = await pool.query<{count: number}>(
     `select count(*)::int as count
        from canvas_assets
       where id = any($1::text[]) and state = 'ready'`,
     [canvasAssets.map((asset) => asset.id)],
   );
-  const eligiblePlays = eligible.rows[0]?.count ?? 0;
+  const eligiblePlays = actualCatalog.size;
   const canvasAssetCount = assets.rows[0]?.count ?? 0;
   if (eligiblePlays !== productionStarterCount) {
     throw new Error(
@@ -363,8 +382,8 @@ export async function verifyProductionCatalog(
     `select revision.play_id, revision.document -> 'assets' as assets
        from play_revisions revision
        join feed_catalog_entries catalog using (play_id, revision_id)
-      where catalog.play_id like $1 and catalog.state = 'eligible'`,
-    [`${productionStarterPrefix}%`],
+      where catalog.play_id = any($1::text[]) and catalog.state = 'eligible'`,
+    [starterPlays.map((play) => play.id)],
   );
   const knownAssets = new Set<string>(canvasAssets.map((asset) => asset.id));
   for (const row of documents.rows) {
@@ -375,6 +394,9 @@ export async function verifyProductionCatalog(
     if (typeof assetId !== 'string' || !knownAssets.has(assetId)) {
       throw new Error(`Starter Play ${row.play_id} references an unknown asset`);
     }
+  }
+  if (documents.rows.length !== starterPlays.length) {
+    throw new Error('Starter Play revisions are incomplete');
   }
   return {eligiblePlays, canvasAssets: canvasAssetCount};
 }

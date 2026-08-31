@@ -12,8 +12,8 @@ Future<GuestEngagementController> _controller({bool eligible = false}) async {
   if (eligible) {
     for (var index = 0; index < 5; index += 1) {
       await controller.recordVisible(
-        feedRequestId: 'request',
-        revisionId: 'rev_$index',
+        playId: 'play_$index',
+        revisionId: 'rev_1',
       );
     }
   }
@@ -26,6 +26,7 @@ Widget _app({
   TextDirection direction = TextDirection.ltr,
   double textScale = 1,
   bool disableAnimations = false,
+  bool directManipulationActive = false,
 }) => MaterialApp(
   home: Builder(
     builder: (context) => MediaQuery(
@@ -35,7 +36,12 @@ Widget _app({
       ),
       child: Directionality(
         textDirection: direction,
-        child: GuestHome(engagement: controller, onSearch: () {}, child: child),
+        child: GuestHome(
+          engagement: controller,
+          directManipulationActive: directManipulationActive,
+          onSearch: () {},
+          child: child,
+        ),
       ),
     ),
   ),
@@ -90,6 +96,26 @@ void main() {
     expect(find.text('Your guest feed stays right here.'), findsOneWidget);
     expect(find.text('Back to exploring'), findsOneWidget);
     expect(find.text('Account created'), findsNothing);
+  });
+
+  testWidgets('signup waits until direct manipulation settles', (tester) async {
+    final controller = await _controller(eligible: true);
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      _app(
+        controller: controller,
+        directManipulationActive: true,
+        child: const Text('Fifth Play'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Your Mixli is getting good'), findsNothing);
+
+    await tester.pumpWidget(
+      _app(controller: controller, child: const Text('Fifth Play')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Your Mixli is getting good'), findsOneWidget);
   });
 
   testWidgets('compact home remains usable with RTL and large text', (

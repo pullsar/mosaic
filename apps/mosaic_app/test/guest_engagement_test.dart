@@ -35,8 +35,8 @@ void main() {
 
     for (var index = 0; index < 5; index += 1) {
       await controller.recordVisible(
-        feedRequestId: 'request',
-        revisionId: 'rev_$index',
+        playId: 'play_$index',
+        revisionId: 'rev_1',
       );
     }
 
@@ -53,10 +53,7 @@ void main() {
     await controller.initialize();
 
     for (var index = 0; index < 8; index += 1) {
-      await controller.recordVisible(
-        feedRequestId: 'same',
-        revisionId: 'rev_same',
-      );
+      await controller.recordVisible(playId: 'same', revisionId: 'rev_same');
     }
 
     expect(controller.shouldPrompt, isFalse);
@@ -74,7 +71,7 @@ void main() {
     await controller.initialize();
     for (var index = 0; index < 5; index += 1) {
       await controller.recordVisible(
-        feedRequestId: 'request',
+        playId: 'play_$index',
         revisionId: 'rev_$index',
       );
     }
@@ -98,7 +95,7 @@ void main() {
 
     final initialization = controller.initialize();
     final recording = controller.recordVisible(
-      feedRequestId: 'live',
+      playId: 'live',
       revisionId: 'rev_live',
     );
     gate.complete(
@@ -128,4 +125,46 @@ void main() {
       throwsFormatException,
     );
   });
+
+  test(
+    'storage failures are reported without breaking guest browsing',
+    () async {
+      final errors = <Object>[];
+      final controller = GuestEngagementController(
+        store: _FailingGuestStore(),
+        clock: () => now,
+        onError: (error, stackTrace) => errors.add(error),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.initialize();
+      await controller.recordVisible(playId: 'play', revisionId: 'rev_1');
+
+      expect(controller.state.seenIdentities, <String>['play\u0000rev_1']);
+      expect(errors, hasLength(2));
+    },
+  );
+
+  test('initialization may finish after controller disposal', () async {
+    final gate = Completer<GuestEngagementState?>();
+    final controller = GuestEngagementController(
+      store: _MemoryGuestStore(readGate: gate),
+      clock: () => now,
+    );
+
+    final initialization = controller.initialize();
+    controller.dispose();
+    gate.complete(null);
+    await expectLater(initialization, completes);
+  });
+}
+
+final class _FailingGuestStore implements GuestEngagementStore {
+  @override
+  Future<GuestEngagementState?> readGuestEngagement() =>
+      Future<GuestEngagementState?>.error(StateError('read failed'));
+
+  @override
+  Future<void> writeGuestEngagement(GuestEngagementState state) =>
+      Future<void>.error(StateError('write failed'));
 }

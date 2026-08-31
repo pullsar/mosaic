@@ -460,7 +460,7 @@ api_postgres_integration() {
 
 flutter_workspace() {
   local builder_uid builder_gid copy_owner
-  [[ "$WEB_API_BASE_URL" =~ ^https://[^[:space:]]+/$ ]]
+  [[ "$WEB_API_BASE_URL" =~ ^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/$ ]]
   builder_uid="$(id -u "$BUILDER_USER")"
   builder_gid="$(id -g "$BUILDER_USER")"
   copy_owner="$builder_uid:$builder_gid"
@@ -487,6 +487,7 @@ flutter_workspace() {
      (cd packages/platform_contracts && dart test)
      (cd packages/platform_flutter && flutter test)
      (cd apps/mosaic_app && flutter test)
+     (cd apps/mosaic_app && flutter test --platform chrome test/consumer_local_state_web_test.dart)
      (cd apps/mosaic_app && flutter build web --release --pwa-strategy=none \
        --dart-define="MOSAIC_API_BASE_URL=$MIXLI_WEB_API_BASE_URL")'
   install -d -o "$BUILDER_USER" -g "$BUILDER_USER" \

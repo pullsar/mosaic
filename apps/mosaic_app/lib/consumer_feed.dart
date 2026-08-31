@@ -72,6 +72,7 @@ final class ConsumerFeed extends StatefulWidget {
     this.onEvent,
     this.onWarmWindow,
     this.onCancelWarmWindow,
+    this.onDirectManipulationChanged,
     this.searchIntent,
     this.persistRecovery = true,
     this.pageSize = 6,
@@ -93,6 +94,7 @@ final class ConsumerFeed extends StatefulWidget {
   final ConsumerFeedEventSink? onEvent;
   final ConsumerFeedWarmWindowCallback? onWarmWindow;
   final VoidCallback? onCancelWarmWindow;
+  final ValueChanged<bool>? onDirectManipulationChanged;
   final ConsumerFeedSearchIntent? searchIntent;
   final bool persistRecovery;
   final int pageSize;
@@ -378,11 +380,15 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
     _pendingAdvanceIdentity = null;
     _pendingAdvanceReason = null;
 
+    final wasDirectManipulationActive = _directManipulationActive;
     setState(() {
       _currentIndex = index;
       _directManipulationActive = false;
       _trimRetainedWindow();
     });
+    if (wasDirectManipulationActive) {
+      widget.onDirectManipulationChanged?.call(false);
+    }
 
     _emitDismissed(previous, reason: programmaticReason?.wireName ?? 'swipe');
     _emitVisible(next, _currentIndex);
@@ -466,6 +472,7 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
       return;
     }
     setState(() => _directManipulationActive = active);
+    widget.onDirectManipulationChanged?.call(active);
   }
 
   void _queuePersistence() {
@@ -602,10 +609,37 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
     if (_booting && _entries.isEmpty) {
       return const ColoredBox(
         color: Color(0xFF050505),
-        child: Center(
-          child: SizedBox.square(
-            dimension: 22,
-            child: CircularProgressIndicator(strokeWidth: 2),
+        child: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: EdgeInsets.all(28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Icon(
+                    Icons.auto_awesome_rounded,
+                    color: Colors.white,
+                    size: 34,
+                  ),
+                  SizedBox(height: 18),
+                  Text(
+                    'Making your Mixli',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    'Finding a few Plays worth your thumb.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Color(0xFFB9B9C0), fontSize: 15),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       );

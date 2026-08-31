@@ -76,6 +76,7 @@ final class _MosaicAppState extends State<MosaicApp> {
   late final PlayVisualPrefetchController _visualPrefetch;
   late final FlutterLifecycleBridge _lifecycle;
   _ConsumerSearchScope? _searchScope;
+  bool _directManipulationActive = false;
   var _semanticResumeEpoch = 0;
 
   @override
@@ -133,6 +134,11 @@ final class _MosaicAppState extends State<MosaicApp> {
       store: localState is GuestEngagementStore
           ? localState as GuestEngagementStore
           : MemoryGuestEngagementStore(),
+      onError: (error, stackTrace) => _reportEventRuntimeError(
+        error,
+        stackTrace,
+        operation: 'guest_engagement_storage',
+      ),
     );
     unawaited(_guestEngagement.initialize());
     _visualPrefetch = PlayVisualPrefetchController(
@@ -356,12 +362,15 @@ final class _MosaicAppState extends State<MosaicApp> {
     required Map<String, Object?> payload,
   }) {
     if (event == MosaicEventName.playVisible) {
-      unawaited(
-        _guestEngagement.recordVisible(
-          feedRequestId: feedRequestId,
-          revisionId: playRevisionId,
-        ),
-      );
+      final playId = payload['playId'];
+      if (playId is String && playId.trim().isNotEmpty) {
+        unawaited(
+          _guestEngagement.recordVisible(
+            playId: playId,
+            revisionId: playRevisionId,
+          ),
+        );
+      }
     }
     _eventRuntime
         .telemetryForPlay(
@@ -436,6 +445,7 @@ final class _MosaicAppState extends State<MosaicApp> {
       home: Builder(
         builder: (homeContext) => GuestHome(
           engagement: _guestEngagement,
+          directManipulationActive: _directManipulationActive,
           onSearch: () => unawaited(_openSearch(homeContext)),
           child: Stack(
             fit: StackFit.expand,
@@ -450,6 +460,10 @@ final class _MosaicAppState extends State<MosaicApp> {
                 onEvent: _recordFeedEvent,
                 onWarmWindow: _warmFeedWindow,
                 onCancelWarmWindow: _cancelWarmWindow,
+                onDirectManipulationChanged: (active) {
+                  if (_directManipulationActive == active) return;
+                  setState(() => _directManipulationActive = active);
+                },
               ),
               if (scope != null)
                 SafeArea(

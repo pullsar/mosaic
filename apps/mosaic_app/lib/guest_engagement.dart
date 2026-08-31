@@ -82,20 +82,24 @@ final class GuestEngagementController extends ChangeNotifier {
   GuestEngagementController({
     required GuestEngagementStore store,
     DateTime Function()? clock,
+    void Function(Object error, StackTrace stackTrace)? onError,
   }) : _store = store,
-       _clock = clock ?? DateTime.now;
+       _clock = clock ?? DateTime.now,
+       _onError = onError;
 
   static const int promptThreshold = 5;
   static const Duration promptCooldown = Duration(days: 7);
 
   final GuestEngagementStore _store;
   final DateTime Function() _clock;
+  final void Function(Object error, StackTrace stackTrace)? _onError;
   final LinkedHashSet<String> _pendingIdentities = LinkedHashSet<String>();
 
   GuestEngagementState _state = const GuestEngagementState();
   Future<void>? _initialization;
   Future<void> _writeTail = Future<void>.value();
   bool _initialized = false;
+  bool _disposed = false;
 
   GuestEngagementState get state => _state;
 
@@ -111,7 +115,12 @@ final class GuestEngagementController extends ChangeNotifier {
   Future<void> initialize() => _initialization ??= _initialize();
 
   Future<void> _initialize() async {
-    final stored = await _store.readGuestEngagement();
+    GuestEngagementState? stored;
+    try {
+      stored = await _store.readGuestEngagement();
+    } on Object catch (error, stackTrace) {
+      _onError?.call(error, stackTrace);
+    }
     final identities = LinkedHashSet<String>.from(
       stored?.seenIdentities ?? const <String>[],
     )..addAll(_pendingIdentities);
@@ -127,19 +136,19 @@ final class GuestEngagementController extends ChangeNotifier {
             !listEquals(stored.seenIdentities, _state.seenIdentities))) {
       await _persist();
     }
-    notifyListeners();
+    if (!_disposed) notifyListeners();
   }
 
   Future<void> recordVisible({
-    required String feedRequestId,
+    required String playId,
     required String revisionId,
   }) async {
-    final request = feedRequestId.trim();
+    final play = playId.trim();
     final revision = revisionId.trim();
-    if (request.isEmpty || revision.isEmpty) {
-      throw ArgumentError('feedRequestId and revisionId must not be empty');
+    if (play.isEmpty || revision.isEmpty) {
+      throw ArgumentError('playId and revisionId must not be empty');
     }
-    final identity = '$request\u0000$revision';
+    final identity = '$play\u0000$revision';
 
     if (!_initialized) {
       _pendingIdentities.add(identity);
@@ -156,7 +165,7 @@ final class GuestEngagementController extends ChangeNotifier {
       seenIdentities: _bounded(identities),
       dismissedAt: _state.dismissedAt,
     );
-    notifyListeners();
+    if (!_disposed) notifyListeners();
     await _persist();
   }
 
@@ -168,7 +177,7 @@ final class GuestEngagementController extends ChangeNotifier {
       seenIdentities: _state.seenIdentities,
       dismissedAt: _clock().toUtc(),
     );
-    notifyListeners();
+    if (!_disposed) notifyListeners();
     await _persist();
   }
 
@@ -182,8 +191,20 @@ final class GuestEngagementController extends ChangeNotifier {
 
   Future<void> _persist() {
     final snapshot = _state;
-    final write = _writeTail.then((_) => _store.writeGuestEngagement(snapshot));
-    _writeTail = write.catchError((Object _) {});
+    final write = _writeTail.then((_) async {
+      try {
+        await _store.writeGuestEngagement(snapshot);
+      } on Object catch (error, stackTrace) {
+        _onError?.call(error, stackTrace);
+      }
+    });
+    _writeTail = write;
     return write;
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 }

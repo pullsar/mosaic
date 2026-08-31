@@ -11,12 +11,14 @@ final class GuestHome extends StatefulWidget {
     required this.engagement,
     required this.child,
     required this.onSearch,
+    this.directManipulationActive = false,
     super.key,
   });
 
   final GuestEngagementController engagement;
   final Widget child;
   final VoidCallback onSearch;
+  final bool directManipulationActive;
 
   @override
   State<GuestHome> createState() => _GuestHomeState();
@@ -36,9 +38,10 @@ final class _GuestHomeState extends State<GuestHome> {
   @override
   void didUpdateWidget(GuestHome oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.engagement == widget.engagement) return;
-    oldWidget.engagement.removeListener(_schedulePromptIfEligible);
-    widget.engagement.addListener(_schedulePromptIfEligible);
+    if (oldWidget.engagement != widget.engagement) {
+      oldWidget.engagement.removeListener(_schedulePromptIfEligible);
+      widget.engagement.addListener(_schedulePromptIfEligible);
+    }
     _schedulePromptIfEligible();
   }
 
@@ -49,7 +52,8 @@ final class _GuestHomeState extends State<GuestHome> {
   }
 
   void _schedulePromptIfEligible() {
-    if (!widget.engagement.shouldPrompt ||
+    if (widget.directManipulationActive ||
+        !widget.engagement.shouldPrompt ||
         _promptScheduled ||
         _promptShownThisSession) {
       return;
@@ -58,6 +62,7 @@ final class _GuestHomeState extends State<GuestHome> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _promptScheduled = false;
       if (!mounted ||
+          widget.directManipulationActive ||
           !widget.engagement.shouldPrompt ||
           _promptShownThisSession) {
         return;

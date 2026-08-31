@@ -151,6 +151,27 @@ Widget _app(
 );
 
 void main() {
+  testWidgets('initial load shows useful branded structure', (tester) async {
+    final response = Completer<http.Response>();
+    final runtime = _runtime(_MemoryConsumerState(), (_, _) => response.future);
+    addTearDown(runtime.close);
+
+    await tester.pumpWidget(_app(runtime));
+    await tester.pump();
+
+    expect(find.text('Making your Mixli'), findsOneWidget);
+    expect(find.text('Finding a few Plays worth your thumb.'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+
+    response.complete(
+      http.Response(
+        jsonEncode(_page('request_empty', const <ConsumerFeedItem>[], null)),
+        200,
+      ),
+    );
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('failed empty feed offers friendly retry', (tester) async {
     final runtime = _runtime(
       _MemoryConsumerState(),

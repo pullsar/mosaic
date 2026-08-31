@@ -254,7 +254,8 @@ production-builds" ]
   grep -Fq 'MIXLI_WEB_API_BASE_URL:-https://api.mixli.app/' "$script"
   grep -Fq -- '-e MIXLI_WEB_API_BASE_URL="$WEB_API_BASE_URL"' "$script"
   grep -Fq -- '--dart-define="MOSAIC_API_BASE_URL=$MIXLI_WEB_API_BASE_URL"' "$script"
-  grep -Fq '[[ "$WEB_API_BASE_URL" =~ ^https://[^[:space:]]+/$ ]]' "$script"
+  grep -Fq '[[ "$WEB_API_BASE_URL" =~ ^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/$ ]]' "$script"
+  grep -Fq 'flutter test --platform chrome test/consumer_local_state_web_test.dart' "$script"
 }
 
 @test "server release gate builds web but excludes Android artifact assembly" {

@@ -135,7 +135,9 @@ check_release_header() {
 }
 
 check_guest_catalog() {
-  local topics
+  local pool topics
+  pool="$(current_pool)"
+  compose exec -T "api-$pool-1" node dist/bootstrap_catalog.js verify
   topics="$(curl_endpoint api.mixli.app '/v1/topics?limit=6')"
   [[ "$(jq '.topics | length' <<<"$topics")" -ge 6 ]]
 }
