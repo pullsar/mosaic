@@ -45,6 +45,8 @@ old_pool_stopped=0
 stopped_pool=''
 previous_release_sha=''
 candidate_runtime_cleaned=0
+api_production_tag_created=0
+postgres_production_tag_created=0
 
 builder_git() {
   runuser -u mixli-build -- git "$@"
@@ -280,6 +282,13 @@ promote_release_image() {
     [[ "$production_image_id" == "$ci_image_id" ]]
   else
     docker image tag "$ci_image_id" "$production_image"
+    if [[ "$production_image" == "$API_IMAGE" ]]; then
+      api_production_tag_created=1
+    elif [[ "$production_image" == "$POSTGRES_IMAGE" ]]; then
+      postgres_production_tag_created=1
+    else
+      return 1
+    fi
     production_image_id="$(docker image inspect --format '{{.Id}}' "$production_image")"
     [[ "$production_image_id" == "$ci_image_id" ]]
   fi
@@ -291,6 +300,29 @@ promote_release_images() {
   cleanup_api_ci_image
   promote_release_image "$POSTGRES_CI_IMAGE" "$POSTGRES_IMAGE"
   cleanup_postgres_ci_image
+}
+
+cleanup_new_production_images() {
+  local cleanup_status status=0
+  if [[ "$api_production_tag_created" == '1' ]]; then
+    if docker image rm "$API_IMAGE" >/dev/null; then
+      api_production_tag_created=0
+    else
+      cleanup_status=$?
+      log_event "api-production-tag-cleanup-failed:$SHA" || true
+      status="$cleanup_status"
+    fi
+  fi
+  if [[ "$postgres_production_tag_created" == '1' ]]; then
+    if docker image rm "$POSTGRES_IMAGE" >/dev/null; then
+      postgres_production_tag_created=0
+    else
+      cleanup_status=$?
+      log_event "postgres-production-tag-cleanup-failed:$SHA" || true
+      [[ "$status" -ne 0 ]] || status="$cleanup_status"
+    fi
+  fi
+  return "$status"
 }
 
 restore_runtime_compose() {
@@ -402,6 +434,9 @@ on_error() {
     if ! finalize_runtime_compose_rollback; then
       rollback_failed=1
     fi
+  fi
+  if [[ "$rollback_failed" == '0' ]] && ! cleanup_new_production_images; then
+    rollback_failed=1
   fi
   if [[ "$rollback_failed" == '1' ]]; then
     log_event "deploy-rollback-failed:$SHA" || true
