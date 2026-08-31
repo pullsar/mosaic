@@ -18,6 +18,7 @@
     "migrate": "tsx src/db/migrate.ts up",
     "migrate:down": "tsx src/db/migrate.ts down",
     "migrate:status": "tsx src/db/migrate.ts status",
+    "bootstrap:catalog": "tsx src/bootstrap_catalog.ts apply",
     "seed": "tsx src/seed.ts"
   },
   "dependencies": {
