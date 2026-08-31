@@ -264,6 +264,7 @@ deploy() {
 @test "successful deploy atomically switches web and records current and previous releases" {
   run deploy "$SHA"
   [ "$status" -eq 0 ]
+  [ "$(stat -c '%a' "$TEST_ROOT/releases")" = '755' ]
   [ -L "$TEST_ROOT/current" ]
   [ "$(readlink "$TEST_ROOT/current")" = "$TEST_ROOT/releases/$SHA" ]
   grep -q "\"sha\":\"$SHA\"" "$TEST_ROOT/state/current.json"
