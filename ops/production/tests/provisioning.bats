@@ -64,8 +64,8 @@ run_ip_refresh() {
   [ "$status" -ne 0 ]
   [ "$(stat -c '%u:%g:%a' "$root/etc/mixli/cloudflare/origin-ca.pem")" = \
     '0:0:644' ]
-  openssl x509 -in "$root/etc/mixli/cloudflare/origin-ca.pem" -noout \
-    -subject -issuer | grep -Fq 'CloudFlare Origin SSL Certificate Authority'
+  cmp -s "$REPO_ROOT/ops/production/cloudflare/origin-ca-rsa.pem" \
+    "$root/etc/mixli/cloudflare/origin-ca.pem"
 }
 
 @test "reprovisioning preserves the generated Cloudflare real-IP trust file" {
