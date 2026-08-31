@@ -101,13 +101,13 @@ restore_verify_with_container_shims() {
   [ "$status" -eq 64 ]
 }
 
-@test "full and incremental backups target both repositories and then check both" {
+@test "full and incremental backups target both repositories then run one global check" {
   run backup full
   [ "$status" -eq 0 ]
   grep -q -- '--repo=1 --type=full backup' "$COMMAND_LOG"
   grep -q -- '--repo=2 --type=full backup' "$COMMAND_LOG"
-  grep -q -- '--repo=1 check' "$COMMAND_LOG"
-  grep -q -- '--repo=2 check' "$COMMAND_LOG"
+  [ "$(grep -Fxc 'check' "$COMMAND_LOG")" -eq 1 ]
+  ! grep -Eq -- '--repo=[12] check' "$COMMAND_LOG"
 
   : >"$COMMAND_LOG"
   run backup incr

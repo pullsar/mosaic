@@ -46,3 +46,9 @@ setup() {
   [[ "$output" != *'secret-value'* ]]
   [[ "$output" != *'DATABASE_URL'* ]]
 }
+
+@test "production verifier uses the pgBackRest global check command" {
+  check="$(sed -n '/^check_backup_wal()/,/^}/p' "$VERIFY")"
+  [[ "$check" == *'postgres pgbackrest --stanza=mixli check'* ]]
+  [[ "$check" != *'--repo='* ]]
+}
