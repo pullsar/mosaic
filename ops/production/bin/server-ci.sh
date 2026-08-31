@@ -15,6 +15,7 @@ readonly API_CI_IMAGE="mixli-api-ci:$SHA"
 readonly API_TEST_IMAGE="mixli-api-test:$SHA"
 readonly PROMETHEUS_IMAGE="${MIXLI_PROMETHEUS_CI_IMAGE:-prom/prometheus:v3.5.5}"
 readonly ALERTMANAGER_IMAGE="${MIXLI_ALERTMANAGER_CI_IMAGE:-prom/alertmanager:v0.32.1}"
+readonly WEB_API_BASE_URL="${MIXLI_WEB_API_BASE_URL:-https://api.mixli.app/}"
 readonly ROOTLESS_STORAGE_PARENT="${MIXLI_ROOTLESS_STORAGE_PARENT:-/srv/mixli/builds}"
 readonly ROOTLESS_RUNTIME_PARENT="${MIXLI_ROOTLESS_RUNTIME_PARENT:-/run}"
 readonly ROOTLESS_HOST_BATS=(
@@ -459,6 +460,7 @@ api_postgres_integration() {
 
 flutter_workspace() {
   local builder_uid builder_gid copy_owner
+  [[ "$WEB_API_BASE_URL" =~ ^https://[^[:space:]]+/$ ]]
   builder_uid="$(id -u "$BUILDER_USER")"
   builder_gid="$(id -g "$BUILDER_USER")"
   copy_owner="$builder_uid:$builder_gid"
@@ -467,7 +469,9 @@ flutter_workspace() {
   docker volume create "$flutter_volume" >/dev/null
   docker run --rm -v "$CHECKOUT:/source:ro" -v "$flutter_volume:/workspace" \
     alpine:3.22 sh -c 'cp -a /source/. /workspace/ && chown -R 1000:1000 /workspace'
-  docker run --rm --shm-size=1g -v "$flutter_volume:/workspace" -w /workspace \
+  docker run --rm --shm-size=1g \
+    -e MIXLI_WEB_API_BASE_URL="$WEB_API_BASE_URL" \
+    -v "$flutter_volume:/workspace" -w /workspace \
     "$FLUTTER_IMAGE" bash -c \
     'set -Eeuo pipefail
      flutter pub get --offline --enforce-lockfile
@@ -483,7 +487,8 @@ flutter_workspace() {
      (cd packages/platform_contracts && dart test)
      (cd packages/platform_flutter && flutter test)
      (cd apps/mosaic_app && flutter test)
-     (cd apps/mosaic_app && flutter build web --release --pwa-strategy=none)'
+     (cd apps/mosaic_app && flutter build web --release --pwa-strategy=none \
+       --dart-define="MOSAIC_API_BASE_URL=$MIXLI_WEB_API_BASE_URL")'
   install -d -o "$BUILDER_USER" -g "$BUILDER_USER" \
     "$CHECKOUT/apps/mosaic_app/build/web"
   docker run --rm -v "$flutter_volume:/source:ro" \
