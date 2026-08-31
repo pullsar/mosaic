@@ -1,0 +1,49 @@
+name: android-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Exact branch, tag, or commit to build
+        required: true
+        default: main
+        type: string
+  release:
+    types: [published]
+
+concurrency:
+  group: android-${{ github.event_name == 'release' && github.event.release.tag_name || inputs.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout release or selected manual ref
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.ref }}
+          persist-credentials: false
+      - name: Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.44.7'
+          cache: true
+      - name: Resolve locked workspace
+        run: flutter pub get --enforce-lockfile
+      - name: Build Android release validation artifact
+        working-directory: apps/mosaic_app
+        run: |
+          flutter build apk --release
+          test -f build/app/outputs/flutter-apk/app-release.apk
+      - name: Upload Android validation artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mixli-android-apk
+          path: apps/mosaic_app/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 7
