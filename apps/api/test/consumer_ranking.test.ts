@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {
   defaultConsumerRankingConfig,
+  feedCandidateIdentity,
   rankFeedCandidates,
   type FeedCandidate,
 } from '../src/consumer_ranking.js';
@@ -88,6 +89,47 @@ test('More Like This is an explicit affinity independent of save state', () => {
   assert.equal(
     ranked[0]?.featureContributions.moreLikeThisAffinity,
     defaultConsumerRankingConfig.weights.moreLikeThisAffinity,
+  );
+});
+
+test('recent fatigue keys include both Play and revision identity', () => {
+  const first = candidate('first', {qualityPrior: 0.8, curatedOrder: 10});
+  const second = candidate('second', {qualityPrior: 0.7, curatedOrder: 20});
+  second.revisionId = first.revisionId;
+
+  const ranked = rankFeedCandidates([first, second], {
+    interestTopicIds: [],
+    learningTopicIds: [],
+    recentPlayRevisionKeys: [feedCandidateIdentity(first.playId, first.revisionId)],
+  });
+
+  assert.equal(
+    ranked.find((item) => item.playId === first.playId)?.featureContributions.recentSeenPenalty,
+    -defaultConsumerRankingConfig.weights.recentSeenPenalty,
+  );
+  assert.equal(
+    ranked.find((item) => item.playId === second.playId)?.featureContributions.recentSeenPenalty,
+    0,
+  );
+});
+
+test('recent fatigue is scoped to the exact Play plus revision identity', () => {
+  const sharedRevision = 'shared_revision';
+  const seen = candidate('seen', {qualityPrior: 0.7, curatedOrder: 1});
+  const other = candidate('other', {qualityPrior: 0.7, curatedOrder: 2});
+  seen.revisionId = sharedRevision;
+  other.revisionId = sharedRevision;
+
+  const ranked = rankFeedCandidates([seen, other], {
+    interestTopicIds: [],
+    learningTopicIds: [],
+    recentPlayRevisionKeys: [JSON.stringify([seen.playId, sharedRevision])],
+  });
+
+  assert.equal(ranked[0]?.playId, other.playId);
+  assert.equal(
+    ranked.find((item) => item.playId === other.playId)?.featureContributions.recentSeenPenalty,
+    0,
   );
 });
 

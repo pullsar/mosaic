@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'consumer_action_controller.dart';
 import 'consumer_api_client.dart';
+import 'consumer_feed.dart';
 
 typedef ConsumerShareCallback = FutureOr<void> Function(ConsumerFeedItem item);
 
@@ -23,7 +24,7 @@ final class ConsumerActionControls extends StatefulWidget {
   final ConsumerFeedItem item;
   final String feedRequestId;
   final ConsumerActionController controller;
-  final Future<bool> Function() onAdvance;
+  final Future<bool> Function(ConsumerFeedAdvanceReason reason) onAdvance;
   final ConsumerShareCallback? onShare;
   final bool active;
 
@@ -238,7 +239,9 @@ final class _ConsumerActionControlsState extends State<ConsumerActionControls> {
         revisionId: widget.item.revisionId,
         feedRequestId: widget.feedRequestId,
       );
-      if (applied) await widget.onAdvance();
+      if (applied) {
+        await widget.onAdvance(ConsumerFeedAdvanceReason.notInterested);
+      }
       return;
     }
     if (action == 'muted_topics') {
@@ -261,7 +264,9 @@ final class _ConsumerActionControlsState extends State<ConsumerActionControls> {
       feedRequestId: widget.feedRequestId,
       playRevisionId: widget.item.revisionId,
     );
-    if (applied && muted) await widget.onAdvance();
+    if (applied && muted) {
+      await widget.onAdvance(ConsumerFeedAdvanceReason.topicMuted);
+    }
   }
 
   Future<void> _showMutedTopics() async {
@@ -320,7 +325,9 @@ final class _ConsumerActionControlsState extends State<ConsumerActionControls> {
       reason: reason,
       dismiss: true,
     );
-    if (reported) await widget.onAdvance();
+    if (reported) {
+      await widget.onAdvance(ConsumerFeedAdvanceReason.reported);
+    }
   }
 
   Iterable<String> _topicIds() sync* {

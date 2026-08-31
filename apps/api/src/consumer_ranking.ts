@@ -15,7 +15,7 @@ export interface ConsumerRankingProfile {
   interestTopicIds: readonly string[];
   learningTopicIds: readonly string[];
   interactionAffinity?: Readonly<Record<string, number>>;
-  recentRevisionIds?: readonly string[];
+  recentPlayRevisionKeys?: readonly string[];
   topicDismissalCounts?: Readonly<Record<string, number>>;
   formatDismissalCounts?: Readonly<Record<string, number>>;
   moreLikeTopicIds?: readonly string[];
@@ -75,7 +75,7 @@ export function rankFeedCandidates(
 
   for (const candidate of candidates) {
     validateCandidate(candidate);
-    const key = candidateKey(candidate);
+    const key = feedCandidateIdentity(candidate.playId, candidate.revisionId);
     if (seenKeys.has(key)) throw new Error(`Duplicate feed candidate: ${key}`);
     seenKeys.add(key);
     if (
@@ -99,7 +99,7 @@ export function rankFeedCandidates(
       hasOverlap(candidate.learningTopicIds, normalized.moreLikeTopicIds)
         ? 1
         : 0;
-    const recentSeen = normalized.recentRevisionIds.has(candidate.revisionId) ? 1 : 0;
+    const recentSeen = normalized.recentPlayRevisionKeys.has(key) ? 1 : 0;
     const topicDismissal = dismissalStrength([
       ...candidate.topicIds.map((topic) => normalized.topicDismissalCounts[topic] ?? 0),
       ...candidate.learningTopicIds.map(
@@ -146,6 +146,10 @@ export function rankFeedCandidates(
   return ranked.map((candidate, index) => ({...candidate, rank: index + 1}));
 }
 
+export function feedCandidateIdentity(playId: string, revisionId: string): string {
+  return JSON.stringify([playId.trim(), revisionId.trim()]);
+}
+
 function compareRankedCandidates(
   left: RankedFeedCandidate,
   right: RankedFeedCandidate,
@@ -154,7 +158,9 @@ function compareRankedCandidates(
   if (score !== 0) return score;
   const curated = left.curatedOrder - right.curatedOrder;
   if (curated !== 0) return curated;
-  return candidateKey(left).localeCompare(candidateKey(right));
+  return feedCandidateIdentity(left.playId, left.revisionId).localeCompare(
+    feedCandidateIdentity(right.playId, right.revisionId),
+  );
 }
 
 function dismissalStrength(values: readonly number[]): number {
@@ -175,7 +181,7 @@ function normalizeProfile(profile: ConsumerRankingProfile) {
   return {
     interestTopicIds: normalizedSet(profile.interestTopicIds),
     learningTopicIds: normalizedSet(profile.learningTopicIds),
-    recentRevisionIds: normalizedSet(profile.recentRevisionIds ?? []),
+    recentPlayRevisionKeys: exactSet(profile.recentPlayRevisionKeys ?? []),
     moreLikeTopicIds: normalizedSet(profile.moreLikeTopicIds ?? []),
     mutedTopicIds: normalizedSet(profile.mutedTopicIds ?? []),
     interactionAffinity: normalizeNumberMap(profile.interactionAffinity),
@@ -186,6 +192,10 @@ function normalizeProfile(profile: ConsumerRankingProfile) {
 
 function normalizedSet(values: readonly string[]): ReadonlySet<string> {
   return new Set(values.map(normalizeText).filter((value) => value.length > 0));
+}
+
+function exactSet(values: readonly string[]): ReadonlySet<string> {
+  return new Set(values.map((value) => value.trim()).filter((value) => value.length > 0));
 }
 
 function normalizeNumberMap(
@@ -213,10 +223,6 @@ function clampSigned(value: number): number {
   return Math.max(-1, Math.min(1, value));
 }
 
-function candidateKey(candidate: Pick<FeedCandidate, 'playId' | 'revisionId'>): string {
-  return `${candidate.playId}\u0000${candidate.revisionId}`;
-}
-
 function validateCandidate(candidate: FeedCandidate): void {
   if (
     normalizeText(candidate.playId).length === 0 ||
@@ -225,17 +231,23 @@ function validateCandidate(candidate: FeedCandidate): void {
     throw new Error('Feed candidates require playId and revisionId.');
   }
   if (normalizeText(candidate.format).length === 0) {
-    throw new Error(`Feed candidate ${candidateKey(candidate)} requires a format.`);
+    throw new Error(
+      `Feed candidate ${feedCandidateIdentity(candidate.playId, candidate.revisionId)} requires a format.`,
+    );
   }
   if (
     !Number.isFinite(candidate.qualityPrior) ||
     candidate.qualityPrior < 0 ||
     candidate.qualityPrior > 1
   ) {
-    throw new Error(`Feed candidate ${candidateKey(candidate)} has an invalid quality prior.`);
+    throw new Error(
+      `Feed candidate ${feedCandidateIdentity(candidate.playId, candidate.revisionId)} has an invalid quality prior.`,
+    );
   }
   if (!Number.isInteger(candidate.curatedOrder) || candidate.curatedOrder < 0) {
-    throw new Error(`Feed candidate ${candidateKey(candidate)} has an invalid curated order.`);
+    throw new Error(
+      `Feed candidate ${feedCandidateIdentity(candidate.playId, candidate.revisionId)} has an invalid curated order.`,
+    );
   }
 }
 

@@ -4,6 +4,7 @@ import {PostgresCanvasAssetRepository} from './canvas_asset.js';
 import {registerCanvasAssetRoutes} from './canvas_asset_routes.js';
 import {loadConfig} from './config.js';
 import {PostgresConsumerRepository} from './consumer_repository.js';
+import {PostgresConsumerSignalProjector} from './consumer_signal_projector.js';
 import {PostgresFeedAssetReadinessResolver} from './feed_asset_readiness.js';
 import {MediaDeliveryService} from './media_delivery.js';
 import {loadMediaDeliveryStorageConfig} from './media_delivery_config.js';
@@ -18,12 +19,14 @@ const mediaDeliveryConfig = loadMediaDeliveryStorageConfig();
 const pool = new Pool({connectionString: config.databaseUrl});
 const repository = new PostgresRepository(pool);
 const consumerRepository = new PostgresConsumerRepository(pool);
+const consumerSignalProjector = new PostgresConsumerSignalProjector(pool);
 const feedAssetReadiness = new PostgresFeedAssetReadinessResolver(pool, {
   binaryDeliveryEnabled: mediaDeliveryConfig.storageMode !== 'disabled',
 });
 const app = buildApp({
   repository,
   consumerRepository,
+  consumerSignalProjector,
   feedAssetReadiness,
   logLevel: config.logLevel,
   allowedWebOrigins: config.allowedWebOrigins,

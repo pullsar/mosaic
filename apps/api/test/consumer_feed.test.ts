@@ -16,7 +16,7 @@ import type {
   TopicSummary,
 } from '../src/consumer_repository.js';
 import type {FeedAssetReadinessResolver} from '../src/feed_asset_readiness.js';
-import type {FeedCandidate, RankedFeedCandidate} from '../src/consumer_ranking.js';
+import {feedCandidateIdentity, type FeedCandidate, type RankedFeedCandidate} from '../src/consumer_ranking.js';
 
 const capabilities = {
   schemaVersions: [1],
@@ -333,6 +333,64 @@ test('ranking errors fall back to compatible curated order without blocking feed
     'curated_fallback',
     'curated_fallback',
   ]);
+  assert.equal(errors.length, 1);
+});
+
+test('derived ranking profile changes a fresh decision without changing explicit preferences', async () => {
+  const repository = new MemoryConsumerRepository();
+  repository.candidates = [
+    candidate('seen', 'r1', {curatedOrder: 1}),
+    candidate('fresh', 'r2', {curatedOrder: 2}),
+  ];
+  const projector = {
+    projectActor: async (_actorId: string) => 0,
+    readActorProfile: async (_actorId: string) => ({
+      interactionAffinity: {},
+      recentPlayRevisionKeys: [feedCandidateIdentity('seen', 'r1')],
+      topicDismissalCounts: {},
+      formatDismissalCounts: {},
+      moreLikeTopicIds: [],
+    }),
+    rebuildActor: async (_actorId: string) => 0,
+  };
+  const service = new ConsumerFeedService(repository, {
+    windowSize: 2,
+    candidateLimit: 2,
+    requestIdFactory: () => 'derived_request',
+    signalProjector: projector,
+  });
+
+  const page = await service.getFeed({actorId: 'actor_derived', capabilities, limit: 2});
+  assert.deepEqual(page.items.map((item) => item.playId), ['fresh', 'seen']);
+});
+
+test('projection failure falls back to explicit profile without blocking feed', async () => {
+  const repository = new MemoryConsumerRepository();
+  repository.preferences = {interestTopicIds: ['travel'], learningTopicIds: []};
+  repository.candidates = [
+    candidate('travel', 'r1', {topicIds: ['travel'], curatedOrder: 2}),
+    candidate('other', 'r2', {topicIds: ['music'], curatedOrder: 1}),
+  ];
+  const errors: unknown[] = [];
+  const projector = {
+    projectActor: async (_actorId: string) => {
+      throw new Error('projection unavailable');
+    },
+    readActorProfile: async (_actorId: string) => {
+      throw new Error('must not be reached');
+    },
+    rebuildActor: async (_actorId: string) => 0,
+  };
+  const service = new ConsumerFeedService(repository, {
+    windowSize: 2,
+    candidateLimit: 2,
+    requestIdFactory: () => 'profile_fallback_request',
+    signalProjector: projector,
+    onProfileError: (error) => errors.push(error),
+  });
+
+  const page = await service.getFeed({actorId: 'actor_profile_fallback', capabilities, limit: 2});
+  assert.equal(page.items[0]?.playId, 'travel');
   assert.equal(errors.length, 1);
 });
 

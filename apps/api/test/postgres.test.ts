@@ -264,6 +264,22 @@ test('actions, canvas, image, actor access, consumer and media migrations roll b
   await runMigration('up');
 
   await runMigration('down');
+  const profileDownPool = new Pool({connectionString: databaseUrl});
+  try {
+    const afterProfileDown = await profileDownPool.query<{
+      consumer_signal_profiles: string | null;
+      actor_topic_mutes: string | null;
+    }>(
+      `select to_regclass('public.consumer_signal_profiles')::text as consumer_signal_profiles,
+              to_regclass('public.actor_topic_mutes')::text as actor_topic_mutes`,
+    );
+    assert.equal(afterProfileDown.rows[0]?.consumer_signal_profiles, null);
+    assert.equal(afterProfileDown.rows[0]?.actor_topic_mutes, 'actor_topic_mutes');
+  } finally {
+    await profileDownPool.end();
+  }
+
+  await runMigration('down');
   const actionsDownPool = new Pool({connectionString: databaseUrl});
   try {
     const afterActionsDown = await actionsDownPool.query<{

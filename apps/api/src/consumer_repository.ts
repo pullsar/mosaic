@@ -1,5 +1,9 @@
 import {Pool, type PoolClient} from 'pg';
-import type {FeedCandidate, FeedSourceBucket, RankedFeedCandidate} from './consumer_ranking.js';
+import {
+  type FeedCandidate,
+  type FeedSourceBucket,
+  type RankedFeedCandidate,
+} from './consumer_ranking.js';
 
 const MAX_PREFERENCE_TOPICS = 64;
 const MAX_CANDIDATES = 500;

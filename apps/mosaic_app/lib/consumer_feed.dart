@@ -9,16 +9,31 @@ import 'consumer_api_client.dart';
 import 'consumer_local_state.dart';
 import 'consumer_runtime.dart';
 
+enum ConsumerFeedAdvanceReason {
+  notInterested('not_interested'),
+  topicMuted('topic_muted'),
+  reported('reported');
+
+  const ConsumerFeedAdvanceReason(this.wireName);
+  final String wireName;
+}
+
 final class ConsumerFeedController {
-  Future<bool> Function()? _advance;
+  Future<bool> Function(ConsumerFeedAdvanceReason reason)? _advance;
   bool get attached => _advance != null;
-  Future<bool> advance() async {
+
+  Future<bool> advance(ConsumerFeedAdvanceReason reason) async {
     final callback = _advance;
-    return callback == null ? false : callback();
+    return callback == null ? false : callback(reason);
   }
 
-  void _attach(Future<bool> Function() callback) => _advance = callback;
-  void _detach(Future<bool> Function() callback) {
+  void _attach(
+    Future<bool> Function(ConsumerFeedAdvanceReason reason) callback,
+  ) => _advance = callback;
+
+  void _detach(
+    Future<bool> Function(ConsumerFeedAdvanceReason reason) callback,
+  ) {
     if (identical(_advance, callback)) _advance = null;
   }
 }
@@ -130,6 +145,8 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
   bool _booting = true;
   bool _fetching = false;
   bool _directManipulationActive = false;
+  String? _pendingAdvanceIdentity;
+  ConsumerFeedAdvanceReason? _pendingAdvanceReason;
 
   @override
   void initState() {
@@ -302,7 +319,7 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
     }
   }
 
-  Future<bool> _requestAdvance() async {
+  Future<bool> _requestAdvance(ConsumerFeedAdvanceReason reason) async {
     if (!mounted || _entries.isEmpty || _directManipulationActive) {
       return false;
     }
@@ -315,10 +332,19 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
           _currentIndex + 1 >= _entries.length) {
         return false;
       }
-      await _pageController.nextPage(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOutCubic,
-      );
+      _pendingAdvanceIdentity = currentIdentity;
+      _pendingAdvanceReason = reason;
+      try {
+        await _pageController.nextPage(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+        );
+      } finally {
+        if (_pendingAdvanceIdentity == currentIdentity) {
+          _pendingAdvanceIdentity = null;
+          _pendingAdvanceReason = null;
+        }
+      }
       return true;
     }
 
@@ -335,13 +361,20 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
     final next = _entries[index];
     if (previous.analyticsIdentity == next.analyticsIdentity) return;
 
+    final programmaticReason =
+        _pendingAdvanceIdentity == previous.analyticsIdentity
+        ? _pendingAdvanceReason
+        : null;
+    _pendingAdvanceIdentity = null;
+    _pendingAdvanceReason = null;
+
     setState(() {
       _currentIndex = index;
       _directManipulationActive = false;
       _trimRetainedWindow();
     });
 
-    _emitDismissed(previous);
+    _emitDismissed(previous, reason: programmaticReason?.wireName ?? 'swipe');
     _emitVisible(next, _currentIndex);
     _queuePersistence();
     _scheduleWarmWindow();
@@ -526,15 +559,12 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
     return true;
   }
 
-  void _emitDismissed(_FeedEntry entry) {
+  void _emitDismissed(_FeedEntry entry, {required String reason}) {
     widget.onEvent?.call(
       MosaicEventName.playDismissed,
       feedRequestId: entry.requestId,
       playRevisionId: entry.item.revisionId,
-      payload: <String, Object?>{
-        'playId': entry.item.playId,
-        'reason': 'swipe',
-      },
+      payload: <String, Object?>{'playId': entry.item.playId, 'reason': reason},
     );
   }
 
