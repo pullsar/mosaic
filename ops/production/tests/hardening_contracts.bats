@@ -78,8 +78,8 @@ setup() { setup_repo_root; }
   provision="$REPO_ROOT/ops/production/bin/provision-host.sh"
   grep -Fq 'install -d -m 0755 "$release_dir" "$release_dir/web"' "$deploy"
   grep -Fq 'chmod -R a=rX,u+w "$release_dir/web"' "$deploy"
-  grep -Fq 'install -d -m 0755 "$(target /srv/mixli)"' "$provision"
-  grep -Fq 'install -d -m 0755 "$(target /srv/mixli/releases)"' "$provision"
+  grep -Fq 'install -d -o root -g root -m 0755 "$(target /srv/mixli)"' "$provision"
+  grep -Fq 'install -d -o root -g root -m 0755 "$(target /srv/mixli/releases)"' "$provision"
   grep -Fq 'install -d -m 0750 "$(target /etc/mixli/secrets)"' "$provision"
 }
 
