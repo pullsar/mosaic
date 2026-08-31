@@ -248,6 +248,15 @@ production-builds" ]
   grep -Fxq "image rm --force mixli-postgres-ci:$SHA" "$COMMAND_LOG"
 }
 
+@test "production Flutter build injects the exact HTTPS API origin" {
+  script="$REPO_ROOT/ops/production/bin/server-ci.sh"
+
+  grep -Fq 'MIXLI_WEB_API_BASE_URL:-https://api.mixli.app/' "$script"
+  grep -Fq -- '-e MIXLI_WEB_API_BASE_URL="$WEB_API_BASE_URL"' "$script"
+  grep -Fq -- '--dart-define="MOSAIC_API_BASE_URL=$MIXLI_WEB_API_BASE_URL"' "$script"
+  grep -Fq '[[ "$WEB_API_BASE_URL" =~ ^https://[^[:space:]]+/$ ]]' "$script"
+}
+
 @test "server release gate builds web but excludes Android artifact assembly" {
   workspace="$(sed -n '/^flutter_workspace()/,/^}/p' \
     "$REPO_ROOT/ops/production/bin/server-ci.sh")"
