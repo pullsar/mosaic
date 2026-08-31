@@ -140,13 +140,22 @@ curl_origin() {
 
 @test "edge starts while the optional Grafana backend is unavailable" {
   docker rm -f "$GRAFANA" >/dev/null
-  docker restart "$NGINX_CONTAINER" >/dev/null
+  docker rm -f "$NGINX_CONTAINER" >/dev/null
+  docker run -d --name "$NGINX_CONTAINER" --network "$NETWORK" \
+    -v "$NGINX_CONFIG_DIR:/etc/nginx/mixli:ro" \
+    -v "$MIXLI_HOST_REPO/ops/production/runtime/api-upstream.example.conf:/etc/nginx/runtime/api-upstream.conf:ro" \
+    -v "$TLS_DIR:/etc/nginx/tls:ro" \
+    -v "$WEB_VOLUME:/srv/mixli/current/web:ro" \
+    nginx:1.28.0-alpine nginx -c /etc/nginx/mixli/nginx.conf -g 'daemon off;' \
+    >/dev/null
 
   for _ in $(seq 1 10); do
-    if [ "$(docker inspect -f '{{.State.Running}}' "$NGINX_CONTAINER")" = true ]; then
+    sleep 0.2
+    if [ "$(docker inspect -f '{{.State.Running}}' "$NGINX_CONTAINER")" = true ] &&
+      docker exec "$NGINX_CONTAINER" nginx -t -c /etc/nginx/mixli/nginx.conf \
+        >/dev/null 2>&1; then
       return 0
     fi
-    sleep 0.2
   done
 
   docker logs "$NGINX_CONTAINER" >&2
