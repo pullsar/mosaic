@@ -55,6 +55,8 @@ run_ip_refresh() {
   [ "$status" -eq 0 ]
   second="$(find "$root" -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum)"
   [ "$first" = "$second" ]
+  [ "$(stat -c '%u:%g:%a' "$root/srv/mixli")" = '0:0:755' ]
+  [ "$(stat -c '%u:%g:%a' "$root/srv/mixli/releases")" = '0:0:755' ]
   [ "$(stat -c '%u:%g:%a' "$root/etc/mixli/prometheus")" = '0:65534:750' ]
   [ "$(stat -c '%u:%g:%a' "$root/etc/mixli/prometheus/prometheus.yml")" = \
     '0:65534:640' ]

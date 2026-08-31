@@ -18,7 +18,7 @@ target() {
 
 install_layout() {
   local path real_ip_config
-  install -d -m 0755 "$(target /srv/mixli)"
+  install -d -o root -g root -m 0755 "$(target /srv/mixli)"
   for path in \
     /srv/mixli/builds /srv/mixli/releases /srv/mixli/runtime \
     /srv/mixli/state /srv/mixli/log /srv/mixli/metrics /srv/mixli/data/postgres \
@@ -30,7 +30,7 @@ install_layout() {
     /etc/systemd/system; do
     install -d -m 0750 "$(target "$path")"
   done
-  install -d -m 0755 "$(target /srv/mixli/releases)"
+  install -d -o root -g root -m 0755 "$(target /srv/mixli/releases)"
   install -d -m 0750 "$(target /etc/mixli/secrets)"
   install -d -o root -g root -m 0750 "$(target /etc/mixli/github)"
   install -d -o root -g root -m 0750 "$(target /srv/mixli/state/reviews)"

@@ -794,7 +794,8 @@ main() {
   validate_root || exit 64
   [[ "$CI_LOCK_WAIT_SECONDS" =~ ^[0-9]+$ && "$CI_LOCK_WAIT_SECONDS" -le 2400 ]] || exit 64
   install -d -m 0750 "$(dirname "$LOCK_FILE")" "$(dirname "$CI_LOCK_FILE")" \
-    "$(dirname "$BACKUP_LOCK_FILE")" "$RELEASES" "$RUNTIME" "$STATE" "$LOG_DIR"
+    "$(dirname "$BACKUP_LOCK_FILE")" "$RUNTIME" "$STATE" "$LOG_DIR"
+  install -d -m 0755 "$RELEASES"
   if [[ "$TEST_MODE" == '1' ]]; then
     install -d -m 0750 "$BUILDS"
   else
