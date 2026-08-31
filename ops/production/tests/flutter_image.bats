@@ -37,19 +37,18 @@ setup() {
   [[ "$output" == *"enable-web: true"* ]]
 }
 
-@test "server Flutter image contains browser tooling but no mobile build toolchain" {
+@test "server Flutter Dockerfile contains browser tooling but no mobile build toolchain" {
   grep -Fq 'CHROME_EXECUTABLE=/usr/local/bin/chromium-ci' "$DOCKERFILE"
   grep -Fq -- '--no-sandbox' "$DOCKERFILE"
   grep -Fq 'flutter precache --web' "$DOCKERFILE"
-  ! grep -Fq 'ANDROID_CMDLINE_TOOLS' "$DOCKERFILE"
-  ! grep -Fq 'ANDROID_HOME' "$DOCKERFILE"
-  ! grep -Fq 'ANDROID_SDK_ROOT' "$DOCKERFILE"
-  ! grep -Fq 'JAVA_HOME' "$DOCKERFILE"
-  ! grep -Fq 'openjdk-' "$DOCKERFILE"
-  ! grep -Fq 'cmake/' "$DOCKERFILE"
-  ! grep -Fq 'ndk/' "$DOCKERFILE"
-  ! grep -Fq 'precache --web --android' "$DOCKERFILE"
 
+  run grep -Eq \
+    'ANDROID_CMDLINE_TOOLS|ANDROID_(HOME|SDK_ROOT)|JAVA_HOME|openjdk-|cmake/|ndk/|precache --web --android' \
+    "$DOCKERFILE"
+  [ "$status" -eq 1 ]
+}
+
+@test "server Flutter image exposes browser tooling without mobile environment" {
   run docker run --rm "$IMAGE" bash -lc '
     test -z "${ANDROID_HOME:-}"
     test -z "${ANDROID_SDK_ROOT:-}"

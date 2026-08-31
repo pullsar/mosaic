@@ -111,22 +111,21 @@ Remove `'flutter build apk --release'` from the `required` loop in `covers infra
 
 - [ ] **Step 5: Replace the server image Android probe with a web-only contract**
 
-Replace `pins the Android and browser toolchain inside the Flutter image` in `ops/production/tests/flutter_image.bats` with:
+Replace `pins the Android and browser toolchain inside the Flutter image` in `ops/production/tests/flutter_image.bats` with two separate static/runtime contracts:
 
 ```bash
-@test "server Flutter image contains browser tooling but no mobile build toolchain" {
+@test "server Flutter Dockerfile contains browser tooling but no mobile build toolchain" {
   grep -Fq 'CHROME_EXECUTABLE=/usr/local/bin/chromium-ci' "$DOCKERFILE"
   grep -Fq -- '--no-sandbox' "$DOCKERFILE"
   grep -Fq 'flutter precache --web' "$DOCKERFILE"
-  ! grep -Fq 'ANDROID_CMDLINE_TOOLS' "$DOCKERFILE"
-  ! grep -Fq 'ANDROID_HOME' "$DOCKERFILE"
-  ! grep -Fq 'ANDROID_SDK_ROOT' "$DOCKERFILE"
-  ! grep -Fq 'JAVA_HOME' "$DOCKERFILE"
-  ! grep -Fq 'openjdk-' "$DOCKERFILE"
-  ! grep -Fq 'cmake/' "$DOCKERFILE"
-  ! grep -Fq 'ndk/' "$DOCKERFILE"
-  ! grep -Fq 'precache --web --android' "$DOCKERFILE"
 
+  run grep -Eq \
+    'ANDROID_CMDLINE_TOOLS|ANDROID_(HOME|SDK_ROOT)|JAVA_HOME|openjdk-|cmake/|ndk/|precache --web --android' \
+    "$DOCKERFILE"
+  [ "$status" -eq 1 ]
+}
+
+@test "server Flutter image exposes browser tooling without mobile environment" {
   run docker run --rm "$IMAGE" bash -lc '
     test -z "${ANDROID_HOME:-}"
     test -z "${ANDROID_SDK_ROOT:-}"
@@ -164,7 +163,7 @@ cd "$test_root"
 bats --filter 'mobile platform CI|only dispatch and exceptional|Android builds only' \
   ops/production/tests/github_workflow.bats
 bats --filter 'server release gate builds web' ops/production/tests/server_ci.bats
-bats --filter 'server Flutter image contains browser tooling' \
+bats --filter 'server Flutter Dockerfile contains browser tooling' \
   ops/production/tests/flutter_image.bats
 ```
 
