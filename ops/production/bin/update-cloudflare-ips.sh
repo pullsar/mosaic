@@ -115,8 +115,8 @@ install_real_ip() {
   real_ip_changed=1
   rm -f -- "$validation_config" || return 1
   if [[ -n "$container_id" ]]; then
-    compose exec -T nginx nginx -t -c /etc/nginx/mixli/nginx.conf || return 1
-    compose exec -T nginx nginx -s reload || return 1
+    compose exec -T nginx nginx -c /etc/nginx/mixli/nginx.conf -t || return 1
+    compose exec -T nginx nginx -c /etc/nginx/mixli/nginx.conf -s reload || return 1
   fi
 }
 
@@ -131,8 +131,8 @@ rollback_real_ip() {
     rm -f -- "$REAL_IP_CONFIG" || return 1
   fi
   if [[ "$nginx_was_running" == '1' ]]; then
-    compose exec -T nginx nginx -t -c /etc/nginx/mixli/nginx.conf || return 1
-    compose exec -T nginx nginx -s reload || return 1
+    compose exec -T nginx nginx -c /etc/nginx/mixli/nginx.conf -t || return 1
+    compose exec -T nginx nginx -c /etc/nginx/mixli/nginx.conf -s reload || return 1
   fi
   real_ip_changed=0
 }

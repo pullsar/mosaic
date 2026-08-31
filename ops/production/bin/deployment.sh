@@ -118,8 +118,8 @@ reload_nginx() {
   ensure_cloudflare_boundary "$context" || return 1
   [[ "$TEST_MODE" == '1' ]] && return 0
   compose up -d --no-deps nginx || return 1
-  compose exec -T nginx nginx -t || return 1
-  compose exec -T nginx nginx -s reload || return 1
+  compose exec -T nginx nginx -c /etc/nginx/mixli/nginx.conf -t || return 1
+  compose exec -T nginx nginx -c /etc/nginx/mixli/nginx.conf -s reload || return 1
 }
 
 ensure_cloudflare_boundary() {
