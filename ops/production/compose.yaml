@@ -185,6 +185,7 @@ services:
     networks:
       - backend
       - monitoring
+      - edge
 
   prometheus:
     image: ${MIXLI_PROMETHEUS_IMAGE:-prom/prometheus:v3.5.5}
@@ -390,5 +391,9 @@ networks:
     internal: true
   monitoring:
     internal: true
+  edge:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
   egress:
     driver: bridge
