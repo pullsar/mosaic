@@ -74,4 +74,9 @@ The client event path must not persist or send raw user-agent strings, playback 
 
 ## Validation
 
-Repository CI covers the shared runtime, HTTP classification, native SQLite reuse, stable event IDs, and offline -> reopen -> online drain. Platform CI runs the IndexedDB durability suite in Chrome and keeps web, Android release, and iOS simulator builds as merge gates. API CI verifies exact event retry remains idempotent in PostgreSQL.
+Repository and server CI cover the shared runtime, HTTP classification, native
+SQLite reuse, stable event IDs, offline -> reopen -> online drain, IndexedDB
+durability in Chrome, and the production web build as merge/deployment gates.
+Android release and iOS simulator builds run only by manual dispatch or for a
+published release. API CI verifies exact event retry remains idempotent in
+PostgreSQL.

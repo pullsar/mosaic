@@ -241,7 +241,7 @@ Before this PR can leave draft:
 - real Chrome IndexedDB tests pass through the existing platform workflow;
 - app-shell tests pass;
 - local-recovery PR gate passes;
-- web/Android/iOS release builds pass because touched paths trigger platform CI;
+- the server-gated web release build passes, and manually requested or published-release Android/iOS validation passes when a mobile artifact is required;
 - review threads are clean;
 - final diff contains only #49 runtime/persistence/API work plus this plan.
 

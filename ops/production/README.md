@@ -145,8 +145,13 @@ it sends only the PR number and exact head SHA through the review-only forced
 SSH identity. The server fetches only that numbered PR ref, proves exact SHA
 equality, and runs the full matrix against a private rootless Docker daemon.
 The sole automatic `main` workflow sends `deploy <sha>` through the independent
-production identity; deployment already includes the release CI gate. iOS
-simulator validation runs only manually or when a release is published.
+production identity; deployment already includes the release CI gate. The
+server release gate covers infrastructure, API/PostgreSQL, Dart/Flutter and
+Chrome tests, platform declarations, and the production web build. Android APK
+and iOS simulator validation run only by manual dispatch or when a release is
+published; those workflows have no production environment, credentials, or
+deployment authority. Their artifacts validate compilation but do not prove
+production store signing or publication.
 
 Follow a review with:
 
