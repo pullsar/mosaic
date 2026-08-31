@@ -477,6 +477,7 @@ prepare_checkout() {
   if [[ -d "$build_dir/.git" || -f "$build_dir/.git" ]]; then
     actual="$(builder_git -C "$build_dir" rev-parse HEAD)"
     [[ "$actual" == "$SHA" ]] || exit 66
+    chown -hR mixli-build:mixli-build -- "$build_dir"
     return 0
   fi
   [[ ! -e "$build_dir" ]] || exit 66
