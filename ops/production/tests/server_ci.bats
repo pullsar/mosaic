@@ -4,6 +4,7 @@ load test_helper
 
 setup() {
   setup_repo_root
+  unset MIXLI_CI_RETAIN_RELEASE_IMAGES MIXLI_CI_RETAIN_POSTGRES_IMAGE
   TEST_ROOT="$(mktemp -d)"
   CHECKOUT="$TEST_ROOT/checkout"
   SHA="b5098ec72c804b6df97a7017681ea17b9843d73c"
