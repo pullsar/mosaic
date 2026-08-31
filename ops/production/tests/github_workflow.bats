@@ -114,12 +114,24 @@ setup() {
   ! grep -Fq 'environment: production' "$workflow"
 }
 
+@test "published mobile releases checkout and verify the exact event commit" {
+  grep -Fq "github.event_name == 'release' && github.sha || inputs.ref" \
+    "$ANDROID_WORKFLOW"
+  grep -Fq "github.event_name == 'release' && github.sha || github.ref" \
+    "$IOS_WORKFLOW"
+  for workflow in "$ANDROID_WORKFLOW" "$IOS_WORKFLOW"; do
+    grep -Fq "if: github.event_name == 'release'" "$workflow"
+    grep -Fq 'EXPECTED_SHA: ${{ github.sha }}' "$workflow"
+    grep -Fq 'test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"' "$workflow"
+  done
+}
+
 @test "Android builds only an exact requested release artifact with least privilege" {
   workflow="$ANDROID_WORKFLOW"
   grep -Fq 'contents: read' "$workflow"
   grep -Fq 'runs-on: ubuntu-latest' "$workflow"
   grep -Fq 'timeout-minutes: 30' "$workflow"
-  grep -Fq "github.event_name == 'release' && github.event.release.tag_name || inputs.ref" "$workflow"
+  grep -Fq "github.event_name == 'release' && github.sha || inputs.ref" "$workflow"
   grep -Fq "default: main" "$workflow"
   grep -Fq "flutter-version: '3.44.7'" "$workflow"
   grep -Fq 'flutter pub get --enforce-lockfile' "$workflow"

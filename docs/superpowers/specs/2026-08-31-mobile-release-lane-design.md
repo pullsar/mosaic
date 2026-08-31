@@ -62,7 +62,7 @@ A dedicated `android-release.yml` GitHub workflow runs only on:
 - `workflow_dispatch`; or
 - a published GitHub release.
 
-The job checks out the selected manual ref or the immutable release tag, installs the repository-pinned Flutter version, resolves the lockfile with enforcement enabled, builds the release APK, verifies the expected artifact exists, and uploads it as a workflow artifact.
+The job checks out the selected manual ref or the exact release-event commit SHA, verifies release checkout identity before building, installs the repository-pinned Flutter version, resolves the lockfile with enforcement enabled, builds the release APK, verifies the expected artifact exists, and uploads it as a workflow artifact.
 
 The workflow has read-only repository permissions. It receives no production environment, deployment SSH key, Cloudflare credential, database credential, object-storage credential, signing secret, or server access. The generated validation artifact is not evidence of production store signing; store signing and publication remain a separate explicit release concern.
 

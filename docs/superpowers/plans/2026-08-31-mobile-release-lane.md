@@ -80,7 +80,7 @@ Append this test to `ops/production/tests/github_workflow.bats`:
   grep -Fq 'contents: read' "$workflow"
   grep -Fq 'runs-on: ubuntu-latest' "$workflow"
   grep -Fq 'timeout-minutes: 30' "$workflow"
-  grep -Fq "github.event_name == 'release' && github.event.release.tag_name || inputs.ref" "$workflow"
+  grep -Fq "github.event_name == 'release' && github.sha || inputs.ref" "$workflow"
   grep -Fq "default: main" "$workflow"
   grep -Fq "flutter-version: '3.44.7'" "$workflow"
   grep -Fq 'flutter pub get --enforce-lockfile' "$workflow"
@@ -92,6 +92,22 @@ Append this test to `ops/production/tests/github_workflow.bats`:
   grep -Fq 'retention-days: 7' "$workflow"
   grep -Fq 'persist-credentials: false' "$workflow"
   ! grep -Eq 'secrets\.|MIXLI_(DEPLOY|REVIEW|R2|DATABASE|CLOUDFLARE)' "$workflow"
+}
+```
+
+Append the cross-platform release identity contract:
+
+```bash
+@test "published mobile releases checkout and verify the exact event commit" {
+  grep -Fq "github.event_name == 'release' && github.sha || inputs.ref" \
+    "$ANDROID_WORKFLOW"
+  grep -Fq "github.event_name == 'release' && github.sha || github.ref" \
+    "$IOS_WORKFLOW"
+  for workflow in "$ANDROID_WORKFLOW" "$IOS_WORKFLOW"; do
+    grep -Fq "if: github.event_name == 'release'" "$workflow"
+    grep -Fq 'EXPECTED_SHA: ${{ github.sha }}' "$workflow"
+    grep -Fq 'test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"' "$workflow"
+  done
 }
 ```
 
@@ -203,7 +219,7 @@ on:
     types: [published]
 
 concurrency:
-  group: android-${{ github.event_name == 'release' && github.event.release.tag_name || inputs.ref }}
+  group: android-${{ github.event_name == 'release' && github.sha || inputs.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -217,8 +233,13 @@ jobs:
       - name: Checkout release or selected manual ref
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.ref }}
+          ref: ${{ github.event_name == 'release' && github.sha || inputs.ref }}
           persist-credentials: false
+      - name: Verify published release identity
+        if: github.event_name == 'release'
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
       - name: Flutter
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
