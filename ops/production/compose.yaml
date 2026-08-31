@@ -8,6 +8,7 @@ x-api: &api
     HOST: 0.0.0.0
     PORT: "8080"
     LOG_LEVEL: ${MIXLI_LOG_LEVEL:-info}
+    MOSAIC_WEB_ORIGINS: ${MOSAIC_WEB_ORIGINS:-https://mixli.app,https://www.mixli.app}
   expose:
     - "8080"
   read_only: true

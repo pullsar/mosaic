@@ -92,6 +92,29 @@ curl_headers() {
   fi
 }
 
+curl_preflight_headers() {
+  local host="$1" path="$2" origin_ip
+  local -a options=(
+    --fail
+    --silent
+    --show-error
+    --max-time 15
+    --request OPTIONS
+    --header 'Origin: https://mixli.app'
+    --header 'Access-Control-Request-Method: POST'
+    --header 'Access-Control-Request-Headers: content-type,authorization'
+    --dump-header -
+    --output /dev/null
+  )
+  if [[ "$MODE" == '--origin' ]]; then
+    origin_ip="$(nginx_origin_ip)"
+    curl "${options[@]}" --cacert "$ORIGIN_CA" --resolve "$host:443:$origin_ip" \
+      "https://$host$path"
+  else
+    curl "${options[@]}" "https://$host$path"
+  fi
+}
+
 check_http_tls() {
   local cert_key private_key
   curl_endpoint mixli.app / >/dev/null
@@ -132,6 +155,31 @@ check_release_header() {
       exit
     }')"
   [[ "$actual" == "$expected" ]]
+}
+
+check_guest_browser_api() {
+  local headers allowed_origin allowed_headers
+  headers="$(curl_preflight_headers api.mixli.app /v1/actors)"
+  allowed_origin="$(awk '
+    tolower($0) ~ /^access-control-allow-origin:/ {
+      value=$0
+      sub(/^[^:]+:[[:space:]]*/, "", value)
+      sub(/\r$/, "", value)
+      print value
+      exit
+    }' <<<"$headers")"
+  allowed_headers="$(awk '
+    tolower($0) ~ /^access-control-allow-headers:/ {
+      value=$0
+      sub(/^[^:]+:[[:space:]]*/, "", value)
+      sub(/\r$/, "", value)
+      gsub(/[[:space:]]/, "", value)
+      print tolower(value)
+      exit
+    }' <<<"$headers")"
+  [[ "$allowed_origin" == 'https://mixli.app' ]]
+  [[ ",$allowed_headers," == *',content-type,'* ]]
+  [[ ",$allowed_headers," == *',authorization,'* ]]
 }
 
 check_guest_catalog() {
@@ -225,6 +273,7 @@ main() {
   run_check 'command availability' check_commands
   run_check 'HTTP and TLS' check_http_tls
   run_check 'API release header' check_release_header
+  run_check 'guest browser API' check_guest_browser_api
 
   if [[ "$MODE" == '--origin' ]]; then
     run_check 'guest catalog' check_guest_catalog
