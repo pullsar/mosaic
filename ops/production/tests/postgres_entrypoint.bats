@@ -471,6 +471,14 @@ EOF
     "mixli postgres entrypoint: staged pgBackRest configuration is missing required keys"
 }
 
+@test "image contains system CA roots for encrypted remote backups" {
+  run docker run --rm --entrypoint sh "$IMAGE" -ceu \
+    'test -s /etc/ssl/certs/ca-certificates.crt'
+
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
 @test "wrapper atomically replaces an existing runtime target without leaving temporary files" {
   write_valid_config
   set_source_metadata 0:0 0600
