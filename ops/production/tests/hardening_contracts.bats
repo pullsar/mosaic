@@ -168,6 +168,14 @@ setup() { setup_repo_root; }
   done
 }
 
+@test "deployment waits for the Nginx master PID before reloading" {
+  script="$REPO_ROOT/ops/production/bin/deployment.sh"
+  reload="$(sed -n '/^reload_nginx()/,/^}/p' "$script")"
+
+  grep -Fq 'compose exec -T nginx test -s /var/run/nginx.pid' <<<"$reload"
+  grep -Fq 'for ((attempt = 1; attempt <= 50; attempt++))' <<<"$reload"
+}
+
 @test "textfile metrics are least-privilege readable and absence alerts" {
   for script in backup.sh restore-verify.sh; do
     grep -Fq 'install -d -o 65534 -g 65534 -m 0750 "$METRICS_DIR"' \
