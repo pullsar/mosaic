@@ -19,6 +19,16 @@ MosaicEventEnvelope _event() => MosaicEventEnvelope(
 );
 
 void main() {
+  test('guest engagement metadata is narrowly persisted and cleared', () {
+    final store = MosaicLocalStore.openInMemory();
+    const encoded = '{"seenIdentities":["request\\u0000revision"]}';
+    store.saveGuestEngagementJson(encoded);
+    expect(store.loadGuestEngagementJson(), encoded);
+    store.clearGuestEngagementJson();
+    expect(store.loadGuestEngagementJson(), isNull);
+    store.close();
+  });
+
   test(
     'v1 local consumer data migrates to v2 without identity or outbox loss',
     () {
