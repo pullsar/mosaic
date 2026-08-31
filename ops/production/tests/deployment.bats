@@ -326,6 +326,7 @@ deploy() {
   [ "$status" -ne 0 ]
   [ ! -e "$TEST_ROOT/runtime/api-upstream.conf" ]
   [ ! -e "$TEST_ROOT/current" ]
+  [ ! -L "$TEST_ROOT/current" ]
   [ ! -e "$TEST_ROOT/runtime/compose.yaml" ]
   grep -Fq 'rm --stop --force nginx api-blue-1 api-blue-2 api-green-1 api-green-2' \
     "$COMMAND_LOG"
