@@ -356,6 +356,20 @@ deploy() {
   [ "$(cat "$TEST_ROOT/runtime/compose.yaml")" = "compose:$OLD_SHA" ]
 }
 
+@test "guest browser preflight failure rolls back both atomic switches" {
+  MIXLI_TEST_FAIL_STAGE=guest-preflight run deploy "$SHA"
+  [ "$status" -ne 0 ]
+  [ "$(cat "$TEST_ROOT/runtime/api-upstream.conf")" = 'old-upstream' ]
+  [ "$(readlink "$TEST_ROOT/current")" = "$TEST_ROOT/releases/$OLD_SHA" ]
+  ! grep -q "^deployed:$SHA:" "$TEST_ROOT/log/deploy-events.log"
+
+  smoke="$(sed -n '/^smoke_release()/,/^}/p' \
+    "$REPO_ROOT/ops/production/bin/deployment.sh")"
+  [[ "$smoke" == *'check_guest_preflight'* ]]
+  [[ "$smoke" == *'https://api.mixli.app/v1/actors'* ]]
+  [[ "$smoke" == *'api.mixli.app:443:$origin_ip'* ]]
+}
+
 @test "failed deployment removes only production tags created by that attempt" {
   MIXLI_TEST_FAIL_STAGE=public-smoke run deploy "$SHA"
   [ "$status" -ne 0 ]

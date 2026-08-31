@@ -5,15 +5,30 @@ setup_file() {
   export ENV_FILE="ops/production/env/production.env.example"
   local synthetic_api_env="$BATS_FILE_TMPDIR/api.env"
   local synthetic_exporter_env="$BATS_FILE_TMPDIR/postgres-exporter.env"
+  local default_env="$BATS_FILE_TMPDIR/production-without-browser-origin.env"
   : >"$synthetic_api_env"
   : >"$synthetic_exporter_env"
+  grep -v '^MOSAIC_WEB_ORIGINS=' "$ENV_FILE" >"$default_env"
   CONFIG_JSON="$(
     env -u MIXLI_API_IMAGE -u MIXLI_POSTGRES_IMAGE \
       MIXLI_API_ENV_FILE="$synthetic_api_env" \
       MIXLI_POSTGRES_EXPORTER_ENV_FILE="$synthetic_exporter_env" \
       docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" config --format json
   )"
-  export CONFIG_JSON
+  DEFAULT_CONFIG_JSON="$(
+    env -u MOSAIC_WEB_ORIGINS -u MIXLI_API_IMAGE -u MIXLI_POSTGRES_IMAGE \
+      MIXLI_API_ENV_FILE="$synthetic_api_env" \
+      MIXLI_POSTGRES_EXPORTER_ENV_FILE="$synthetic_exporter_env" \
+      docker compose --env-file "$default_env" -f "$COMPOSE_FILE" config --format json
+  )"
+  CUSTOM_CONFIG_JSON="$(
+    env -u MIXLI_API_IMAGE -u MIXLI_POSTGRES_IMAGE \
+      MOSAIC_WEB_ORIGINS='https://preview.mixli.app' \
+      MIXLI_API_ENV_FILE="$synthetic_api_env" \
+      MIXLI_POSTGRES_EXPORTER_ENV_FILE="$synthetic_exporter_env" \
+      docker compose --env-file "$default_env" -f "$COMPOSE_FILE" config --format json
+  )"
+  export CONFIG_JSON DEFAULT_CONFIG_JSON CUSTOM_CONFIG_JSON
 }
 
 @test "Nginx is the only service publishing host ports" {
@@ -131,6 +146,18 @@ setup_file() {
       $cfg.services[$service].environment.MOSAIC_WEB_ORIGINS ==
         "https://mixli.app,https://www.mixli.app"
     )
-  ' <<<"$CONFIG_JSON"
+  ' <<<"$DEFAULT_CONFIG_JSON"
+  [ "$status" -eq 0 ]
+}
+
+@test "browser origin allowlist remains explicitly overrideable" {
+  run jq -e '
+    . as $cfg |
+    ["api-blue-1", "api-blue-2", "api-green-1", "api-green-2"] | all(
+      . as $service |
+      $cfg.services[$service].environment.MOSAIC_WEB_ORIGINS ==
+        "https://preview.mixli.app"
+    )
+  ' <<<"$CUSTOM_CONFIG_JSON"
   [ "$status" -eq 0 ]
 }

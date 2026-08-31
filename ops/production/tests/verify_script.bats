@@ -69,10 +69,16 @@ setup() {
 }
 
 @test "production verifier proves the Flutter web actor preflight" {
-  check="$(sed -n '/^check_guest_browser_api()/,/^}/p' "$VERIFY")"
+  check="$(sed -n '/^curl_preflight_headers()/,/^}/p' "$VERIFY")
+$(sed -n '/^check_guest_browser_api()/,/^}/p' "$VERIFY")"
   [[ "$check" == *'curl_preflight_headers api.mixli.app /v1/actors'* ]]
   [[ "$check" == *'https://mixli.app'* ]]
   [[ "$check" == *'access-control-allow-origin'* ]]
+  [[ "$check" == *'access-control-allow-methods'* ]]
+  [[ "$check" == *"',post,'"* ]]
   [[ "$check" == *'authorization'* ]]
   [[ "$check" == *'content-type'* ]]
+  [[ "$check" == *'access-control-allow-credentials'* ]]
+  [[ "$check" == *"status_code"* ]]
+  [[ "$check" == *"'204'"* ]]
 }
