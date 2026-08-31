@@ -176,11 +176,8 @@ final class IndexedDbConsumerLocalState
   }
 
   @override
-  Future<void> writeGuestEngagement(GuestEngagementState state) =>
-      _store.writeConsumerMetadata(
-        _guestEngagementKey,
-        jsonEncode(state.toJson()),
-      );
+  Future<void> writeGuestEngagement(GuestEngagementState state) => _store
+      .writeConsumerMetadata(_guestEngagementKey, jsonEncode(state.toJson()));
 }
 
 String _playActionKey(String playId) {
