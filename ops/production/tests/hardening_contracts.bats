@@ -99,6 +99,8 @@ setup() { setup_repo_root; }
   [[ "$smoke" == *'--cacert "$ORIGIN_CA"'* ]]
   [[ "$smoke" == *'--resolve api.mixli.app:443:127.0.0.1'* ]]
   [[ "$smoke" == *'--resolve mixli.app:443:127.0.0.1'* ]]
+  [[ "$smoke" == *'--retry-all-errors'* ]]
+  [[ "$(grep -Fc -- '--retry-max-time 30' <<<"$smoke")" -ge 2 ]]
   [[ "$smoke" != *'--insecure'* ]]
 }
 
