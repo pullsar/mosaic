@@ -313,6 +313,12 @@ deploy() {
   success_line="$(grep -n '^  record_success ' <<<"$main_body" | cut -d: -f1)"
   [ -n "$monitoring_line" ] && [ -n "$success_line" ]
   [ "$monitoring_line" -lt "$success_line" ]
+
+  auxiliary_body="$(sed -n '/^start_auxiliary_services()/,/^}/p' \
+    "$REPO_ROOT/ops/production/bin/deployment.sh")"
+  [[ "$auxiliary_body" == *"{{.State.Running}}:{{.RestartCount}}"* ]]
+  [[ "$auxiliary_body" == *'stable_passes=$((stable_passes + 1))'* ]]
+  [[ "$auxiliary_body" == *'stable_passes=0'* ]]
 }
 
 @test "public smoke failure rolls back both atomic switches" {

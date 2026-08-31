@@ -130,7 +130,8 @@ reload_nginx() {
 }
 
 start_auxiliary_services() {
-  local service attempt running
+  local service attempt container_id observation signature previous_signature=''
+  local all_running stable_passes=0
   local -a services=(
     prometheus alertmanager grafana node-exporter cadvisor nginx-exporter
     postgres-exporter
@@ -139,17 +140,36 @@ start_auxiliary_services() {
   compose up -d --no-deps "${services[@]}" || return 1
   [[ "$TEST_MODE" == '1' ]] && return 0
 
-  for service in "${services[@]}"; do
-    running=0
-    for ((attempt = 1; attempt <= 50; attempt++)); do
-      if [[ -n "$(compose ps -q "$service")" ]]; then
-        running=1
+  for ((attempt = 1; attempt <= 50; attempt++)); do
+    all_running=1
+    signature=''
+    for service in "${services[@]}"; do
+      container_id="$(compose ps -q "$service")"
+      if [[ -z "$container_id" ]]; then
+        all_running=0
         break
       fi
-      sleep 0.1
+
+      observation="$(docker inspect --format \
+        '{{.State.Running}}:{{.RestartCount}}' "$container_id")" || return 1
+      if [[ "$observation" != true:* ]]; then
+        all_running=0
+        break
+      fi
+      signature+="$service:$observation;"
     done
-    [[ "$running" == '1' ]] || return 1
+
+    if [[ "$all_running" == '1' && "$signature" == "$previous_signature" ]]; then
+      stable_passes=$((stable_passes + 1))
+      [[ "$stable_passes" -ge 5 ]] && return 0
+    else
+      stable_passes=0
+      previous_signature="$signature"
+    fi
+    sleep 1
   done
+
+  return 1
 }
 
 ensure_cloudflare_boundary() {
