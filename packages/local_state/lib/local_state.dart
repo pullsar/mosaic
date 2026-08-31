@@ -12,6 +12,7 @@ final RegExp _actorAccessTokenPattern = RegExp(r'^[A-Za-z0-9_-]{43}$');
 const _consumerOnboardingCompletedKey = 'consumer.onboarding_completed.v1';
 const _consumerMutedTopicsKey = 'consumer.muted_topics.v1';
 const _consumerPlayActionKeyPrefix = 'consumer.play_action.v1:';
+const _guestEngagementKey = 'guest_engagement.v1';
 const _maxConsumerMutedTopics = 512;
 
 enum InterestKind { interest, learning }
@@ -327,6 +328,19 @@ final class MosaicLocalStore {
         ]);
       }
     });
+  }
+
+  String? loadGuestEngagementJson() => _metadata(_guestEngagementKey);
+
+  void saveGuestEngagementJson(String value) {
+    if (value.isEmpty) {
+      throw ArgumentError.value(value, 'value', 'must not be empty');
+    }
+    _setMetadata(_guestEngagementKey, value);
+  }
+
+  void clearGuestEngagementJson() {
+    _db.execute('delete from metadata where key = ?', [_guestEngagementKey]);
   }
 
   void saveConsumerPlayActionState(LocalConsumerPlayActionState state) {

@@ -1,10 +1,14 @@
+import 'dart:convert';
+
 import 'package:local_state/local_state.dart';
 import 'package:play_schema/play_schema.dart';
 
 import 'consumer_api_client.dart';
 import 'consumer_local_state.dart';
+import 'guest_engagement.dart';
 
-final class SqliteConsumerLocalState implements ConsumerLocalState {
+final class SqliteConsumerLocalState
+    implements ConsumerLocalState, GuestEngagementStore {
   const SqliteConsumerLocalState(this._store);
 
   final MosaicLocalStore _store;
@@ -144,4 +148,26 @@ final class SqliteConsumerLocalState implements ConsumerLocalState {
   @override
   Future<void> writeMutedTopicIds(Iterable<String> topicIds) async =>
       _store.replaceConsumerMutedTopics(topicIds);
+
+  @override
+  Future<GuestEngagementState?> readGuestEngagement() async {
+    final encoded = _store.loadGuestEngagementJson();
+    if (encoded == null) return null;
+    try {
+      final decoded = jsonDecode(encoded);
+      if (decoded is! Map) {
+        throw const FormatException('guest engagement must be an object');
+      }
+      return GuestEngagementState.fromJson(
+        decoded.map((key, value) => MapEntry(key.toString(), value)),
+      );
+    } on Object {
+      _store.clearGuestEngagementJson();
+      return null;
+    }
+  }
+
+  @override
+  Future<void> writeGuestEngagement(GuestEngagementState state) async =>
+      _store.saveGuestEngagementJson(jsonEncode(state.toJson()));
 }

@@ -6,6 +6,7 @@ import 'package:play_schema/play_schema.dart';
 
 import 'consumer_api_client.dart';
 import 'consumer_local_state.dart';
+import 'guest_engagement.dart';
 
 const _preferencesKey = 'preferences.v1';
 const _onboardingCompletedKey = 'onboarding_completed.v1';
@@ -13,9 +14,11 @@ const _feedResumeKey = 'feed_resume.v1';
 const _recentFeedKey = 'recent_feed.v1';
 const _mutedTopicsKey = 'muted_topics.v1';
 const _playActionPrefix = 'play_action.v1.';
+const _guestEngagementKey = 'guest_engagement.v1';
 const _maxMutedTopics = 512;
 
-final class IndexedDbConsumerLocalState implements ConsumerLocalState {
+final class IndexedDbConsumerLocalState
+    implements ConsumerLocalState, GuestEngagementStore {
   const IndexedDbConsumerLocalState(this._store);
 
   final IndexedDbEventStore _store;
@@ -152,6 +155,31 @@ final class IndexedDbConsumerLocalState implements ConsumerLocalState {
       _store.writeConsumerMetadata(
         _mutedTopicsKey,
         jsonEncode(_normalizeTopicIds(topicIds)),
+      );
+
+  @override
+  Future<GuestEngagementState?> readGuestEngagement() async {
+    final encoded = await _store.readConsumerMetadata(_guestEngagementKey);
+    if (encoded == null) return null;
+    try {
+      final decoded = jsonDecode(encoded);
+      if (decoded is! Map) {
+        throw const FormatException('guest engagement must be an object');
+      }
+      return GuestEngagementState.fromJson(
+        decoded.map((key, value) => MapEntry(key.toString(), value)),
+      );
+    } on Object {
+      await _store.deleteConsumerMetadata(_guestEngagementKey);
+      return null;
+    }
+  }
+
+  @override
+  Future<void> writeGuestEngagement(GuestEngagementState state) =>
+      _store.writeConsumerMetadata(
+        _guestEngagementKey,
+        jsonEncode(state.toJson()),
       );
 }
 
