@@ -17,6 +17,7 @@ import 'consumer_api_client.dart';
 import 'consumer_feed.dart';
 import 'consumer_onboarding.dart';
 import 'consumer_runtime.dart';
+import 'consumer_search.dart';
 import 'event_runtime_resources_factory.dart';
 import 'onboarding_localizations.dart';
 import 'play_resolution_telemetry.dart';
@@ -71,6 +72,7 @@ final class _MosaicAppState extends State<MosaicApp> {
   late final PlayCanvasAssetResolver _canvasResolver;
   late final PlayVisualPrefetchController _visualPrefetch;
   late final FlutterLifecycleBridge _lifecycle;
+  _ConsumerSearchScope? _searchScope;
   var _semanticResumeEpoch = 0;
 
   @override
@@ -193,23 +195,21 @@ final class _MosaicAppState extends State<MosaicApp> {
     );
   }
 
-  Widget _buildFeedPlay(
-    BuildContext context,
-    ConsumerFeedItem item, {
-    required String feedRequestId,
+  Widget _buildPlaySurface(
+    BuildContext context, {
+    required String playId,
+    required String revisionId,
+    required PlayDocument play,
+    required Telemetry telemetry,
     required bool active,
     required ValueChanged<bool> onDirectManipulationChanged,
   }) {
-    final telemetry = _eventRuntime.telemetryForPlay(
-      feedRequestId: feedRequestId,
-      playRevisionId: item.revisionId,
-    );
     final videoDiagnostics = PlayVideoDiagnosticObserver(
       telemetry: telemetry,
       runtimeDiagnostics: const FlutterRuntimeDiagnostics(),
     );
     final media = PlayMediaLayerBuilder(
-      ownerId: playMediaOwnerId(item.play),
+      ownerId: playMediaOwnerId(play),
       visualResolver: _visualResolver,
       videoResolver: _videoResolver,
       videoPosterResolver: _videoPosterResolver,
@@ -222,18 +222,40 @@ final class _MosaicAppState extends State<MosaicApp> {
       semanticResumeEpoch: _semanticResumeEpoch,
       onVideoPlaybackEvent: videoDiagnostics.call,
     );
-    final surface = PlaySurface(
-      key: ValueKey<String>('play:${item.playId}:${item.revisionId}'),
-      play: item.play,
+    return PlaySurface(
+      key: ValueKey<String>('play:$playId:$revisionId'),
+      play: play,
       mediaBuilder: media.call,
       onResolved: (resolution) => recordPlayResolutionTelemetry(
         telemetry,
-        playId: item.playId,
+        playId: playId,
         outcome: resolution.outcome,
         attempts: resolution.session.attempts,
         completed: resolution.session.ended,
         correct: resolution.wasCorrect,
       ),
+      onDirectManipulationChanged: onDirectManipulationChanged,
+    );
+  }
+
+  Widget _buildFeedPlay(
+    BuildContext context,
+    ConsumerFeedItem item, {
+    required String feedRequestId,
+    required bool active,
+    required ValueChanged<bool> onDirectManipulationChanged,
+  }) {
+    final telemetry = _eventRuntime.telemetryForPlay(
+      feedRequestId: feedRequestId,
+      playRevisionId: item.revisionId,
+    );
+    final surface = _buildPlaySurface(
+      context,
+      playId: item.playId,
+      revisionId: item.revisionId,
+      play: item.play,
+      telemetry: telemetry,
+      active: active,
       onDirectManipulationChanged: onDirectManipulationChanged,
     );
     return ConsumerActionControls(
@@ -243,6 +265,76 @@ final class _MosaicAppState extends State<MosaicApp> {
       controller: _actionController,
       onAdvance: _feedController.advance,
       active: active,
+    );
+  }
+
+  Future<void> _openSearch(BuildContext context) async {
+    final selection = await Navigator.of(context).push<ConsumerSearchSelection>(
+      MaterialPageRoute<ConsumerSearchSelection>(
+        fullscreenDialog: true,
+        builder: (_) => ConsumerDiscoverySearch(
+          runtime: _consumerRuntime,
+          telemetry: _eventRuntime.telemetry,
+        ),
+      ),
+    );
+    if (!mounted || selection == null) return;
+    switch (selection) {
+      case ConsumerTopicSearchSelection():
+        setState(() {
+          _searchScope = _ConsumerSearchScope(
+            intent: ConsumerFeedSearchIntent(
+              intent: selection.intent,
+              topicId: selection.topicId,
+            ),
+            label: selection.label,
+          );
+        });
+      case ConsumerPlaySearchSelection():
+        await _openSearchPlay(context, selection.result);
+    }
+  }
+
+  Future<void> _openSearchPlay(
+    BuildContext context,
+    ConsumerSearchPlayResult result,
+  ) {
+    final telemetry = _eventRuntime.telemetryForStandalonePlay(
+      playRevisionId: result.revisionId,
+    );
+    return Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (routeContext) => Scaffold(
+          backgroundColor: Theme.of(routeContext).scaffoldBackgroundColor,
+          body: Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              _buildPlaySurface(
+                routeContext,
+                playId: result.playId,
+                revisionId: result.revisionId,
+                play: result.play,
+                telemetry: telemetry,
+                active: true,
+                onDirectManipulationChanged: (_) {},
+              ),
+              SafeArea(
+                minimum: const EdgeInsets.all(12),
+                child: Align(
+                  alignment: AlignmentDirectional.topStart,
+                  child: IconButton.filledTonal(
+                    tooltip: MaterialLocalizations.of(
+                      routeContext,
+                    ).backButtonTooltip,
+                    onPressed: () => Navigator.of(routeContext).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -278,57 +370,114 @@ final class _MosaicAppState extends State<MosaicApp> {
   }
 
   @override
-  Widget build(BuildContext context) => MaterialApp(
-    title: 'Mixli',
-    debugShowCheckedModeBanner: false,
-    themeMode: ThemeMode.system,
-    supportedLocales: MosaicOnboardingStrings.supportedLocales,
-    localizationsDelegates: const <LocalizationsDelegate<Object>>[
-      MosaicOnboardingStrings.delegate,
-      GlobalMaterialLocalizations.delegate,
-      GlobalWidgetsLocalizations.delegate,
-      GlobalCupertinoLocalizations.delegate,
-    ],
-    darkTheme: ThemeData(
-      brightness: Brightness.dark,
-      scaffoldBackgroundColor: MosaicVisualTokens.surface,
-      colorScheme: const ColorScheme.dark(
-        primary: MosaicVisualTokens.foreground,
-        onPrimary: MosaicVisualTokens.surface,
-        surface: MosaicVisualTokens.surface,
-        onSurface: MosaicVisualTokens.foreground,
+  Widget build(BuildContext context) {
+    final scope = _searchScope;
+    final feedKey = scope == null
+        ? 'consumer-feed:default'
+        : 'consumer-feed:${scope.intent.intent.wireName}:${scope.intent.topicId}';
+    return MaterialApp(
+      title: 'Mixli',
+      debugShowCheckedModeBanner: false,
+      themeMode: ThemeMode.system,
+      supportedLocales: MosaicOnboardingStrings.supportedLocales,
+      localizationsDelegates: const <LocalizationsDelegate<Object>>[
+        MosaicOnboardingStrings.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      darkTheme: ThemeData(
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: MosaicVisualTokens.surface,
+        colorScheme: const ColorScheme.dark(
+          primary: MosaicVisualTokens.foreground,
+          onPrimary: MosaicVisualTokens.surface,
+          surface: MosaicVisualTokens.surface,
+          onSurface: MosaicVisualTokens.foreground,
+        ),
       ),
-    ),
-    theme: ThemeData(
-      brightness: Brightness.light,
-      scaffoldBackgroundColor: const Color(0xFFFAFAF8),
-      colorScheme: const ColorScheme.light(
-        primary: Color(0xFF171717),
-        onPrimary: Color(0xFFFFFFFF),
-        surface: Color(0xFFFAFAF8),
-        onSurface: Color(0xFF171717),
+      theme: ThemeData(
+        brightness: Brightness.light,
+        scaffoldBackgroundColor: const Color(0xFFFAFAF8),
+        colorScheme: const ColorScheme.light(
+          primary: Color(0xFF171717),
+          onPrimary: Color(0xFFFFFFFF),
+          surface: Color(0xFFFAFAF8),
+          onSurface: Color(0xFF171717),
+        ),
       ),
-    ),
-    routes: {
-      MosaicSettingsRoute.privacy: (_) =>
-          const _ReservedSettingsPage('Privacy'),
-      MosaicSettingsRoute.support: (_) =>
-          const _ReservedSettingsPage('Support'),
-      MosaicSettingsRoute.deleteAccount: (_) =>
-          const _ReservedSettingsPage('Delete account'),
-    },
-    home: ConsumerOnboardingGate(
-      runtime: _consumerRuntime,
-      child: ConsumerFeed(
+      routes: {
+        MosaicSettingsRoute.privacy: (_) =>
+            const _ReservedSettingsPage('Privacy'),
+        MosaicSettingsRoute.support: (_) =>
+            const _ReservedSettingsPage('Support'),
+        MosaicSettingsRoute.deleteAccount: (_) =>
+            const _ReservedSettingsPage('Delete account'),
+      },
+      home: ConsumerOnboardingGate(
         runtime: _consumerRuntime,
-        itemBuilder: _buildFeedPlay,
-        controller: _feedController,
-        onEvent: _recordFeedEvent,
-        onWarmWindow: _warmFeedWindow,
-        onCancelWarmWindow: _cancelWarmWindow,
+        child: Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            ConsumerFeed(
+              key: ValueKey<String>(feedKey),
+              runtime: _consumerRuntime,
+              itemBuilder: _buildFeedPlay,
+              controller: _feedController,
+              searchIntent: scope?.intent,
+              persistRecovery: scope == null,
+              onEvent: _recordFeedEvent,
+              onWarmWindow: _warmFeedWindow,
+              onCancelWarmWindow: _cancelWarmWindow,
+            ),
+            SafeArea(
+              minimum: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+              child: Align(
+                alignment: AlignmentDirectional.topCenter,
+                child: Row(
+                  children: <Widget>[
+                    if (scope != null)
+                      Flexible(
+                        child: InputChip(
+                          key: const ValueKey<String>('search-scope'),
+                          avatar: Icon(
+                            scope.intent.intent == ConsumerSearchIntent.learning
+                                ? Icons.school_outlined
+                                : Icons.explore_outlined,
+                            size: 18,
+                          ),
+                          label: Text(
+                            scope.label,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          onDeleted: () => setState(() => _searchScope = null),
+                        ),
+                      )
+                    else
+                      const Spacer(),
+                    if (scope != null) const Spacer(),
+                    IconButton.filledTonal(
+                      key: const ValueKey<String>('open-search'),
+                      tooltip: 'Search',
+                      onPressed: () => unawaited(_openSearch(context)),
+                      icon: const Icon(Icons.search_rounded),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
+}
+
+final class _ConsumerSearchScope {
+  const _ConsumerSearchScope({required this.intent, required this.label});
+
+  final ConsumerFeedSearchIntent intent;
+  final String label;
 }
 
 PlayCapabilityEnvelope consumerCapabilitiesForAssetDelivery(

@@ -312,6 +312,7 @@ test('ranking errors fall back to compatible curated order without blocking feed
         interestAffinity: -1,
         learningAffinity: 1,
         interactionAffinity: 1,
+        searchIntentAffinity: 1,
         qualityPrior: 1,
         explorationBonus: 1,
         moreLikeThisAffinity: 1,
@@ -392,6 +393,36 @@ test('projection failure falls back to explicit profile without blocking feed', 
   const page = await service.getFeed({actorId: 'actor_profile_fallback', capabilities, limit: 2});
   assert.equal(page.items[0]?.playId, 'travel');
   assert.equal(errors.length, 1);
+});
+
+test('scoped search intent boosts one fresh decision without mutating preferences', async () => {
+  const repository = new MemoryConsumerRepository();
+  repository.preferences = {interestTopicIds: ['music'], learningTopicIds: []};
+  repository.candidates = [
+    candidate('music', 'r1', {topicIds: ['music'], curatedOrder: 1}),
+    candidate('travel', 'r2', {topicIds: ['travel'], curatedOrder: 2}),
+  ];
+  const service = new ConsumerFeedService(repository, {
+    windowSize: 2,
+    candidateLimit: 2,
+    requestIdFactory: () => 'search_scoped_feed',
+    searchTopicExists: async (topicId) => topicId === 'travel',
+  });
+
+  const page = await service.getFeed({
+    actorId: 'actor_search_scope',
+    capabilities,
+    limit: 2,
+    searchIntent: {kind: 'interest', topicId: 'travel'},
+  });
+  assert.equal(page.items[0]?.playId, 'travel');
+  assert.deepEqual(repository.preferences, {
+    interestTopicIds: ['music'],
+    learningTopicIds: [],
+  });
+  const ranked = repository.decisions.get('search_scoped_feed')?.ranked;
+  assert.ok(ranked);
+  assert.ok((ranked[0]?.featureContributions.searchIntentAffinity ?? 0) > 0);
 });
 
 test('feed window introduces one wildcard only when top window lacks exploration', () => {

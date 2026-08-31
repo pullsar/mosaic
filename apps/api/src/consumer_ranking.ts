@@ -15,6 +15,8 @@ export interface ConsumerRankingProfile {
   interestTopicIds: readonly string[];
   learningTopicIds: readonly string[];
   interactionAffinity?: Readonly<Record<string, number>>;
+  searchInterestTopicIds?: readonly string[];
+  searchLearningTopicIds?: readonly string[];
   recentPlayRevisionKeys?: readonly string[];
   topicDismissalCounts?: Readonly<Record<string, number>>;
   formatDismissalCounts?: Readonly<Record<string, number>>;
@@ -26,6 +28,7 @@ export interface ConsumerRankingWeights {
   interestAffinity: number;
   learningAffinity: number;
   interactionAffinity: number;
+  searchIntentAffinity: number;
   qualityPrior: number;
   explorationBonus: number;
   moreLikeThisAffinity: number;
@@ -52,6 +55,7 @@ export const defaultConsumerRankingConfig: ConsumerRankingConfig = Object.freeze
     interestAffinity: 1,
     learningAffinity: 1.15,
     interactionAffinity: 0.55,
+    searchIntentAffinity: 1.35,
     qualityPrior: 0.5,
     explorationBonus: 0.2,
     moreLikeThisAffinity: 1.25,
@@ -87,7 +91,15 @@ export function rankFeedCandidates(
 
     const interest = hasOverlap(candidate.topicIds, normalized.interestTopicIds) ? 1 : 0;
     const learning = hasOverlap(candidate.learningTopicIds, normalized.learningTopicIds) ? 1 : 0;
-    const known = interest > 0 || learning > 0;
+    const searchInterest = hasOverlap(candidate.topicIds, normalized.searchInterestTopicIds) ? 1 : 0;
+    const searchLearning = hasOverlap(
+      candidate.learningTopicIds,
+      normalized.searchLearningTopicIds,
+    )
+      ? 1
+      : 0;
+    const searchIntent = Math.max(searchInterest, searchLearning);
+    const known = interest > 0 || learning > 0 || searchIntent > 0;
     const sourceBucket: FeedSourceBucket = known
       ? 'known'
       : hasExplicitPreference
@@ -115,6 +127,7 @@ export function rankFeedCandidates(
       interestAffinity: interest * config.weights.interestAffinity,
       learningAffinity: learning * config.weights.learningAffinity,
       interactionAffinity: interaction * config.weights.interactionAffinity,
+      searchIntentAffinity: searchIntent * config.weights.searchIntentAffinity,
       qualityPrior: candidate.qualityPrior * config.weights.qualityPrior,
       explorationBonus: exploration * config.weights.explorationBonus,
       moreLikeThisAffinity: moreLike * config.weights.moreLikeThisAffinity,
@@ -181,6 +194,8 @@ function normalizeProfile(profile: ConsumerRankingProfile) {
   return {
     interestTopicIds: normalizedSet(profile.interestTopicIds),
     learningTopicIds: normalizedSet(profile.learningTopicIds),
+    searchInterestTopicIds: normalizedSet(profile.searchInterestTopicIds ?? []),
+    searchLearningTopicIds: normalizedSet(profile.searchLearningTopicIds ?? []),
     recentPlayRevisionKeys: exactSet(profile.recentPlayRevisionKeys ?? []),
     moreLikeTopicIds: normalizedSet(profile.moreLikeTopicIds ?? []),
     mutedTopicIds: normalizedSet(profile.mutedTopicIds ?? []),

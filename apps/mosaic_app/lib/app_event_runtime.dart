@@ -105,6 +105,25 @@ final class AppEventRuntime {
     );
   }
 
+  Telemetry telemetryForStandalonePlay({required String playRevisionId}) {
+    if (_closed) {
+      throw StateError('App event runtime is closed.');
+    }
+    final controller = _drainController;
+    return MosaicEventTelemetry(
+      outbox: resources.outbox,
+      contextProvider: () => EventContext(
+        actorId: resources.actorId,
+        sessionId: sessionId,
+        playRevisionId: playRevisionId,
+      ),
+      onQueued: controller == null
+          ? null
+          : () => _drainSafely(controller, _onError),
+      onInternalError: _onError,
+    );
+  }
+
   void requestDrain() {
     if (_closed) return;
     final controller = _drainController;

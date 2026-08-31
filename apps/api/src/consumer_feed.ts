@@ -34,11 +34,17 @@ export interface FeedPage {
   nextCursor: string | null;
 }
 
+export interface ConsumerFeedSearchIntent {
+  kind: 'interest' | 'learning';
+  topicId: string;
+}
+
 export interface FeedRequest {
   actorId: string;
   capabilities: ClientCapabilities;
   cursor?: string | null;
   limit?: number;
+  searchIntent?: ConsumerFeedSearchIntent;
 }
 
 export interface ConsumerFeedServiceOptions {
@@ -50,6 +56,7 @@ export interface ConsumerFeedServiceOptions {
   onProfileError?: (error: unknown) => void;
   assetReadiness?: FeedAssetReadinessResolver;
   signalProjector?: ConsumerSignalProjector;
+  searchTopicExists?: (topicId: string) => Promise<boolean>;
 }
 
 export class InvalidFeedCursorError extends Error {
@@ -68,6 +75,7 @@ export class ConsumerFeedService {
   private readonly onProfileError: ((error: unknown) => void) | undefined;
   private readonly assetReadiness: FeedAssetReadinessResolver | undefined;
   private readonly signalProjector: ConsumerSignalProjector | undefined;
+  private readonly searchTopicExists: ((topicId: string) => Promise<boolean>) | undefined;
 
   constructor(
     private readonly repository: ConsumerRepository,
@@ -91,6 +99,7 @@ export class ConsumerFeedService {
     this.onProfileError = options.onProfileError;
     this.assetReadiness = options.assetReadiness;
     this.signalProjector = options.signalProjector;
+    this.searchTopicExists = options.searchTopicExists;
   }
 
   async getFeed(input: FeedRequest): Promise<FeedPage> {
@@ -113,7 +122,13 @@ export class ConsumerFeedService {
 
     const profile = await this.repository.getFeedProfile(actorId);
     const derived = await this.loadDerivedProfile(actorId);
-    const rankingProfile = derived === null ? profile : {...profile, ...derived};
+    const searchIntent = await this.validateSearchIntent(input.searchIntent);
+    const baseRankingProfile = derived === null ? profile : {...profile, ...derived};
+    const rankingProfile = searchIntent === null
+      ? baseRankingProfile
+      : searchIntent.kind === 'interest'
+        ? {...baseRankingProfile, searchInterestTopicIds: [searchIntent.topicId]}
+        : {...baseRankingProfile, searchLearningTopicIds: [searchIntent.topicId]};
     const candidates = await this.repository.listEligibleFeedCandidates(this.candidateLimit);
     const compatible = candidates.filter(
       (candidate) => checkPlayCompatibility(candidate.document, input.capabilities).compatible,
@@ -158,6 +173,20 @@ export class ConsumerFeedService {
     );
     if (!stored) throw new Error('Persisted feed decision could not be reloaded.');
     return pageFromStored(stored, 0, pageSize);
+  }
+
+  private async validateSearchIntent(
+    value: ConsumerFeedSearchIntent | undefined,
+  ): Promise<ConsumerFeedSearchIntent | null> {
+    if (value === undefined) return null;
+    if (value.kind !== 'interest' && value.kind !== 'learning') {
+      throw new TypeError('search intent kind must be interest or learning.');
+    }
+    const topicId = requiredText(value.topicId, 'searchIntent.topicId');
+    if (this.searchTopicExists !== undefined && !(await this.searchTopicExists(topicId))) {
+      throw new TypeError('search intent topic does not exist.');
+    }
+    return {kind: value.kind, topicId};
   }
 
   private async loadDerivedProfile(actorId: string) {
