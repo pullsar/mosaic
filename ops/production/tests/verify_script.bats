@@ -52,3 +52,8 @@ setup() {
   [[ "$check" == *'postgres pgbackrest --stanza=mixli check'* ]]
   [[ "$check" != *'--repo='* ]]
 }
+
+@test "WAL freshness uses the configured database role and database" {
+  check="$(sed -n '/^check_backup_wal()/,/^}/p' "$VERIFY")"
+  [[ "$check" == *'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'* ]]
+}
