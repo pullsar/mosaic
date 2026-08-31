@@ -790,7 +790,13 @@ main() {
     had_upstream=1
     cp "$RUNTIME/api-upstream.conf" "$upstream_backup"
   fi
-  previous_web="$(readlink -f "$ROOT/current" 2>/dev/null || true)"
+  previous_web=''
+  if [[ -L "$ROOT/current" ]]; then
+    previous_web="$(readlink -f "$ROOT/current")"
+    [[ -n "$previous_web" && -d "$previous_web" ]] || return 1
+  elif [[ -e "$ROOT/current" ]]; then
+    return 1
+  fi
   switched=1
   write_upstream "$target_pool"
   switch_web "$RELEASES/$SHA"
