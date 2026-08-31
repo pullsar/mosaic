@@ -298,6 +298,22 @@ deploy() {
   ! grep -qx "deployed:$SHA:green" "$TEST_ROOT/log/deploy-events.log"
 }
 
+@test "successful deployment starts private monitoring before recording success" {
+  run deploy "$SHA"
+  [ "$status" -eq 0 ]
+
+  grep -Fq \
+    'up -d --no-deps prometheus alertmanager grafana node-exporter cadvisor nginx-exporter postgres-exporter' \
+    "$COMMAND_LOG"
+
+  main_body="$(sed -n '/^main()/,/^}/p' \
+    "$REPO_ROOT/ops/production/bin/deployment.sh")"
+  monitoring_line="$(grep -n '^  start_auxiliary_services$' <<<"$main_body" | cut -d: -f1)"
+  success_line="$(grep -n '^  record_success ' <<<"$main_body" | cut -d: -f1)"
+  [ -n "$monitoring_line" ] && [ -n "$success_line" ]
+  [ "$monitoring_line" -lt "$success_line" ]
+}
+
 @test "public smoke failure rolls back both atomic switches" {
   MIXLI_TEST_FAIL_STAGE=public-smoke run deploy "$SHA"
   [ "$status" -ne 0 ]

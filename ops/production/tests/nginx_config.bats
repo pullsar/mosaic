@@ -137,3 +137,18 @@ curl_origin() {
   run grep -E 'proxy_set_header[[:space:]]+Connection[[:space:]]+\$connection_upgrade' "$config"
   [ "$status" -eq 0 ]
 }
+
+@test "edge starts while the optional Grafana backend is unavailable" {
+  docker rm -f "$GRAFANA" >/dev/null
+  docker restart "$NGINX_CONTAINER" >/dev/null
+
+  for _ in $(seq 1 10); do
+    if [ "$(docker inspect -f '{{.State.Running}}' "$NGINX_CONTAINER")" = true ]; then
+      return 0
+    fi
+    sleep 0.2
+  done
+
+  docker logs "$NGINX_CONTAINER" >&2
+  return 1
+}
