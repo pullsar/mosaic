@@ -315,8 +315,8 @@ deploy() {
 
   [ ! -e "$TEST_ROOT/images/mixli-api__$SHA" ]
   [ ! -e "$TEST_ROOT/images/mixli-postgres__$SHA" ]
-  grep -Fxq "image rm mixli-api:$SHA" "$COMMAND_LOG"
-  grep -Fxq "image rm mixli-postgres:$SHA" "$COMMAND_LOG"
+  grep -Fxq "image rm --force mixli-api:$SHA" "$COMMAND_LOG"
+  grep -Fxq "image rm --force mixli-postgres:$SHA" "$COMMAND_LOG"
 }
 
 @test "failed first deployment leaves no latent upstream or web link" {
