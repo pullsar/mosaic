@@ -305,7 +305,7 @@ promote_release_images() {
 cleanup_new_production_images() {
   local cleanup_status status=0
   if [[ "$api_production_tag_created" == '1' ]]; then
-    if docker image rm "$API_IMAGE" >/dev/null; then
+    if docker image rm --force "$API_IMAGE" >/dev/null; then
       api_production_tag_created=0
     else
       cleanup_status=$?
@@ -314,7 +314,7 @@ cleanup_new_production_images() {
     fi
   fi
   if [[ "$postgres_production_tag_created" == '1' ]]; then
-    if docker image rm "$POSTGRES_IMAGE" >/dev/null; then
+    if docker image rm --force "$POSTGRES_IMAGE" >/dev/null; then
       postgres_production_tag_created=0
     else
       cleanup_status=$?
