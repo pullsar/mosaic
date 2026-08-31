@@ -673,18 +673,53 @@ final class _FeedEmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ColoredBox(
-    color: Theme.of(context).scaffoldBackgroundColor,
+    color: const Color(0xFF050505),
     child: SafeArea(
       child: Center(
-        child: Semantics(
-          label: failed ? 'Feed unavailable' : 'No playable items available',
-          child: IconButton.filledTonal(
-            key: const ValueKey<String>('feed-empty-retry'),
-            tooltip: failed ? 'Retry feed' : 'Refresh feed',
-            onPressed: onRetry,
-            icon: Icon(
-              failed ? Icons.refresh_rounded : Icons.explore_outlined,
-              size: 30,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 360),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Icon(
+                  failed
+                      ? Icons.wifi_tethering_error_rounded
+                      : Icons.auto_awesome_rounded,
+                  size: 34,
+                  color: Colors.white,
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  failed ? 'Fresh Plays are loading' : 'Nothing fresh yet',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  failed
+                      ? 'Your feed is safe. Give it another moment.'
+                      : 'Come back soon for a new mix.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xFFB9B9C0),
+                    fontSize: 15,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 22),
+                FilledButton.tonalIcon(
+                  key: const ValueKey<String>('feed-empty-retry'),
+                  onPressed: onRetry,
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: Text(failed ? 'Try again' : 'Refresh'),
+                ),
+              ],
             ),
           ),
         ),
