@@ -106,6 +106,22 @@ test(
         await applyProductionCatalog(pool);
       }
 
+      try {
+        await pool.query(
+          `update play_revision_topics
+              set role = 'learning'
+            where play_id = 'mixli_starter_quick_logic'
+              and revision_id = 'rev_1'
+              and topic_id = 'logic'`,
+        );
+        await assert.rejects(
+          verifyProductionCatalog(pool),
+          /topic links differ from release content/,
+        );
+      } finally {
+        await applyProductionCatalog(pool);
+      }
+
       const unrelatedCount = await pool.query<{count: number}>(
         'select count(*)::int as count from plays where id = $1',
         [unrelated],
