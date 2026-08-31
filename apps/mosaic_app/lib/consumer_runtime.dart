@@ -106,6 +106,29 @@ final class ConsumerRuntime {
     return client.searchTopics(query: query, limit: limit);
   }
 
+  Future<ConsumerApiResult<ConsumerSearchPage>> search({
+    String? query,
+    ConsumerSearchIntent? intent,
+    String? cursor,
+    int limit = 12,
+  }) {
+    final client = api;
+    if (client == null) {
+      return Future.value(
+        const ConsumerApiFailure<ConsumerSearchPage>(
+          ConsumerApiFailureKind.retryable,
+        ),
+      );
+    }
+    return client.search(
+      capabilities: capabilities,
+      query: query,
+      intent: intent,
+      cursor: cursor,
+      limit: limit,
+    );
+  }
+
   /// Persists a preference mutation without issuing a network request.
   ///
   /// Onboarding uses this per committed selection, then batches the remote
@@ -264,11 +287,13 @@ final class ConsumerRuntime {
     String? cursor,
     int limit = 8,
     bool persistPage = true,
+    bool recoverOnFailure = true,
+    ConsumerFeedSearchIntent? searchIntent,
   }) async {
     final client = api;
     if (client == null) {
       return ConsumerFeedLoadResult(
-        recovered: await _recoverRecentFeed(),
+        recovered: recoverOnFailure ? await _recoverRecentFeed() : null,
         failure: ConsumerApiFailureKind.retryable,
       );
     }
@@ -277,6 +302,7 @@ final class ConsumerRuntime {
       capabilities: capabilities,
       cursor: cursor,
       limit: limit,
+      searchIntent: searchIntent,
     );
     if (first is ConsumerApiSuccess<ConsumerFeedPage>) {
       if (persistPage) await _persistNetworkPage(first.value);
@@ -291,6 +317,7 @@ final class ConsumerRuntime {
         capabilities: capabilities,
         cursor: null,
         limit: limit,
+        searchIntent: searchIntent,
       );
       if (retry is ConsumerApiSuccess<ConsumerFeedPage>) {
         if (persistPage) await _persistNetworkPage(retry.value);
@@ -298,7 +325,7 @@ final class ConsumerRuntime {
       }
       final retryFailure = retry as ConsumerApiFailure<ConsumerFeedPage>;
       return ConsumerFeedLoadResult(
-        recovered: await _recoverRecentFeed(),
+        recovered: recoverOnFailure ? await _recoverRecentFeed() : null,
         failure: retryFailure.kind,
         statusCode: retryFailure.statusCode,
         cursorReset: true,
@@ -306,7 +333,7 @@ final class ConsumerRuntime {
     }
 
     return ConsumerFeedLoadResult(
-      recovered: await _recoverRecentFeed(),
+      recovered: recoverOnFailure ? await _recoverRecentFeed() : null,
       failure: firstFailure.kind,
       statusCode: firstFailure.statusCode,
     );

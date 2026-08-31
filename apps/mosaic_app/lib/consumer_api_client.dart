@@ -43,6 +43,200 @@ final class ConsumerTopic {
   );
 }
 
+enum ConsumerSearchIntent {
+  interest('interest'),
+  learning('learning');
+
+  const ConsumerSearchIntent(this.wireName);
+  final String wireName;
+
+  static ConsumerSearchIntent fromWire(Object? value) {
+    for (final intent in values) {
+      if (intent.wireName == value) return intent;
+    }
+    throw FormatException('Unsupported search intent: $value');
+  }
+}
+
+enum ConsumerSearchMatchKind {
+  topicExact('topic_exact'),
+  topicPrefix('topic_prefix'),
+  playExact('play_exact'),
+  playPrefix('play_prefix');
+
+  const ConsumerSearchMatchKind(this.wireName);
+  final String wireName;
+
+  static ConsumerSearchMatchKind fromWire(Object? value) {
+    for (final kind in values) {
+      if (kind.wireName == value) return kind;
+    }
+    throw FormatException('Unsupported search match kind: $value');
+  }
+}
+
+sealed class ConsumerSearchResult {
+  const ConsumerSearchResult({required this.position, required this.matchKind});
+
+  final int position;
+  final ConsumerSearchMatchKind matchKind;
+}
+
+final class ConsumerSearchTopicResult extends ConsumerSearchResult {
+  ConsumerSearchTopicResult({
+    required super.position,
+    required super.matchKind,
+    required String topicId,
+    required String label,
+  }) : topicId = _requiredText(topicId, 'topicId', 200),
+       label = _requiredText(label, 'label', 200) {
+    if (matchKind != ConsumerSearchMatchKind.topicExact &&
+        matchKind != ConsumerSearchMatchKind.topicPrefix) {
+      throw const FormatException('Topic result requires a topic match kind.');
+    }
+  }
+
+  final String topicId;
+  final String label;
+
+  factory ConsumerSearchTopicResult.fromJson(Map<String, Object?> json) =>
+      ConsumerSearchTopicResult(
+        position: _requiredBoundedInt(json['position'], 'position', 0, 59),
+        matchKind: ConsumerSearchMatchKind.fromWire(json['matchKind']),
+        topicId: _requiredJsonString(json, 'topicId', 200),
+        label: _requiredJsonString(json, 'label', 200),
+      );
+}
+
+final class ConsumerSearchPlayResult extends ConsumerSearchResult {
+  ConsumerSearchPlayResult._({
+    required super.position,
+    required super.matchKind,
+    required this.playId,
+    required this.revisionId,
+    required this.play,
+  });
+
+  final String playId;
+  final String revisionId;
+  final PlayDocument play;
+
+  static ConsumerSearchPlayResult fromJson(
+    Map<String, Object?> json, {
+    required PlayCompatibilityChecker compatibilityChecker,
+    required PlayCapabilityEnvelope capabilities,
+  }) {
+    final playId = _requiredJsonString(json, 'playId', 200);
+    final revisionId = _requiredJsonString(json, 'revisionId', 200);
+    final matchKind = ConsumerSearchMatchKind.fromWire(json['matchKind']);
+    if (matchKind != ConsumerSearchMatchKind.playExact &&
+        matchKind != ConsumerSearchMatchKind.playPrefix &&
+        matchKind != ConsumerSearchMatchKind.topicExact &&
+        matchKind != ConsumerSearchMatchKind.topicPrefix) {
+      throw const FormatException('Invalid Play search match kind.');
+    }
+    final play = _validatedPlayDocument(
+      _jsonObject(json['document'], 'search Play document'),
+      playId: playId,
+      revisionId: revisionId,
+      compatibilityChecker: compatibilityChecker,
+      capabilities: capabilities,
+    );
+    return ConsumerSearchPlayResult._(
+      position: _requiredBoundedInt(json['position'], 'position', 0, 59),
+      matchKind: matchKind,
+      playId: playId,
+      revisionId: revisionId,
+      play: play,
+    );
+  }
+}
+
+final class ConsumerSearchPage {
+  ConsumerSearchPage._({
+    required this.requestId,
+    required this.intent,
+    required this.queryHash,
+    required this.resultCount,
+    required this.items,
+    required this.nextCursor,
+  });
+
+  final String requestId;
+  final ConsumerSearchIntent intent;
+  final String queryHash;
+  final int resultCount;
+  final List<ConsumerSearchResult> items;
+  final String? nextCursor;
+
+  static ConsumerSearchPage fromJson(
+    Map<String, Object?> json, {
+    required PlayCompatibilityChecker compatibilityChecker,
+    required PlayCapabilityEnvelope capabilities,
+  }) {
+    final rawItems = json['items'];
+    if (rawItems is! List || rawItems.length > 20) {
+      throw const FormatException(
+        'search items must contain at most 20 results',
+      );
+    }
+    final queryHash = _requiredJsonString(json, 'queryHash', 64);
+    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(queryHash)) {
+      throw const FormatException('queryHash must be SHA-256 hex');
+    }
+    final rawCursor = json['nextCursor'];
+    if (rawCursor != null && rawCursor is! String) {
+      throw const FormatException('search nextCursor must be a string or null');
+    }
+    final items = <ConsumerSearchResult>[];
+    for (final raw in rawItems) {
+      final item = _jsonObject(raw, 'search item');
+      switch (item['kind']) {
+        case 'topic':
+          items.add(ConsumerSearchTopicResult.fromJson(item));
+        case 'play':
+          items.add(
+            ConsumerSearchPlayResult.fromJson(
+              item,
+              compatibilityChecker: compatibilityChecker,
+              capabilities: capabilities,
+            ),
+          );
+        default:
+          throw const FormatException('search item kind must be topic or play');
+      }
+    }
+    return ConsumerSearchPage._(
+      requestId: _requiredJsonString(json, 'requestId', 200),
+      intent: ConsumerSearchIntent.fromWire(json['intent']),
+      queryHash: queryHash,
+      resultCount: _requiredBoundedInt(
+        json['resultCount'],
+        'resultCount',
+        0,
+        60,
+      ),
+      items: List<ConsumerSearchResult>.unmodifiable(items),
+      nextCursor: rawCursor == null
+          ? null
+          : _requiredText(rawCursor as String, 'nextCursor', 512),
+    );
+  }
+}
+
+final class ConsumerFeedSearchIntent {
+  ConsumerFeedSearchIntent({required this.intent, required String topicId})
+    : topicId = _requiredText(topicId, 'topicId', 200);
+
+  final ConsumerSearchIntent intent;
+  final String topicId;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'kind': intent.wireName,
+    'topicId': topicId,
+  };
+}
+
 final class ConsumerPreferences {
   ConsumerPreferences({
     List<String> interestTopicIds = const [],
@@ -182,19 +376,13 @@ final class ConsumerFeedItem {
     final sourceBucket = ConsumerFeedSourceBucket.fromWire(
       json['sourceBucket'],
     );
-    final rawDocument = _jsonObject(json['document'], 'feed item document');
-    final decoded = compatibilityChecker.decode(rawDocument, capabilities);
-    if (decoded is! DecodedPlay) {
-      throw const FormatException(
-        'Feed item Play is malformed or unsupported.',
-      );
-    }
-    final play = decoded.play;
-    if (play.id != playId || play.revisionId != revisionId) {
-      throw const FormatException(
-        'Feed item identifiers do not match the decoded Play.',
-      );
-    }
+    final play = _validatedPlayDocument(
+      _jsonObject(json['document'], 'feed item document'),
+      playId: playId,
+      revisionId: revisionId,
+      compatibilityChecker: compatibilityChecker,
+      capabilities: capabilities,
+    );
     return ConsumerFeedItem._(
       playId: playId,
       revisionId: revisionId,
@@ -343,6 +531,79 @@ final class ConsumerApiClient {
     }
   }
 
+  Future<ConsumerApiResult<ConsumerSearchPage>> search({
+    required PlayCapabilityEnvelope capabilities,
+    String? query,
+    ConsumerSearchIntent? intent,
+    String? cursor,
+    int limit = 12,
+  }) async {
+    if (limit < 1 || limit > 20) {
+      throw ArgumentError.value(limit, 'limit', 'must be between 1 and 20');
+    }
+    if (cursor != null && (cursor.isEmpty || cursor.length > 512)) {
+      throw ArgumentError.value(
+        cursor,
+        'cursor',
+        'must be 1 to 512 characters',
+      );
+    }
+    String? normalizedQuery;
+    if (cursor == null) {
+      normalizedQuery = query?.trim().replaceAll(RegExp(r'\s+'), ' ');
+      if (normalizedQuery == null ||
+          normalizedQuery.isEmpty ||
+          normalizedQuery.length > 80) {
+        throw ArgumentError.value(query, 'query', 'must be 1 to 80 characters');
+      }
+      if (intent == null) {
+        throw ArgumentError.notNull('intent');
+      }
+    }
+    final registrationFailure = await _ensureRegistered<ConsumerSearchPage>();
+    if (registrationFailure != null) return registrationFailure;
+    final response = await _send(
+      () => _client.post(
+        _policy.resolve('v1/search'),
+        headers: actorAuthorizationHeaders(
+          _actorAccess.accessToken,
+          json: true,
+        ),
+        body: jsonEncode(<String, Object?>{
+          'actorId': _actorAccess.actorId,
+          'capabilities': capabilities.toJson(),
+          'cursor': cursor,
+          'limit': limit,
+          if (cursor == null) 'query': normalizedQuery,
+          if (cursor == null) 'intent': intent!.wireName,
+        }),
+      ),
+    );
+    if (response == null) {
+      return const ConsumerApiFailure(ConsumerApiFailureKind.retryable);
+    }
+    if (response.statusCode != 200) {
+      return _failureForResponse(
+        response,
+        invalidCursorCode: 'invalid_search_cursor',
+      );
+    }
+    try {
+      return ConsumerApiSuccess(
+        ConsumerSearchPage.fromJson(
+          _decodeResponseObject(response.body),
+          compatibilityChecker: _compatibilityChecker,
+          capabilities: capabilities,
+        ),
+      );
+    } on Object {
+      return const ConsumerApiFailure(
+        ConsumerApiFailureKind.malformedResponse,
+        statusCode: 200,
+      );
+    }
+  }
+
   Future<ConsumerApiResult<ConsumerPreferences>> getPreferences() async {
     final registrationFailure = await _ensureRegistered<ConsumerPreferences>();
     if (registrationFailure != null) return registrationFailure;
@@ -440,6 +701,7 @@ final class ConsumerApiClient {
     required PlayCapabilityEnvelope capabilities,
     String? cursor,
     int limit = 8,
+    ConsumerFeedSearchIntent? searchIntent,
   }) async {
     if (limit < 1 || limit > 20) {
       throw ArgumentError.value(limit, 'limit', 'must be between 1 and 20');
@@ -465,6 +727,7 @@ final class ConsumerApiClient {
           'capabilities': capabilities.toJson(),
           'cursor': cursor,
           'limit': limit,
+          if (searchIntent != null) 'searchIntent': searchIntent.toJson(),
         }),
       ),
     );
@@ -472,7 +735,10 @@ final class ConsumerApiClient {
       return const ConsumerApiFailure(ConsumerApiFailureKind.retryable);
     }
     if (response.statusCode != 200) {
-      return _failureForResponse(response, invalidCursorAware: true);
+      return _failureForResponse(
+        response,
+        invalidCursorCode: 'invalid_feed_cursor',
+      );
     }
     try {
       return ConsumerApiSuccess(
@@ -541,7 +807,7 @@ final class ConsumerApiClient {
 
   ConsumerApiFailure<T> _failureForResponse<T>(
     http.Response response, {
-    bool invalidCursorAware = false,
+    String? invalidCursorCode,
   }) {
     final statusCode = response.statusCode;
     if (statusCode == 401 || statusCode == 403) {
@@ -556,9 +822,9 @@ final class ConsumerApiClient {
         statusCode: statusCode,
       );
     }
-    if (invalidCursorAware &&
+    if (invalidCursorCode != null &&
         statusCode == 400 &&
-        _responseErrorCode(response.body) == 'invalid_feed_cursor') {
+        _responseErrorCode(response.body) == invalidCursorCode) {
       return ConsumerApiFailure(
         ConsumerApiFailureKind.invalidCursor,
         statusCode: statusCode,
@@ -576,6 +842,33 @@ final class ConsumerApiClient {
     _registered = false;
     if (_ownsClient) _client.close();
   }
+}
+
+PlayDocument _validatedPlayDocument(
+  Map<String, Object?> rawDocument, {
+  required String playId,
+  required String revisionId,
+  required PlayCompatibilityChecker compatibilityChecker,
+  required PlayCapabilityEnvelope capabilities,
+}) {
+  final decoded = compatibilityChecker.decode(rawDocument, capabilities);
+  if (decoded is! DecodedPlay) {
+    throw const FormatException('Play is malformed or unsupported.');
+  }
+  final play = decoded.play;
+  if (play.id != playId || play.revisionId != revisionId) {
+    throw const FormatException(
+      'Play identifiers do not match the decoded document.',
+    );
+  }
+  return play;
+}
+
+int _requiredBoundedInt(Object? value, String field, int min, int max) {
+  if (value is! int || value < min || value > max) {
+    throw FormatException('$field must be an integer between $min and $max');
+  }
+  return value;
 }
 
 Map<String, Object?> _decodeResponseObject(String body) {

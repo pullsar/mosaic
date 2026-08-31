@@ -9,11 +9,21 @@ import {
   parseClientCapabilities,
 } from './contracts/compatibility.js';
 import {ConsumerActionEventError} from './consumer_actions.js';
-import {ConsumerFeedService, InvalidFeedCursorError} from './consumer_feed.js';
+import {
+  ConsumerFeedService,
+  type ConsumerFeedSearchIntent,
+  InvalidFeedCursorError,
+} from './consumer_feed.js';
 import {
   type ConsumerRepository,
   UnknownTopicError,
 } from './consumer_repository.js';
+import {ConsumerSearchEventError} from './consumer_search_events.js';
+import {ConsumerSearchService, InvalidSearchCursorError} from './consumer_search.js';
+import type {
+  ConsumerSearchIntent,
+  ConsumerSearchRepository,
+} from './consumer_search_repository.js';
 import type {ConsumerSignalProjector} from './consumer_signal_projector.js';
 import type {FeedAssetReadinessResolver} from './feed_asset_readiness.js';
 import type {EventInput, MosaicRepository} from './repository.js';
@@ -26,6 +36,7 @@ const CORS_EXPOSE_HEADERS = 'accept-ranges,content-length,content-range';
 export interface BuildAppOptions {
   repository: MosaicRepository;
   consumerRepository?: ConsumerRepository;
+  consumerSearchRepository?: ConsumerSearchRepository;
   consumerSignalProjector?: ConsumerSignalProjector;
   feedAssetReadiness?: FeedAssetReadinessResolver;
   logLevel?: string;
@@ -79,8 +90,19 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
         ...(options.feedAssetReadiness === undefined
           ? {}
           : {assetReadiness: options.feedAssetReadiness}),
+        ...(options.consumerSearchRepository === undefined
+          ? {}
+          : {searchTopicExists: (topicId: string) => options.consumerSearchRepository!.topicExists(topicId)}),
       })
     : null;
+  const searchService =
+    options.consumerRepository && options.consumerSearchRepository
+      ? new ConsumerSearchService(options.consumerSearchRepository, options.consumerRepository, {
+          ...(options.feedAssetReadiness === undefined
+            ? {}
+            : {assetReadiness: options.feedAssetReadiness}),
+        })
+      : null;
 
   app.addHook('onRequest', async (request, reply) => {
     const origin = request.headers.origin;
@@ -150,6 +172,9 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       if (error instanceof ConsumerActionEventError) {
         return reply.code(400).send({error: 'invalid_consumer_action'});
       }
+      if (error instanceof ConsumerSearchEventError) {
+        return reply.code(400).send({error: 'invalid_search_event'});
+      }
       throw error;
     }
   });
@@ -187,6 +212,50 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       const topics = await consumerRepository.searchTopics(search, limit);
       return {topics};
     });
+
+    if (searchService) {
+      app.post('/v1/search', async (request, reply) => {
+        if (!isRecord(request.body)) {
+          return reply.code(400).send({error: 'invalid_search_request'});
+        }
+        const actorId = boundedText(request.body.actorId, 200);
+        const capabilities = parseClientCapabilities(request.body.capabilities);
+        const cursor = nullableText(request.body.cursor, 512);
+        const limit = optionalInteger(request.body.limit, 12, 1, 20);
+        const query = request.body.query === undefined
+          ? undefined
+          : boundedText(request.body.query, 80) ?? undefined;
+        const intent = parseSearchIntent(request.body.intent);
+        if (
+          actorId === null ||
+          !capabilities ||
+          cursor === undefined ||
+          limit === null ||
+          (cursor === null && (query === undefined || intent === undefined))
+        ) {
+          return reply.code(400).send({error: 'invalid_search_request'});
+        }
+        if (!(await requireActorAccess(options.repository, request, reply, actorId))) return;
+        try {
+          return await searchService.search({
+            actorId,
+            capabilities,
+            cursor,
+            limit,
+            ...(query === undefined ? {} : {query}),
+            ...(intent === undefined ? {} : {intent}),
+          });
+        } catch (error) {
+          if (error instanceof InvalidSearchCursorError) {
+            return reply.code(400).send({error: 'invalid_search_cursor'});
+          }
+          if (isInputError(error)) {
+            return reply.code(400).send({error: 'invalid_search_request'});
+          }
+          throw error;
+        }
+      });
+    }
 
     app.get('/v1/actors/:actorId/preferences', async (request, reply) => {
       const params = request.params as {actorId?: string};
@@ -243,12 +312,25 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       const capabilities = parseClientCapabilities(request.body.capabilities);
       const cursor = nullableText(request.body.cursor, 512);
       const limit = optionalInteger(request.body.limit, 8, 1, 20);
-      if (actorId === null || !capabilities || cursor === undefined || limit === null) {
+      const searchIntent = parseFeedSearchIntent(request.body.searchIntent);
+      if (
+        actorId === null ||
+        !capabilities ||
+        cursor === undefined ||
+        limit === null ||
+        searchIntent === null
+      ) {
         return reply.code(400).send({error: 'invalid_feed_request'});
       }
       if (!(await requireActorAccess(options.repository, request, reply, actorId))) return;
       try {
-        return await feedService.getFeed({actorId, capabilities, cursor, limit});
+        return await feedService.getFeed({
+          actorId,
+          capabilities,
+          cursor,
+          limit,
+          ...(searchIntent === undefined ? {} : {searchIntent}),
+        });
       } catch (error) {
         if (error instanceof InvalidFeedCursorError) {
           return reply.code(400).send({error: 'invalid_feed_cursor'});
@@ -302,6 +384,18 @@ function optionalText(value: unknown, maxLength: number): string | null {
   if (typeof value !== 'string') return null;
   const text = value.trim();
   return text.length <= maxLength ? text : null;
+}
+
+function parseSearchIntent(value: unknown): ConsumerSearchIntent | undefined {
+  return value === 'interest' || value === 'learning' ? value : undefined;
+}
+
+function parseFeedSearchIntent(value: unknown): ConsumerFeedSearchIntent | undefined | null {
+  if (value === undefined || value === null) return undefined;
+  if (!isRecord(value)) return null;
+  const kind = parseSearchIntent(value.kind);
+  const topicId = boundedText(value.topicId, 200);
+  return kind === undefined || topicId === null ? null : {kind, topicId};
 }
 
 function nullableText(value: unknown, maxLength: number): string | null | undefined {

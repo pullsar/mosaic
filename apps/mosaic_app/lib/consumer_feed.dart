@@ -72,6 +72,8 @@ final class ConsumerFeed extends StatefulWidget {
     this.onEvent,
     this.onWarmWindow,
     this.onCancelWarmWindow,
+    this.searchIntent,
+    this.persistRecovery = true,
     this.pageSize = 6,
     this.maxRetainedItems = ConsumerFeedCache.maxItems,
     this.fetchAheadItems = 2,
@@ -91,6 +93,8 @@ final class ConsumerFeed extends StatefulWidget {
   final ConsumerFeedEventSink? onEvent;
   final ConsumerFeedWarmWindowCallback? onWarmWindow;
   final VoidCallback? onCancelWarmWindow;
+  final ConsumerFeedSearchIntent? searchIntent;
+  final bool persistRecovery;
   final int pageSize;
   final int maxRetainedItems;
   final int fetchAheadItems;
@@ -166,8 +170,12 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
 
   Future<void> _bootstrap() async {
     final epoch = ++_loadEpoch;
-    final resume = await widget.runtime.readFeedResume();
-    final recovered = await widget.runtime.recoverRecentFeed();
+    final resume = widget.persistRecovery
+        ? await widget.runtime.readFeedResume()
+        : null;
+    final recovered = widget.persistRecovery
+        ? await widget.runtime.recoverRecentFeed()
+        : null;
     if (!mounted || epoch != _loadEpoch) return;
 
     if (recovered != null && recovered.items.isNotEmpty) {
@@ -234,6 +242,8 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
       cursor: cursor,
       limit: widget.pageSize,
       persistPage: false,
+      recoverOnFailure: widget.persistRecovery,
+      searchIntent: cursor == null ? widget.searchIntent : null,
     );
     if (!mounted || requestEpoch != _loadEpoch) return;
 
@@ -459,6 +469,7 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
   }
 
   void _queuePersistence() {
+    if (!widget.persistRecovery) return;
     if (_entries.isEmpty || _currentIndex >= _entries.length) return;
     final visible = _entries[_currentIndex];
     final decisionEntries = _entries

@@ -99,18 +99,21 @@ export class PostgresConsumerRepository implements ConsumerRepository {
   async searchTopics(query: string, limit = 30): Promise<TopicSummary[]> {
     const normalizedQuery = query.trim().toLowerCase();
     const boundedLimit = boundedInteger(limit, 1, 100, 'limit');
+    const prefix = `${escapeLike(normalizedQuery)}%`;
     const result = await this.pool.query<TopicSummary>(
       `select id, label
          from topics
         where $1 = ''
-           or position($1 in lower(id)) > 0
-           or position($1 in lower(label)) > 0
+           or lower(id) = $1
+           or lower(label) = $1
+           or lower(id) like $2 escape '\\'
+           or lower(label) like $2 escape '\\'
         order by
           case when lower(id) = $1 or lower(label) = $1 then 0 else 1 end,
           label asc,
           id asc
-        limit $2`,
-      [normalizedQuery, boundedLimit],
+        limit $3`,
+      [normalizedQuery, prefix, boundedLimit],
     );
     return result.rows;
   }
@@ -471,6 +474,10 @@ async function insertPreferences(
        from unnest($3::text[]) as selected(topic_id)`,
     [actorId, kind, topicIds],
   );
+}
+
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (match) => `\\${match}`);
 }
 
 function normalizeTopicIds(values: readonly string[], name: string): string[] {

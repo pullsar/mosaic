@@ -207,6 +207,148 @@ void main() {
     },
   );
 
+  test(
+    'search decodes typed topic and Play results and sends distinct intent',
+    () async {
+      Map<String, Object?>? searchBody;
+      final client = ConsumerApiClient(
+        baseUri: Uri.parse('https://api.example.test/'),
+        actorAccess: _actorAccess,
+        client: MockClient((request) async {
+          if (request.url.path == '/v1/actors') return http.Response('{}', 201);
+          if (request.url.path == '/v1/search') {
+            searchBody = jsonDecode(request.body) as Map<String, Object?>;
+            return http.Response(
+              jsonEncode(<String, Object?>{
+                'requestId': 'search_request_1',
+                'intent': 'learning',
+                'queryHash': 'a' * 64,
+                'resultCount': 2,
+                'items': <Object?>[
+                  <String, Object?>{
+                    'kind': 'topic',
+                    'position': 0,
+                    'topicId': 'science',
+                    'label': 'Science',
+                    'matchKind': 'topic_exact',
+                  },
+                  <String, Object?>{
+                    'kind': 'play',
+                    'position': 1,
+                    'playId': 'play_1',
+                    'revisionId': 'rev_1',
+                    'matchKind': 'topic_prefix',
+                    'document': _playJson(),
+                  },
+                ],
+                'nextCursor': null,
+              }),
+              200,
+            );
+          }
+          return http.Response('{}', 404);
+        }),
+      );
+
+      final result = await client.search(
+        capabilities: PlayCapabilityEnvelope.m1(),
+        query: ' science ',
+        intent: ConsumerSearchIntent.learning,
+      );
+
+      expect(result, isA<ConsumerApiSuccess<ConsumerSearchPage>>());
+      final page = (result as ConsumerApiSuccess<ConsumerSearchPage>).value;
+      expect(page.intent, ConsumerSearchIntent.learning);
+      expect(page.items.first, isA<ConsumerSearchTopicResult>());
+      expect(page.items.last, isA<ConsumerSearchPlayResult>());
+      expect((page.items.last as ConsumerSearchPlayResult).play.id, 'play_1');
+      expect(searchBody?['query'], 'science');
+      expect(searchBody?['intent'], 'learning');
+    },
+  );
+
+  test(
+    'search rejects Play envelope mismatch and maps its own invalid cursor',
+    () async {
+      var invalidCursor = false;
+      final client = ConsumerApiClient(
+        baseUri: Uri.parse('https://api.example.test/'),
+        actorAccess: _actorAccess,
+        client: MockClient((request) async {
+          if (request.url.path == '/v1/actors') return http.Response('{}', 201);
+          if (invalidCursor) {
+            return http.Response('{"error":"invalid_search_cursor"}', 400);
+          }
+          return http.Response(
+            jsonEncode(<String, Object?>{
+              'requestId': 'search_request_2',
+              'intent': 'interest',
+              'queryHash': 'b' * 64,
+              'resultCount': 1,
+              'items': <Object?>[
+                <String, Object?>{
+                  'kind': 'play',
+                  'position': 0,
+                  'playId': 'other_play',
+                  'revisionId': 'rev_1',
+                  'matchKind': 'play_prefix',
+                  'document': _playJson(),
+                },
+              ],
+              'nextCursor': null,
+            }),
+            200,
+          );
+        }),
+      );
+
+      final malformed = await client.search(
+        capabilities: PlayCapabilityEnvelope.m1(),
+        query: 'play',
+        intent: ConsumerSearchIntent.interest,
+      );
+      expect(
+        (malformed as ConsumerApiFailure<ConsumerSearchPage>).kind,
+        ConsumerApiFailureKind.malformedResponse,
+      );
+
+      invalidCursor = true;
+      final cursor = await client.search(
+        capabilities: PlayCapabilityEnvelope.m1(),
+        cursor: 'opaque_cursor',
+      );
+      expect(
+        (cursor as ConsumerApiFailure<ConsumerSearchPage>).kind,
+        ConsumerApiFailureKind.invalidCursor,
+      );
+    },
+  );
+
+  test('fresh feed carries ephemeral scoped topic intent', () async {
+    Map<String, Object?>? feedBody;
+    final client = ConsumerApiClient(
+      baseUri: Uri.parse('https://api.example.test/'),
+      actorAccess: _actorAccess,
+      client: MockClient((request) async {
+        if (request.url.path == '/v1/actors') return http.Response('{}', 201);
+        feedBody = jsonDecode(request.body) as Map<String, Object?>;
+        return http.Response(jsonEncode(_feedJson(nextCursor: null)), 200);
+      }),
+    );
+
+    await client.fetchFeed(
+      capabilities: PlayCapabilityEnvelope.m1(),
+      searchIntent: ConsumerFeedSearchIntent(
+        intent: ConsumerSearchIntent.learning,
+        topicId: 'piano',
+      ),
+    );
+    expect(feedBody?['searchIntent'], <String, Object?>{
+      'kind': 'learning',
+      'topicId': 'piano',
+    });
+  });
+
   test('public topic search does not require actor registration', () async {
     final paths = <String>[];
     final client = ConsumerApiClient(

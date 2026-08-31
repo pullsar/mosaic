@@ -124,11 +124,15 @@ Widget _app(
   ConsumerFeedWarmWindowCallback? onWarmWindow,
   ConsumerFeedController? controller,
   int pageSize = 6,
+  ConsumerFeedSearchIntent? searchIntent,
+  bool persistRecovery = true,
 }) => MaterialApp(
   home: ConsumerFeed(
     runtime: runtime,
     controller: controller,
     pageSize: pageSize,
+    searchIntent: searchIntent,
+    persistRecovery: persistRecovery,
     onEvent: onEvent,
     onWarmWindow: onWarmWindow,
     itemBuilder:
@@ -188,6 +192,63 @@ void main() {
     expect(find.text('cached_1'), findsOneWidget);
     expect(find.byKey(const ValueKey<String>('feed-retry')), findsOneWidget);
   });
+
+  testWidgets(
+    'scoped search feed neither restores nor overwrites normal feed recovery',
+    (tester) async {
+      final state = _MemoryConsumerState();
+      final cached = _item('normal_cached');
+      state.cache = ConsumerFeedCache(
+        requestId: 'normal_request',
+        items: <ConsumerFeedItem>[cached],
+        updatedAt: DateTime.now().toUtc(),
+      );
+      state.resume = ConsumerFeedResume(
+        requestId: 'normal_request',
+        cursor: null,
+        visibleRevisionId: cached.revisionId,
+        visiblePosition: 0,
+        windowRevisionIds: <String>[cached.revisionId],
+        updatedAt: DateTime.now().toUtc(),
+      );
+      final network = Completer<http.Response>();
+      final runtime = _runtime(
+        state,
+        (cursor, call) => network.future,
+        onFeedRequest: (_) {},
+      );
+      addTearDown(runtime.close);
+
+      await tester.pumpWidget(
+        _app(
+          runtime,
+          persistRecovery: false,
+          searchIntent: ConsumerFeedSearchIntent(
+            intent: ConsumerSearchIntent.interest,
+            topicId: 'travel',
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('normal_cached'), findsNothing);
+      expect(state.resumeWriteCalls, 0);
+
+      network.complete(
+        http.Response(
+          jsonEncode(
+            _page('search_request', <ConsumerFeedItem>[
+              _item('search_live'),
+            ], null),
+          ),
+          200,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('search_live'), findsOneWidget);
+      expect(state.resumeWriteCalls, 0);
+      expect(state.cache?.items.single.playId, 'normal_cached');
+    },
+  );
 
   testWidgets('direct manipulation locks only the active vertical page', (
     tester,

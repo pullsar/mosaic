@@ -260,8 +260,24 @@ test('PostgreSQL media lifecycle is immutable, leased and stale-worker safe', {s
   }
 });
 
-test('actions, canvas, image, actor access, consumer and media migrations roll back in order and cleanly reapply', {skip: !databaseUrl}, async () => {
+test('search, profile, actions, canvas, image, actor access, consumer and media migrations roll back in order and cleanly reapply', {skip: !databaseUrl}, async () => {
   await runMigration('up');
+
+  await runMigration('down');
+  const searchDownPool = new Pool({connectionString: databaseUrl});
+  try {
+    const afterSearchDown = await searchDownPool.query<{
+      consumer_search_decisions: string | null;
+      consumer_signal_profiles: string | null;
+    }>(
+      `select to_regclass('public.consumer_search_decisions')::text as consumer_search_decisions,
+              to_regclass('public.consumer_signal_profiles')::text as consumer_signal_profiles`,
+    );
+    assert.equal(afterSearchDown.rows[0]?.consumer_search_decisions, null);
+    assert.equal(afterSearchDown.rows[0]?.consumer_signal_profiles, 'consumer_signal_profiles');
+  } finally {
+    await searchDownPool.end();
+  }
 
   await runMigration('down');
   const profileDownPool = new Pool({connectionString: databaseUrl});

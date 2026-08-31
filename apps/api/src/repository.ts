@@ -1,6 +1,10 @@
 import {timingSafeEqual} from 'node:crypto';
 import {Pool} from 'pg';
 import {
+  isConsumerSearchEvent,
+  validateConsumerSearchEvent,
+} from './consumer_search_events.js';
+import {
   isConsumerActionEvent,
   projectConsumerActionEvent,
 } from './consumer_actions.js';
@@ -149,6 +153,7 @@ export class PostgresRepository implements MosaicRepository {
   }
 
   async insertEvent(event: EventInput): Promise<'inserted' | 'duplicate'> {
+    if (isConsumerSearchEvent(event.event)) validateConsumerSearchEvent(event);
     if (!isConsumerActionEvent(event.event)) {
       const result = await this.pool.query<InsertedEventRow>(
         INSERT_EVENT_SQL,
