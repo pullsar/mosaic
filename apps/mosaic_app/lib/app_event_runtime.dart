@@ -22,7 +22,6 @@ final class AppEventRuntime {
 
   factory AppEventRuntime.create({
     required AppEventResources resources,
-    required String playRevisionId,
     String apiBaseUrl = '',
     bool allowInsecureLocalhost = false,
     AppEventRuntimeErrorReporter? onError,
@@ -36,6 +35,7 @@ final class AppEventRuntime {
       try {
         transport = HttpEventTransport(
           baseUri: Uri.parse(configuredApi),
+          actorAccess: resources.actorAccess,
           allowInsecureLocalhost: allowInsecureLocalhost,
         );
         drainController = EventDrainController(
@@ -48,16 +48,14 @@ final class AppEventRuntime {
     }
 
     final controller = drainController;
+    final onQueued = controller == null
+        ? null
+        : () => _drainSafely(controller, onError);
     final telemetry = MosaicEventTelemetry(
       outbox: resources.outbox,
-      contextProvider: () => EventContext(
-        actorId: resources.actorId,
-        sessionId: sessionId,
-        playRevisionId: playRevisionId,
-      ),
-      onQueued: controller == null
-          ? null
-          : () => _drainSafely(controller, onError),
+      contextProvider: () =>
+          EventContext(actorId: resources.actorId, sessionId: sessionId),
+      onQueued: onQueued,
       onInternalError: onError,
     );
 
@@ -71,11 +69,8 @@ final class AppEventRuntime {
     );
   }
 
-  factory AppEventRuntime.disabled({required String playRevisionId}) =>
-      AppEventRuntime.create(
-        resources: AppEventResources.disabled(),
-        playRevisionId: playRevisionId,
-      );
+  factory AppEventRuntime.disabled() =>
+      AppEventRuntime.create(resources: AppEventResources.disabled());
 
   final AppEventResources resources;
   final Telemetry telemetry;
@@ -86,6 +81,48 @@ final class AppEventRuntime {
   var _closed = false;
 
   bool get deliveryConfigured => _drainController != null;
+
+  Telemetry telemetryForPlay({
+    required String feedRequestId,
+    required String playRevisionId,
+  }) {
+    if (_closed) {
+      throw StateError('App event runtime is closed.');
+    }
+    final controller = _drainController;
+    return MosaicEventTelemetry(
+      outbox: resources.outbox,
+      contextProvider: () => EventContext(
+        actorId: resources.actorId,
+        sessionId: sessionId,
+        feedRequestId: feedRequestId,
+        playRevisionId: playRevisionId,
+      ),
+      onQueued: controller == null
+          ? null
+          : () => _drainSafely(controller, _onError),
+      onInternalError: _onError,
+    );
+  }
+
+  Telemetry telemetryForStandalonePlay({required String playRevisionId}) {
+    if (_closed) {
+      throw StateError('App event runtime is closed.');
+    }
+    final controller = _drainController;
+    return MosaicEventTelemetry(
+      outbox: resources.outbox,
+      contextProvider: () => EventContext(
+        actorId: resources.actorId,
+        sessionId: sessionId,
+        playRevisionId: playRevisionId,
+      ),
+      onQueued: controller == null
+          ? null
+          : () => _drainSafely(controller, _onError),
+      onInternalError: _onError,
+    );
+  }
 
   void requestDrain() {
     if (_closed) return;

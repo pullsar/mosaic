@@ -1,22 +1,39 @@
 import 'package:analytics_contract/analytics_contract.dart';
 import 'package:event_delivery/event_delivery.dart';
 
+import 'consumer_local_state.dart';
+
 final class AppEventResources {
   const AppEventResources({
     required this.outbox,
+    required this.consumerLocalState,
     required this.actorId,
+    required this.actorAccessToken,
     required this.close,
   });
 
-  factory AppEventResources.disabled() => AppEventResources(
-    outbox: _DiscardingEventOutbox(),
-    actorId: secureUuidV4(),
-    close: _noopClose,
-  );
+  factory AppEventResources.disabled() {
+    final actorAccess = ActorAccessIdentity(
+      actorId: secureUuidV4(),
+      accessToken: secureActorAccessToken(),
+    );
+    return AppEventResources(
+      outbox: _DiscardingEventOutbox(),
+      consumerLocalState: const DisabledConsumerLocalState(),
+      actorId: actorAccess.actorId,
+      actorAccessToken: actorAccess.accessToken,
+      close: _noopClose,
+    );
+  }
 
   final EventOutbox outbox;
+  final ConsumerLocalState consumerLocalState;
   final String actorId;
+  final String actorAccessToken;
   final Future<void> Function() close;
+
+  ActorAccessIdentity get actorAccess =>
+      ActorAccessIdentity(actorId: actorId, accessToken: actorAccessToken);
 }
 
 Future<void> _noopClose() async {}

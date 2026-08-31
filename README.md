@@ -1,12 +1,12 @@
-# Mosaic
+# Mixli
 
 > **The feed you play.**
 
-Mosaic is a personalized feed of tiny interactive experiences built around what a person is into and what they want to learn. Every Play can be dismissed immediately or engaged as a small **Guess, Choose, Solve, Play, or Discover** experience.
+Mixli is a personalized feed of tiny interactive experiences built around what a person is into and what they want to learn. Every Play can be dismissed immediately or engaged as a small **Guess, Choose, Solve, Play, or Discover** experience.
 
 Examples: identify a beautiful place from a short clip, play back a piano phrase, solve a visual puzzle, choose a four-day getaway under real constraints, recognize an artwork, or answer a compact quiz about an interest.
 
-Mosaic is not a course product and not a passive short-video clone.
+Mixli is not a course product and not a passive short-video clone.
 
 ## Core loops
 
@@ -22,14 +22,14 @@ SEE → REMIX → PUBLISH → OTHERS PLAY
 PLAY → SHARE → RECIPIENT PLAYS → RESPONDS / CONTINUES
 ```
 
-A shared public Play works in the browser before the recipient installs Mosaic.
+A shared public Play works in the browser before the recipient installs Mixli.
 
 ## Product principles
 
 - **The Play is the interface.** Content and direct interaction dominate chrome and copy.
 - **Visual first.** Consumer Play surfaces target roughly 88% primary content/supporting visuals, 9% controls/motion, and 3% visible text as an attention heuristic.
 - **Play, don't prescribe.** No forced routines, lessons, streak pressure, or completion gates.
-- **Interests and learning intent are separate.** Mosaic learns both what users enjoy and what they want to know more about.
+- **Interests and learning intent are separate.** Mixli learns both what users enjoy and what they want to know more about.
 - **Swipe is freedom.** Any Play can be dismissed instantly.
 - **Value before registration.** Anonymous users can play first.
 - **Creation is the moat.** Templates, remix lineage, resilient media tooling, and a constrained Play runtime make interactive creation cheap enough to compound.
@@ -56,7 +56,9 @@ play_flutter    # Flutter renderers
 iOS / Android / Web
 ```
 
-The Flutter choice is product-specific: Mosaic needs predictable, highly controlled media, gesture, animation, drawing, and audio interactions across native and shared-web surfaces.
+The Flutter choice is product-specific: Mixli needs predictable, highly controlled media, gesture, animation, drawing, and audio interactions across native and shared-web surfaces.
+
+The source path `apps/mosaic_app`, repository slug, package identifiers, and existing `MOSAIC_*` configuration names are legacy technical identifiers. The user-facing product name is **Mixli**. See [`AGENTS.md`](AGENTS.md) before changing compatibility-sensitive names.
 
 ## Launch surface
 
@@ -71,6 +73,11 @@ Formats:
 5. **Discover** — art, culture, travel, nature, history, faith, or curiosity where forced gamification would weaken the experience.
 
 ## Documentation
+
+### Agent and readiness guidance
+
+- [`AGENTS.md`](AGENTS.md) — repository-wide product, architecture, experience, performance, accessibility, testing, and PR guardrails for implementation agents.
+- [`docs/experience-readiness-plan.md`](docs/experience-readiness-plan.md) — current experience-readiness bar, execution sequence, QA matrix, evidence requirements, and launch gates.
 
 ### Product and experience
 
@@ -101,9 +108,20 @@ Formats:
 
 ## Current status
 
-**Foundation and the core M1 declarative Play renderer are merged.**
+**The shared Play foundation, production M1 renderer/media path, and the core M2 consumer transport/runtime/feed foundation are merged.**
 
-The repository now includes the Flutter workspace/schema-engine foundation, capability negotiation, API/data foundation, lifecycle/permissions/privacy baseline, bounded process-death recovery, and production image/video/audio/canvas Play rendering. Issue #3 remains open only for the focused visual-regression/profiling acceptance tranche before the roadmap widens further into the consumer loop.
+`main` now includes the Flutter workspace/schema-engine foundation, capability negotiation, API/data foundation, lifecycle/permissions/privacy baseline, bounded native/web recovery, durable cross-platform event delivery, production image/video/audio/canvas rendering, anonymous actor ownership, interpretable feed-ranking foundation, cross-platform consumer local state/runtime, the optional two-screen visual onboarding flow, bounded full-screen feed paging, and managed mixed-media asset delivery.
+
+The active consumer critical path is:
+
+```text
+#52 explicit controls/actions
+  → #53 interaction-signal projection
+  → #54 intentional discovery/search
+  → #55 integrated M2 acceptance
+```
+
+Accessibility parity (#17) and the remaining physical 60/120 Hz profiling evidence (#3) can close in parallel. GitHub issue #48 is the evolving implementation-order tracker; [`docs/experience-readiness-plan.md`](docs/experience-readiness-plan.md) defines the experience/evidence bar.
 
 ## Controlled-beta test
 

@@ -1,4 +1,4 @@
-# Mosaic Play Schema Evolution
+# Mixli Play Schema Evolution
 
 ## Purpose
 

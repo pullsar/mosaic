@@ -1,4 +1,4 @@
-# Mosaic — Implementation Plan
+# Mixli — Implementation Plan
 
 ## 1. Objective
 
@@ -36,13 +36,13 @@ The first controlled beta must prove that users prefer a personalized playable f
 - No arbitrary creator code/plugins.
 - Rights, moderation, kill switches, crash reporting, rollback, and performance telemetry exist before controlled launch.
 
-See [`visual-language-and-copy-spec.md`](visual-language-and-copy-spec.md) and [`dependency-and-platform-decisions.md`](dependency-and-platform-decisions.md).
+See [`visual-language-and-copy-spec.md`](visual-language-and-copy-spec.md), [`experience-readiness-plan.md`](experience-readiness-plan.md), and [`dependency-and-platform-decisions.md`](dependency-and-platform-decisions.md).
 
 ## 3. Repository shape
 
 ```text
 apps/
-  mosaic_app/          # Flutter iOS/Android/web consumer + native creator shell
+  mosaic_app/          # legacy technical path: Mixli Flutter iOS/Android/web consumer + native creator shell
   api/                 # server API/jobs (implementation language may differ)
 
 packages/
@@ -66,7 +66,7 @@ Use Dart pub workspaces initially. Avoid a monorepo orchestrator until commands 
 - Riverpod for app/service state.
 - go_router for routes/deep links.
 - first-party `video_player` for short clips initially.
-- `flutter_soloud` behind Mosaic `AudioEngine` for timing-sensitive audio.
+- `flutter_soloud` behind Mixli `AudioEngine` for timing-sensitive audio.
 - Drift only when local relational persistence is justified.
 - Flutter `CustomPainter`/Impeller before adding any separate game engine.
 - Sentry Flutter before beta.
@@ -96,8 +96,8 @@ Unsupported primitives must declare a clear web fallback; they may not silently 
 
 ### Experimentation/operability
 
-- Mosaic-owned canonical event stream;
-- GrowthBook Flutter preferred behind Mosaic flag adapter after license/deployment review;
+- Mixli-owned canonical event stream;
+- GrowthBook Flutter preferred behind Mixli flag adapter after license/deployment review;
 - Sentry Flutter for crash/performance telemetry.
 
 ## 5. Milestone 0 — Flutter workspace + contracts
@@ -263,7 +263,7 @@ RECIPIENT PLAYS IN BROWSER
   ↓
 RESULT / SENDER COMPARISON
   ↓
-PLAY ANOTHER / GET MOSAIC
+PLAY ANOTHER / GET MIXLI
 ```
 
 ### Exit criteria
@@ -559,7 +559,7 @@ Before controlled beta:
 
 ## 19. Controlled-launch ready
 
-Mosaic is ready when:
+Mixli is ready when:
 
 - anonymous user can play immediately;
 - interests and learning intent are captured separately and visually;

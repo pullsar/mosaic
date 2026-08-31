@@ -1,8 +1,8 @@
-# Mosaic — Growth & Sharing Specification
+# Mixli — Growth & Sharing Specification
 
 ## 1. Purpose
 
-Mosaic should spread through the thing people already enjoy using: the Play.
+Mixli should spread through the thing people already enjoy using: the Play.
 
 The growth loop is:
 
@@ -33,7 +33,7 @@ Examples:
 - **Guess before you see mine.**
 - **I got 2/3. Your turn.**
 
-The recipient should understand the interaction before learning anything about Mosaic.
+The recipient should understand the interaction before learning anything about Mixli.
 
 ## 3. Web Play requirement
 
@@ -47,7 +47,7 @@ Required behavior:
 - support image, short clip, choice, puzzle, and basic audio Plays at launch;
 - degrade unsupported native-only primitives explicitly rather than silently changing the Play;
 - record anonymous outcome events;
-- offer **Play another** and **Get Mosaic** only after the recipient has received value.
+- offer **Play another** and **Get Mixli** only after the recipient has received value.
 
 The web runtime uses the same schema and validation contract as native. It must not become a second content model.
 
@@ -94,7 +94,7 @@ Launch share surfaces:
 - challenge after a completed Play;
 - contextual **Send** from Play actions.
 
-Do not build a Mosaic messaging system for v1.
+Do not build a Mixli messaging system for v1.
 
 ## 6. Deep-link behavior
 
@@ -105,7 +105,7 @@ installed app → native Play
 not installed → web Play
 ```
 
-Deferred deep-link attribution may be added through a provider later, but Mosaic must own the canonical URL and link data model.
+Deferred deep-link attribution may be added through a provider later, but Mixli must own the canonical URL and link data model.
 
 Provider integration is behind a `DeepLinkProvider` abstraction.
 

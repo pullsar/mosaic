@@ -2,7 +2,7 @@ import {createHash} from 'node:crypto';
 
 export type MediaAssetKind = 'image' | 'video' | 'audio';
 export type MediaAssetState = 'registered' | 'uploaded' | 'processing' | 'ready' | 'failed' | 'revoked';
-export type MediaDerivativePurpose = 'playback' | 'poster' | 'audio' | 'captions';
+export type MediaDerivativePurpose = 'image' | 'playback' | 'poster' | 'audio' | 'captions';
 export type MediaDerivativeState = 'pending' | 'processing' | 'ready' | 'failed' | 'revoked';
 
 export type CanonicalJsonValue =
@@ -22,7 +22,13 @@ export interface MediaDerivativePlan {
 
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const DERIVATIVE_KEY_PREFIX = 'mdv1';
-const PURPOSES = new Set<MediaDerivativePurpose>(['playback', 'poster', 'audio', 'captions']);
+const PURPOSES = new Set<MediaDerivativePurpose>([
+  'image',
+  'playback',
+  'poster',
+  'audio',
+  'captions',
+]);
 
 export function normalizeSha256(value: string): string {
   const normalized = value.trim().toLowerCase();

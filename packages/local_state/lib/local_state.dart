@@ -7,7 +7,21 @@ import 'dart:math';
 import 'package:analytics_contract/analytics_contract.dart';
 import 'package:sqlite3/sqlite3.dart';
 
+final RegExp _actorAccessTokenPattern = RegExp(r'^[A-Za-z0-9_-]{43}$');
+
+const _consumerOnboardingCompletedKey = 'consumer.onboarding_completed.v1';
+const _consumerMutedTopicsKey = 'consumer.muted_topics.v1';
+const _consumerPlayActionKeyPrefix = 'consumer.play_action.v1:';
+const _maxConsumerMutedTopics = 512;
+
 enum InterestKind { interest, learning }
+
+final class LocalActorAccess {
+  const LocalActorAccess({required this.actorId, required this.accessToken});
+
+  final String actorId;
+  final String accessToken;
+}
 
 enum OutboxPriority {
   analytics(0),
@@ -20,13 +34,49 @@ enum OutboxPriority {
 
 final class FeedResumeState {
   const FeedResumeState({
+    this.requestId,
     required this.cursor,
+    this.visibleRevisionId,
+    this.visiblePosition,
     required this.windowRevisionIds,
     required this.updatedAt,
   });
 
+  final String? requestId;
   final String? cursor;
+  final String? visibleRevisionId;
+  final int? visiblePosition;
   final List<String> windowRevisionIds;
+  final DateTime updatedAt;
+}
+
+final class RecentFeedCacheState {
+  const RecentFeedCacheState({
+    required this.requestId,
+    required this.items,
+    required this.updatedAt,
+  });
+
+  final String requestId;
+  final List<Map<String, Object?>> items;
+  final DateTime updatedAt;
+}
+
+final class LocalConsumerPlayActionState {
+  const LocalConsumerPlayActionState({
+    required this.playId,
+    this.savedRevisionId,
+    required this.saved,
+    required this.moreLikeThis,
+    required this.notInterested,
+    required this.updatedAt,
+  });
+
+  final String playId;
+  final String? savedRevisionId;
+  final bool saved;
+  final bool moreLikeThis;
+  final bool notInterested;
   final DateTime updatedAt;
 }
 
@@ -109,7 +159,12 @@ final class UnsupportedLocalSchemaException implements Exception {
       '$supportedVersion.';
 }
 
+final class _CorruptLocalDatabaseException implements Exception {
+  const _CorruptLocalDatabaseException();
+}
+
 typedef ActorIdFactory = String Function();
+typedef ActorAccessTokenFactory = String Function();
 
 final class MosaicLocalStore {
   MosaicLocalStore._(
@@ -117,50 +172,61 @@ final class MosaicLocalStore {
     required this.policy,
     required this.maxFeedWindowRevisionIds,
     required ActorIdFactory actorIdFactory,
-  }) : _actorIdFactory = actorIdFactory;
+    required ActorAccessTokenFactory actorAccessTokenFactory,
+  }) : _actorIdFactory = actorIdFactory,
+       _actorAccessTokenFactory = actorAccessTokenFactory;
 
-  static const int schemaVersion = 1;
+  static const int schemaVersion = 2;
   static const int defaultMaxFeedWindowRevisionIds = 64;
+  static const int defaultRecentFeedCacheMaxItems = 12;
+  static const int defaultRecentFeedCacheMaxBytes = 256 * 1024;
+  static const Duration defaultRecentFeedCacheMaxAge = Duration(days: 2);
 
   final Database _db;
   final OutboxPolicy policy;
   final int maxFeedWindowRevisionIds;
   final ActorIdFactory _actorIdFactory;
+  final ActorAccessTokenFactory _actorAccessTokenFactory;
 
   static MosaicLocalStore open(
     String path, {
     OutboxPolicy policy = const OutboxPolicy(),
     int maxFeedWindowRevisionIds = defaultMaxFeedWindowRevisionIds,
     ActorIdFactory actorIdFactory = _randomUuidV4,
+    ActorAccessTokenFactory actorAccessTokenFactory = _randomActorAccessToken,
   }) {
     _validateFeedWindowLimit(maxFeedWindowRevisionIds);
-    Database? candidate;
+    final candidate = sqlite3.open(path);
+    final store = MosaicLocalStore._(
+      candidate,
+      policy: policy,
+      maxFeedWindowRevisionIds: maxFeedWindowRevisionIds,
+      actorIdFactory: actorIdFactory,
+      actorAccessTokenFactory: actorAccessTokenFactory,
+    );
+
     try {
-      candidate = sqlite3.open(path);
-      final store = MosaicLocalStore._(
-        candidate,
-        policy: policy,
-        maxFeedWindowRevisionIds: maxFeedWindowRevisionIds,
-        actorIdFactory: actorIdFactory,
-      );
       store._verifyIntegrity();
-      store._migrate();
-      return store;
-    } on UnsupportedLocalSchemaException {
-      candidate?.close();
-      rethrow;
-    } on Object {
-      candidate?.close();
-      _quarantineCorruptDatabase(path);
-      final db = sqlite3.open(path);
-      final store = MosaicLocalStore._(
-        db,
+    } on _CorruptLocalDatabaseException {
+      candidate.close();
+      return _recoverCorruptDatabase(
+        path,
         policy: policy,
         maxFeedWindowRevisionIds: maxFeedWindowRevisionIds,
         actorIdFactory: actorIdFactory,
+        actorAccessTokenFactory: actorAccessTokenFactory,
       );
+    } on Object {
+      candidate.close();
+      rethrow;
+    }
+
+    try {
       store._migrate();
       return store;
+    } on Object {
+      candidate.close();
+      rethrow;
     }
   }
 
@@ -168,6 +234,7 @@ final class MosaicLocalStore {
     OutboxPolicy policy = const OutboxPolicy(),
     int maxFeedWindowRevisionIds = defaultMaxFeedWindowRevisionIds,
     ActorIdFactory actorIdFactory = _randomUuidV4,
+    ActorAccessTokenFactory actorAccessTokenFactory = _randomActorAccessToken,
   }) {
     _validateFeedWindowLimit(maxFeedWindowRevisionIds);
     final store = MosaicLocalStore._(
@@ -175,6 +242,7 @@ final class MosaicLocalStore {
       policy: policy,
       maxFeedWindowRevisionIds: maxFeedWindowRevisionIds,
       actorIdFactory: actorIdFactory,
+      actorAccessTokenFactory: actorAccessTokenFactory,
     );
     store._migrate();
     return store;
@@ -187,12 +255,39 @@ final class MosaicLocalStore {
     return rows.first.values.first as int;
   }
 
-  String getOrCreateActorId() {
-    final existing = _metadata('actor_id');
-    if (existing != null && existing.isNotEmpty) return existing;
-    final created = _actorIdFactory();
-    _setMetadata('actor_id', created);
-    return created;
+  String getOrCreateActorId() => getOrCreateActorAccess().actorId;
+
+  LocalActorAccess getOrCreateActorAccess() {
+    late LocalActorAccess result;
+    _transaction(() {
+      final existingActorId = _metadata('actor_id');
+      final existingToken = _metadata('actor_access_token');
+      if (existingActorId != null &&
+          existingActorId.isNotEmpty &&
+          existingToken != null &&
+          _actorAccessTokenPattern.hasMatch(existingToken)) {
+        result = LocalActorAccess(
+          actorId: existingActorId,
+          accessToken: existingToken,
+        );
+        return;
+      }
+
+      final actorId = _actorIdFactory().trim();
+      final accessToken = _actorAccessTokenFactory().trim();
+      if (actorId.isEmpty) {
+        throw StateError('Actor ID factory returned an empty identifier.');
+      }
+      if (!_actorAccessTokenPattern.hasMatch(accessToken)) {
+        throw StateError(
+          'Actor access token factory returned an invalid token.',
+        );
+      }
+      _setMetadata('actor_id', actorId);
+      _setMetadata('actor_access_token', accessToken);
+      result = LocalActorAccess(actorId: actorId, accessToken: accessToken);
+    });
+    return result;
   }
 
   void replaceInterests(InterestKind kind, Iterable<String> topicIds) {
@@ -219,11 +314,146 @@ final class MosaicLocalStore {
       .map((row) => row['topic_id'] as String)
       .toSet();
 
+  bool get consumerOnboardingCompleted =>
+      _metadata(_consumerOnboardingCompletedKey) == '1';
+
+  void setConsumerOnboardingCompleted(bool completed) {
+    _transaction(() {
+      if (completed) {
+        _setMetadata(_consumerOnboardingCompletedKey, '1');
+      } else {
+        _db.execute('delete from metadata where key = ?', [
+          _consumerOnboardingCompletedKey,
+        ]);
+      }
+    });
+  }
+
+  void saveConsumerPlayActionState(LocalConsumerPlayActionState state) {
+    final playId = _boundedConsumerText(state.playId, 'playId');
+    final savedRevisionId = state.savedRevisionId == null
+        ? null
+        : _boundedConsumerText(state.savedRevisionId!, 'savedRevisionId');
+    if (state.saved && savedRevisionId == null) {
+      throw const FormatException('savedRevisionId is required when saved');
+    }
+    _setMetadata(
+      '$_consumerPlayActionKeyPrefix$playId',
+      jsonEncode(<String, Object?>{
+        'playId': playId,
+        'savedRevisionId': savedRevisionId,
+        'saved': state.saved,
+        'moreLikeThis': state.moreLikeThis,
+        'notInterested': state.notInterested,
+        'updatedAt': state.updatedAt.toUtc().toIso8601String(),
+      }),
+    );
+  }
+
+  LocalConsumerPlayActionState? loadConsumerPlayActionState(String playId) {
+    final normalizedPlayId = _boundedConsumerText(playId, 'playId');
+    final key = '$_consumerPlayActionKeyPrefix$normalizedPlayId';
+    final encoded = _metadata(key);
+    if (encoded == null) return null;
+    try {
+      final decoded = jsonDecode(encoded);
+      if (decoded is! Map) throw const FormatException('invalid action state');
+      final state = decoded.cast<String, Object?>();
+      final storedPlayId = _boundedConsumerText(
+        state['playId'] as String,
+        'playId',
+      );
+      if (storedPlayId != normalizedPlayId) {
+        throw const FormatException('action state identity mismatch');
+      }
+      final saved = state['saved'];
+      final moreLikeThis = state['moreLikeThis'];
+      final notInterested = state['notInterested'];
+      final updatedAtRaw = state['updatedAt'];
+      if (saved is! bool ||
+          moreLikeThis is! bool ||
+          notInterested is! bool ||
+          updatedAtRaw is! String) {
+        throw const FormatException('invalid action state');
+      }
+      final updatedAt = DateTime.tryParse(updatedAtRaw)?.toUtc();
+      if (updatedAt == null) throw const FormatException('invalid updatedAt');
+      final rawRevision = state['savedRevisionId'];
+      final savedRevisionId = rawRevision == null
+          ? null
+          : _boundedConsumerText(rawRevision as String, 'savedRevisionId');
+      if (saved && savedRevisionId == null) {
+        throw const FormatException('saved revision missing');
+      }
+      return LocalConsumerPlayActionState(
+        playId: storedPlayId,
+        savedRevisionId: savedRevisionId,
+        saved: saved,
+        moreLikeThis: moreLikeThis,
+        notInterested: notInterested,
+        updatedAt: updatedAt,
+      );
+    } on Object {
+      _db.execute('delete from metadata where key = ?', [key]);
+      return null;
+    }
+  }
+
+  void replaceConsumerMutedTopics(Iterable<String> topicIds) {
+    final normalized =
+        topicIds
+            .map((value) => _boundedConsumerText(value, 'topicId'))
+            .toSet()
+            .toList(growable: false)
+          ..sort();
+    if (normalized.length > _maxConsumerMutedTopics) {
+      throw RangeError.range(
+        normalized.length,
+        0,
+        _maxConsumerMutedTopics,
+        'topicIds',
+      );
+    }
+    _setMetadata(_consumerMutedTopicsKey, jsonEncode(normalized));
+  }
+
+  Set<String> consumerMutedTopics() {
+    final encoded = _metadata(_consumerMutedTopicsKey);
+    if (encoded == null) return <String>{};
+    try {
+      final decoded = jsonDecode(encoded);
+      if (decoded is! List || decoded.length > _maxConsumerMutedTopics) {
+        throw const FormatException('invalid muted topics');
+      }
+      final result = <String>{};
+      for (final value in decoded) {
+        if (value is! String) throw const FormatException('invalid topic ID');
+        result.add(_boundedConsumerText(value, 'topicId'));
+      }
+      return result;
+    } on Object {
+      _db.execute('delete from metadata where key = ?', [
+        _consumerMutedTopicsKey,
+      ]);
+      return <String>{};
+    }
+  }
+
   void saveFeedResume({
+    String? requestId,
     required String? cursor,
+    String? visibleRevisionId,
+    int? visiblePosition,
     required List<String> windowRevisionIds,
     DateTime? updatedAt,
   }) {
+    if (visiblePosition != null && visiblePosition < 0) {
+      throw ArgumentError.value(
+        visiblePosition,
+        'visiblePosition',
+        'must be non-negative',
+      );
+    }
     final boundedWindow = <String>[];
     final seen = <String>{};
     for (final revisionId in windowRevisionIds) {
@@ -235,15 +465,23 @@ final class MosaicLocalStore {
 
     _db.execute(
       '''
-      insert into feed_resume (singleton, cursor, window_json, updated_at)
-      values (1, ?, ?, ?)
+      insert into feed_resume (
+        singleton, request_id, cursor, visible_revision_id, visible_position,
+        window_json, updated_at
+      ) values (1, ?, ?, ?, ?, ?, ?)
       on conflict(singleton) do update set
+        request_id = excluded.request_id,
         cursor = excluded.cursor,
+        visible_revision_id = excluded.visible_revision_id,
+        visible_position = excluded.visible_position,
         window_json = excluded.window_json,
         updated_at = excluded.updated_at
       ''',
       [
+        requestId,
         cursor,
+        visibleRevisionId,
+        visiblePosition,
         jsonEncode(boundedWindow),
         (updatedAt ?? DateTime.now().toUtc()).toIso8601String(),
       ],
@@ -251,17 +489,117 @@ final class MosaicLocalStore {
   }
 
   FeedResumeState? loadFeedResume() {
-    final rows = _db.select(
-      'select cursor, window_json, updated_at from feed_resume where singleton = 1',
-    );
+    final rows = _db.select('''
+      select request_id, cursor, visible_revision_id, visible_position,
+             window_json, updated_at
+        from feed_resume where singleton = 1
+      ''');
     if (rows.isEmpty) return null;
     final row = rows.first;
     return FeedResumeState(
+      requestId: row['request_id'] as String?,
       cursor: row['cursor'] as String?,
+      visibleRevisionId: row['visible_revision_id'] as String?,
+      visiblePosition: row['visible_position'] as int?,
       windowRevisionIds: (jsonDecode(row['window_json'] as String) as List)
           .cast<String>(),
       updatedAt: DateTime.parse(row['updated_at'] as String),
     );
+  }
+
+  void saveRecentFeedCache({
+    required String requestId,
+    required List<Map<String, Object?>> items,
+    DateTime? updatedAt,
+  }) {
+    final normalizedRequestId = requestId.trim();
+    if (normalizedRequestId.isEmpty || normalizedRequestId.length > 200) {
+      throw ArgumentError.value(
+        requestId,
+        'requestId',
+        'must be 1 to 200 characters',
+      );
+    }
+
+    final bounded = <Map<String, Object?>>[];
+    for (final rawItem in items) {
+      if (bounded.length >= defaultRecentFeedCacheMaxItems) break;
+      final decoded = jsonDecode(jsonEncode(rawItem));
+      if (decoded is! Map) {
+        throw const FormatException(
+          'Recent feed cache item must be an object.',
+        );
+      }
+      final item = decoded.map((key, value) => MapEntry(key.toString(), value));
+      final candidate = jsonEncode(<Object?>[...bounded, item]);
+      if (utf8.encode(candidate).length > defaultRecentFeedCacheMaxBytes) break;
+      bounded.add(item);
+    }
+
+    if (bounded.isEmpty) {
+      clearRecentFeedCache();
+      return;
+    }
+    final encoded = jsonEncode(bounded);
+    _db.execute(
+      '''
+      insert into recent_feed_cache (
+        singleton, request_id, items_json, byte_size, updated_at
+      ) values (1, ?, ?, ?, ?)
+      on conflict(singleton) do update set
+        request_id = excluded.request_id,
+        items_json = excluded.items_json,
+        byte_size = excluded.byte_size,
+        updated_at = excluded.updated_at
+      ''',
+      [
+        normalizedRequestId,
+        encoded,
+        utf8.encode(encoded).length,
+        (updatedAt ?? DateTime.now().toUtc()).toIso8601String(),
+      ],
+    );
+  }
+
+  RecentFeedCacheState? loadRecentFeedCache({DateTime? now}) {
+    final rows = _db.select('''
+      select request_id, items_json, updated_at
+        from recent_feed_cache where singleton = 1
+      ''');
+    if (rows.isEmpty) return null;
+    final row = rows.first;
+    try {
+      final updatedAt = DateTime.parse(row['updated_at'] as String).toUtc();
+      final instant = (now ?? DateTime.now()).toUtc();
+      if (instant.difference(updatedAt) > defaultRecentFeedCacheMaxAge) {
+        clearRecentFeedCache();
+        return null;
+      }
+      final decoded = jsonDecode(row['items_json'] as String);
+      if (decoded is! List || decoded.length > defaultRecentFeedCacheMaxItems) {
+        throw const FormatException('Recent feed cache payload is invalid.');
+      }
+      final items = decoded
+          .map((value) {
+            if (value is! Map) {
+              throw const FormatException('Recent feed cache item is invalid.');
+            }
+            return value.map((key, nested) => MapEntry(key.toString(), nested));
+          })
+          .toList(growable: false);
+      return RecentFeedCacheState(
+        requestId: row['request_id'] as String,
+        items: items,
+        updatedAt: updatedAt,
+      );
+    } on Object {
+      clearRecentFeedCache();
+      return null;
+    }
+  }
+
+  void clearRecentFeedCache() {
+    _db.execute('delete from recent_feed_cache where singleton = 1');
   }
 
   void saveDraft(CreatorDraft draft) {
@@ -453,9 +791,18 @@ final class MosaicLocalStore {
   }
 
   void _verifyIntegrity() {
-    final result = _db.select('pragma quick_check(1)');
+    late ResultSet result;
+    try {
+      result = _db.select('pragma quick_check(1)');
+    } on SqliteException catch (error) {
+      if (error.resultCode == SqlError.SQLITE_CORRUPT ||
+          error.resultCode == SqlError.SQLITE_NOTADB) {
+        throw const _CorruptLocalDatabaseException();
+      }
+      rethrow;
+    }
     if (result.isEmpty || result.first.values.first != 'ok') {
-      throw StateError('Local database integrity check failed.');
+      throw const _CorruptLocalDatabaseException();
     }
   }
 
@@ -485,8 +832,20 @@ final class MosaicLocalStore {
         _db.execute('''
           create table feed_resume (
             singleton integer primary key check(singleton = 1),
+            request_id text,
             cursor text,
+            visible_revision_id text,
+            visible_position integer,
             window_json text not null,
+            updated_at text not null
+          )
+        ''');
+        _db.execute('''
+          create table recent_feed_cache (
+            singleton integer primary key check(singleton = 1),
+            request_id text not null,
+            items_json text not null,
+            byte_size integer not null,
             updated_at text not null
           )
         ''');
@@ -517,6 +876,28 @@ final class MosaicLocalStore {
             attempt_count integer not null default 0,
             next_attempt_at text,
             created_at text not null
+          )
+        ''');
+        _db.execute('pragma user_version = $schemaVersion');
+      });
+      return;
+    }
+    if (version == 1) {
+      _transaction(() {
+        _db.execute('alter table feed_resume add column request_id text');
+        _db.execute(
+          'alter table feed_resume add column visible_revision_id text',
+        );
+        _db.execute(
+          'alter table feed_resume add column visible_position integer',
+        );
+        _db.execute('''
+          create table recent_feed_cache (
+            singleton integer primary key check(singleton = 1),
+            request_id text not null,
+            items_json text not null,
+            byte_size integer not null,
+            updated_at text not null
           )
         ''');
         _db.execute('pragma user_version = $schemaVersion');
@@ -560,6 +941,31 @@ final class MosaicLocalStore {
     }
   }
 
+  static MosaicLocalStore _recoverCorruptDatabase(
+    String path, {
+    required OutboxPolicy policy,
+    required int maxFeedWindowRevisionIds,
+    required ActorIdFactory actorIdFactory,
+    required ActorAccessTokenFactory actorAccessTokenFactory,
+  }) {
+    _quarantineCorruptDatabase(path);
+    final db = sqlite3.open(path);
+    final store = MosaicLocalStore._(
+      db,
+      policy: policy,
+      maxFeedWindowRevisionIds: maxFeedWindowRevisionIds,
+      actorIdFactory: actorIdFactory,
+      actorAccessTokenFactory: actorAccessTokenFactory,
+    );
+    try {
+      store._migrate();
+      return store;
+    } on Object {
+      db.close();
+      rethrow;
+    }
+  }
+
   static void _quarantineCorruptDatabase(String path) {
     final file = File(path);
     if (!file.existsSync()) return;
@@ -572,6 +978,14 @@ final class MosaicLocalStore {
       }
     }
   }
+}
+
+String _boundedConsumerText(String value, String name) {
+  final normalized = value.trim();
+  if (normalized.isEmpty || normalized.length > 200) {
+    throw ArgumentError.value(value, name, 'must be 1 to 200 characters');
+  }
+  return normalized;
 }
 
 PendingEvent _pendingEventFromRow(Row row) {
@@ -604,4 +1018,10 @@ String _randomUuidV4() {
       '${pair(6)}${pair(7)}-'
       '${pair(8)}${pair(9)}-'
       '${pair(10)}${pair(11)}${pair(12)}${pair(13)}${pair(14)}${pair(15)}';
+}
+
+String _randomActorAccessToken() {
+  final random = Random.secure();
+  final bytes = List<int>.generate(32, (_) => random.nextInt(256));
+  return base64UrlEncode(bytes).replaceAll('=', '');
 }

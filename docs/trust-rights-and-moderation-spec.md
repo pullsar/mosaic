@@ -1,12 +1,12 @@
-# Mosaic — Trust, Rights & Moderation Specification
+# Mixli — Trust, Rights & Moderation Specification
 
 ## 1. Purpose
 
-Mosaic combines user-generated media, factual content, remixing, personalization, and eventual creator economics. Trust must therefore be built into publication and distribution rather than added after growth.
+Mixli combines user-generated media, factual content, remixing, personalization, and eventual creator economics. Trust must therefore be built into publication and distribution rather than added after growth.
 
 ## 2. Safety baseline
 
-Mosaic never permits:
+Mixli never permits:
 
 - adult, erotic, or sexually explicit content;
 - sexual services or pornography;

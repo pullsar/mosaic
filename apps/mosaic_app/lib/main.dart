@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:platform_contracts/platform_contracts.dart';
 import 'package:platform_flutter/platform_flutter.dart';
@@ -8,7 +9,18 @@ import 'package:play_flutter/play_flutter.dart';
 import 'package:play_schema/play_schema.dart';
 
 import 'app_event_runtime.dart';
+import 'asset_delivery_client.dart';
+import 'asset_delivery_warm.dart';
+import 'consumer_action_controller.dart';
+import 'consumer_action_controls.dart';
+import 'consumer_api_client.dart';
+import 'consumer_feed.dart';
+import 'consumer_onboarding.dart';
+import 'consumer_runtime.dart';
+import 'consumer_search.dart';
 import 'event_runtime_resources_factory.dart';
+import 'onboarding_localizations.dart';
+import 'play_resolution_telemetry.dart';
 
 const _apiBaseUrl = String.fromEnvironment('MOSAIC_API_BASE_URL');
 const _allowInsecureLocalApi = bool.fromEnvironment(
@@ -26,7 +38,6 @@ Future<void> main() async {
   );
   final eventRuntime = AppEventRuntime.create(
     resources: resources,
-    playRevisionId: _demoPlay.revisionId,
     apiBaseUrl: _apiBaseUrl,
     allowInsecureLocalhost: _allowInsecureLocalApi,
     onError: _reportEventRuntimeError,
@@ -47,19 +58,84 @@ final class MosaicApp extends StatefulWidget {
 final class _MosaicAppState extends State<MosaicApp> {
   final ActiveMediaCoordinator _mediaCoordinator = ActiveMediaCoordinator();
   final SoLoudAudioEngine _audioEngine = SoLoudAudioEngine();
+  final ConsumerFeedController _feedController = ConsumerFeedController();
   late final AppEventRuntime _eventRuntime;
-  late final FlutterLifecycleBridge _lifecycle;
+  late final ConsumerApiClient? _consumerApi;
+  late final ConsumerActionController _actionController;
+  late final AssetDeliveryClient? _assetDelivery;
+  late final AssetMetadataWarmController? _metadataWarmer;
+  late final ConsumerRuntime _consumerRuntime;
+  late final CachingPlayVisualAssetResolver _visualResolver;
+  late final PlayVideoAssetResolver _videoResolver;
+  late final PlayVideoPosterResolver? _videoPosterResolver;
+  late final PlayAudioAssetResolver _audioResolver;
   late final PlayCanvasAssetResolver _canvasResolver;
+  late final PlayVisualPrefetchController _visualPrefetch;
+  late final FlutterLifecycleBridge _lifecycle;
+  _ConsumerSearchScope? _searchScope;
   var _semanticResumeEpoch = 0;
 
   @override
   void initState() {
     super.initState();
-    _eventRuntime =
-        widget.eventRuntime ??
-        AppEventRuntime.disabled(playRevisionId: _demoPlay.revisionId);
+    _eventRuntime = widget.eventRuntime ?? AppEventRuntime.disabled();
+    _assetDelivery = _createAssetDeliveryClient();
+    final binaryDelivery = _assetDelivery?.supportsBinaryNetworkAssets ?? false;
+    final assetDelivery = _assetDelivery;
+
+    _visualResolver = CachingPlayVisualAssetResolver(
+      binaryDelivery && assetDelivery != null
+          ? ManagedVisualAssetResolver(assetDelivery)
+          : MapPlayVisualAssetResolver(const {}),
+      capacity: 24,
+    );
+    _videoResolver = binaryDelivery && assetDelivery != null
+        ? ManagedVideoAssetResolver(assetDelivery)
+        : MapPlayVideoAssetResolver(const {});
+    _videoPosterResolver = binaryDelivery && assetDelivery != null
+        ? ManagedVideoPosterResolver(assetDelivery)
+        : null;
+    _audioResolver = binaryDelivery && assetDelivery != null
+        ? ManagedAudioAssetResolver(assetDelivery)
+        : MapPlayAudioAssetResolver(const {});
+    _canvasResolver = assetDelivery == null
+        ? MapPlayCanvasAssetResolver(const {})
+        : ManagedCanvasAssetResolver(assetDelivery);
+    _metadataWarmer = assetDelivery == null
+        ? null
+        : AssetMetadataWarmController(
+            client: assetDelivery,
+            onError: (assetId, error, stackTrace) => _reportEventRuntimeError(
+              error,
+              stackTrace,
+              operation: 'feed_asset_warm:$assetId',
+            ),
+          );
+
+    _consumerApi = _createConsumerApi(_eventRuntime);
+    _actionController = ConsumerActionController(
+      eventRuntime: _eventRuntime,
+      localState: _eventRuntime.resources.consumerLocalState,
+      api: _consumerApi,
+      onError: _reportEventRuntimeError,
+    );
+    _consumerRuntime = ConsumerRuntime(
+      api: _consumerApi,
+      localState: _eventRuntime.resources.consumerLocalState,
+      capabilities: consumerCapabilitiesForAssetDelivery(_assetDelivery),
+      onError: _reportEventRuntimeError,
+    );
+    _visualPrefetch = PlayVisualPrefetchController(
+      resolver: _visualResolver,
+      maxAssets: 4,
+      maxConcurrent: 2,
+      onError: (assetId, error, stackTrace) => _reportEventRuntimeError(
+        error,
+        stackTrace,
+        operation: 'feed_visual_prefetch:$assetId',
+      ),
+    );
     _eventRuntime.requestDrain();
-    _canvasResolver = MapPlayCanvasAssetResolver({_demoCanvas.id: _demoCanvas});
     _lifecycle = FlutterLifecycleBridge(
       mediaCoordinator: _mediaCoordinator,
       onSemanticResume: _resumeSemanticMedia,
@@ -75,7 +151,11 @@ final class _MosaicAppState extends State<MosaicApp> {
 
   @override
   void dispose() {
+    _cancelWarmWindow();
     _lifecycle.dispose();
+    _actionController.dispose();
+    _consumerRuntime.close();
+    _assetDelivery?.close();
     unawaited(_disposeResources());
     super.dispose();
   }
@@ -115,40 +195,216 @@ final class _MosaicAppState extends State<MosaicApp> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildPlaySurface(
+    BuildContext context, {
+    required String playId,
+    required String revisionId,
+    required PlayDocument play,
+    required Telemetry telemetry,
+    required bool active,
+    required ValueChanged<bool> onDirectManipulationChanged,
+  }) {
     final videoDiagnostics = PlayVideoDiagnosticObserver(
-      telemetry: _eventRuntime.telemetry,
+      telemetry: telemetry,
       runtimeDiagnostics: const FlutterRuntimeDiagnostics(),
     );
     final media = PlayMediaLayerBuilder(
-      ownerId: playMediaOwnerId(_demoPlay),
-      visualResolver: MapPlayVisualAssetResolver(const {}),
-      videoResolver: MapPlayVideoAssetResolver(const {}),
-      audioResolver: MapPlayAudioAssetResolver(const {}),
+      ownerId: playMediaOwnerId(play),
+      visualResolver: _visualResolver,
+      videoResolver: _videoResolver,
+      videoPosterResolver: _videoPosterResolver,
+      audioResolver: _audioResolver,
       audioEngine: _audioEngine,
       canvasResolver: _canvasResolver,
       mediaCoordinator: _mediaCoordinator,
       videoControllerFactory: VideoPlayerPlayController.new,
+      active: active,
       semanticResumeEpoch: _semanticResumeEpoch,
       onVideoPlaybackEvent: videoDiagnostics.call,
     );
+    return PlaySurface(
+      key: ValueKey<String>('play:$playId:$revisionId'),
+      play: play,
+      mediaBuilder: media.call,
+      onResolved: (resolution) => recordPlayResolutionTelemetry(
+        telemetry,
+        playId: playId,
+        outcome: resolution.outcome,
+        attempts: resolution.session.attempts,
+        completed: resolution.session.ended,
+        correct: resolution.wasCorrect,
+      ),
+      onDirectManipulationChanged: onDirectManipulationChanged,
+    );
+  }
 
+  Widget _buildFeedPlay(
+    BuildContext context,
+    ConsumerFeedItem item, {
+    required String feedRequestId,
+    required bool active,
+    required ValueChanged<bool> onDirectManipulationChanged,
+  }) {
+    final telemetry = _eventRuntime.telemetryForPlay(
+      feedRequestId: feedRequestId,
+      playRevisionId: item.revisionId,
+    );
+    final surface = _buildPlaySurface(
+      context,
+      playId: item.playId,
+      revisionId: item.revisionId,
+      play: item.play,
+      telemetry: telemetry,
+      active: active,
+      onDirectManipulationChanged: onDirectManipulationChanged,
+    );
+    return ConsumerActionControls(
+      child: surface,
+      item: item,
+      feedRequestId: feedRequestId,
+      controller: _actionController,
+      onAdvance: _feedController.advance,
+      active: active,
+    );
+  }
+
+  Future<void> _openSearch(BuildContext context) async {
+    final selection = await Navigator.of(context).push<ConsumerSearchSelection>(
+      MaterialPageRoute<ConsumerSearchSelection>(
+        fullscreenDialog: true,
+        builder: (_) => ConsumerDiscoverySearch(
+          runtime: _consumerRuntime,
+          telemetry: _eventRuntime.telemetry,
+        ),
+      ),
+    );
+    if (!mounted || selection == null) return;
+    switch (selection) {
+      case ConsumerTopicSearchSelection():
+        setState(() {
+          _searchScope = _ConsumerSearchScope(
+            intent: ConsumerFeedSearchIntent(
+              intent: selection.intent,
+              topicId: selection.topicId,
+            ),
+            label: selection.label,
+          );
+        });
+      case ConsumerPlaySearchSelection():
+        await _openSearchPlay(context, selection.result);
+    }
+  }
+
+  Future<void> _openSearchPlay(
+    BuildContext context,
+    ConsumerSearchPlayResult result,
+  ) {
+    final telemetry = _eventRuntime.telemetryForStandalonePlay(
+      playRevisionId: result.revisionId,
+    );
+    return Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (routeContext) => Scaffold(
+          backgroundColor: Theme.of(routeContext).scaffoldBackgroundColor,
+          body: Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              _buildPlaySurface(
+                routeContext,
+                playId: result.playId,
+                revisionId: result.revisionId,
+                play: result.play,
+                telemetry: telemetry,
+                active: true,
+                onDirectManipulationChanged: (_) {},
+              ),
+              SafeArea(
+                minimum: const EdgeInsets.all(12),
+                child: Align(
+                  alignment: AlignmentDirectional.topStart,
+                  child: IconButton.filledTonal(
+                    tooltip: MaterialLocalizations.of(
+                      routeContext,
+                    ).backButtonTooltip,
+                    onPressed: () => Navigator.of(routeContext).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _recordFeedEvent(
+    String event, {
+    required String feedRequestId,
+    required String playRevisionId,
+    required Map<String, Object?> payload,
+  }) {
+    _eventRuntime
+        .telemetryForPlay(
+          feedRequestId: feedRequestId,
+          playRevisionId: playRevisionId,
+        )
+        .event(event, payload);
+  }
+
+  Future<void> _warmFeedWindow(
+    BuildContext context,
+    List<ConsumerFeedItem> items,
+  ) async {
+    final plan = buildAssetWarmPlan(items.map((item) => item.play));
+    final metadataWarm = _metadataWarmer?.warm(plan) ?? Future<void>.value();
+    await Future.wait<void>([
+      _visualPrefetch.prefetch(context, plan.visualAssetIds).then((_) {}),
+      metadataWarm,
+    ]);
+  }
+
+  void _cancelWarmWindow() {
+    _metadataWarmer?.cancel();
+    _visualPrefetch.cancel();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scope = _searchScope;
+    final feedKey = scope == null
+        ? 'consumer-feed:default'
+        : 'consumer-feed:${scope.intent.intent.wireName}:${scope.intent.topicId}';
     return MaterialApp(
-      title: 'Mosaic',
+      title: 'Mixli',
       debugShowCheckedModeBanner: false,
       themeMode: ThemeMode.system,
+      supportedLocales: MosaicOnboardingStrings.supportedLocales,
+      localizationsDelegates: const <LocalizationsDelegate<Object>>[
+        MosaicOnboardingStrings.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       darkTheme: ThemeData(
         brightness: Brightness.dark,
         scaffoldBackgroundColor: MosaicVisualTokens.surface,
         colorScheme: const ColorScheme.dark(
+          primary: MosaicVisualTokens.foreground,
+          onPrimary: MosaicVisualTokens.surface,
           surface: MosaicVisualTokens.surface,
           onSurface: MosaicVisualTokens.foreground,
         ),
       ),
       theme: ThemeData(
         brightness: Brightness.light,
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF262626)),
+        scaffoldBackgroundColor: const Color(0xFFFAFAF8),
+        colorScheme: const ColorScheme.light(
+          primary: Color(0xFF171717),
+          onPrimary: Color(0xFFFFFFFF),
+          surface: Color(0xFFFAFAF8),
+          onSurface: Color(0xFF171717),
+        ),
       ),
       routes: {
         MosaicSettingsRoute.privacy: (_) =>
@@ -158,8 +414,129 @@ final class _MosaicAppState extends State<MosaicApp> {
         MosaicSettingsRoute.deleteAccount: (_) =>
             const _ReservedSettingsPage('Delete account'),
       },
-      home: PlaySurface(play: _demoPlay, mediaBuilder: media.call),
+      home: ConsumerOnboardingGate(
+        runtime: _consumerRuntime,
+        child: Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            ConsumerFeed(
+              key: ValueKey<String>(feedKey),
+              runtime: _consumerRuntime,
+              itemBuilder: _buildFeedPlay,
+              controller: _feedController,
+              searchIntent: scope?.intent,
+              persistRecovery: scope == null,
+              onEvent: _recordFeedEvent,
+              onWarmWindow: _warmFeedWindow,
+              onCancelWarmWindow: _cancelWarmWindow,
+            ),
+            SafeArea(
+              minimum: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+              child: Align(
+                alignment: AlignmentDirectional.topCenter,
+                child: Row(
+                  children: <Widget>[
+                    if (scope != null)
+                      Flexible(
+                        child: InputChip(
+                          key: const ValueKey<String>('search-scope'),
+                          avatar: Icon(
+                            scope.intent.intent == ConsumerSearchIntent.learning
+                                ? Icons.school_outlined
+                                : Icons.explore_outlined,
+                            size: 18,
+                          ),
+                          label: Text(
+                            scope.label,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          onDeleted: () => setState(() => _searchScope = null),
+                        ),
+                      )
+                    else
+                      const Spacer(),
+                    if (scope != null) const Spacer(),
+                    IconButton.filledTonal(
+                      key: const ValueKey<String>('open-search'),
+                      tooltip: 'Search',
+                      onPressed: () => unawaited(_openSearch(context)),
+                      icon: const Icon(Icons.search_rounded),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
+  }
+}
+
+final class _ConsumerSearchScope {
+  const _ConsumerSearchScope({required this.intent, required this.label});
+
+  final ConsumerFeedSearchIntent intent;
+  final String label;
+}
+
+PlayCapabilityEnvelope consumerCapabilitiesForAssetDelivery(
+  AssetDeliveryClient? assetDelivery,
+) {
+  final presentationTypes = <String>{'text'};
+  if (assetDelivery != null) {
+    presentationTypes.add('canvas');
+    if (assetDelivery.supportsBinaryNetworkAssets) {
+      presentationTypes.addAll(const {'image', 'video_clip', 'audio'});
+    }
+  }
+  return PlayCapabilityEnvelope(
+    schemaVersions: const {1},
+    presentationTypes: Set.unmodifiable(presentationTypes),
+    inputTypes: const {'tap', 'single_choice', 'piano_key', 'drag'},
+    validatorTypes: const {
+      'none',
+      'equals',
+      'ordered_sequence',
+      'target_region',
+    },
+  );
+}
+
+ConsumerApiClient? _createConsumerApi(AppEventRuntime eventRuntime) {
+  final configuredApi = _apiBaseUrl.trim();
+  if (configuredApi.isEmpty) return null;
+  try {
+    return ConsumerApiClient(
+      baseUri: Uri.parse(configuredApi),
+      actorAccess: eventRuntime.resources.actorAccess,
+      allowInsecureLocalhost: _allowInsecureLocalApi,
+    );
+  } on Object catch (error, stackTrace) {
+    _reportEventRuntimeError(
+      error,
+      stackTrace,
+      operation: 'consumer_transport_config',
+    );
+    return null;
+  }
+}
+
+AssetDeliveryClient? _createAssetDeliveryClient() {
+  final configuredApi = _apiBaseUrl.trim();
+  if (configuredApi.isEmpty) return null;
+  try {
+    return AssetDeliveryClient(
+      baseUri: Uri.parse(configuredApi),
+      allowInsecureLocalhost: _allowInsecureLocalApi,
+    );
+  } on Object catch (error, stackTrace) {
+    _reportEventRuntimeError(
+      error,
+      stackTrace,
+      operation: 'asset_delivery_config',
+    );
+    return null;
   }
 }
 
@@ -190,85 +567,3 @@ final class _ReservedSettingsPage extends StatelessWidget {
     body: SafeArea(child: Center(child: Text(label))),
   );
 }
-
-final _demoCanvas = PlayCanvasAsset(
-  id: 'demo_visual',
-  semanticLabel: 'Warm walkable city scene',
-  elements: [
-    PlayCanvasRect(
-      rect: const Rect.fromLTWH(0.04, 0.08, 0.92, 0.72),
-      fill: true,
-      tone: PlayCanvasTone.surface,
-    ),
-    PlayCanvasCircle(
-      center: const Offset(0.79, 0.23),
-      radius: 0.08,
-      fill: true,
-      tone: PlayCanvasTone.accent,
-    ),
-    PlayCanvasRect(
-      rect: const Rect.fromLTWH(0.12, 0.44, 0.18, 0.24),
-      fill: true,
-      tone: PlayCanvasTone.muted,
-    ),
-    PlayCanvasRect(
-      rect: const Rect.fromLTWH(0.34, 0.36, 0.19, 0.32),
-      fill: true,
-      tone: PlayCanvasTone.foreground,
-    ),
-    PlayCanvasRect(
-      rect: const Rect.fromLTWH(0.57, 0.48, 0.15, 0.20),
-      fill: true,
-      tone: PlayCanvasTone.muted,
-    ),
-    PlayCanvasLine(
-      start: const Offset(0.10, 0.73),
-      end: const Offset(0.90, 0.73),
-      width: 0.018,
-      tone: PlayCanvasTone.accent,
-    ),
-  ],
-);
-
-final _demoPlay = PlayDocument.fromJson({
-  'schemaVersion': 1,
-  'id': 'demo_where_is_this',
-  'revisionId': 'rev_2',
-  'format': 'guess',
-  'classification': 'challenge',
-  'topics': ['travel'],
-  'learningTopics': ['geography'],
-  'estimatedDurationSec': 12,
-  'assets': ['demo_visual'],
-  'sources': <Object>[],
-  'entryState': 'guess',
-  'states': {
-    'guess': {
-      'presentation': {
-        'layers': [
-          {'type': 'canvas', 'role': 'media', 'assetId': 'demo_visual'},
-          {'type': 'text', 'role': 'prompt', 'value': 'Where is this?'},
-        ],
-      },
-      'input': {
-        'type': 'single_choice',
-        'options': [
-          {'id': 'lisbon', 'label': 'Lisbon'},
-          {'id': 'marrakech', 'label': 'Marrakech'},
-        ],
-      },
-      'validation': {'type': 'equals', 'value': 'lisbon'},
-      'transition': {'correct': 'reveal', 'incorrect': 'reveal'},
-    },
-    'reveal': {
-      'presentation': {
-        'layers': [
-          {'type': 'text', 'role': 'reveal_title', 'value': 'Lisbon'},
-        ],
-      },
-      'input': {'type': 'tap', 'label': 'Done'},
-      'validation': {'type': 'none'},
-      'transition': {'default': r'$end'},
-    },
-  },
-});

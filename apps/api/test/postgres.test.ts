@@ -14,7 +14,9 @@ async function runMigration(command: 'up' | 'down' = 'up'): Promise<void> {
       env: process.env,
       stdio: 'inherit',
     });
-    child.on('exit', (code) => code === 0 ? resolve() : reject(new Error(`migration ${command} exited ${code}`)));
+    child.on('exit', (code) =>
+      code === 0 ? resolve() : reject(new Error(`migration ${command} exited ${code}`)),
+    );
     child.on('error', reject);
   });
 }
@@ -133,7 +135,12 @@ test('PostgreSQL media lifecycle is immutable, leased and stale-worker safe', {s
     assert.ok(firstClaim);
     assert.equal(firstClaim.derivative.attemptCount, 1);
     assert.equal(
-      await mediaRepo.claimDerivative(assetId, registered.derivative.derivativeKey, 60_000, `claim_b_${suffix}`),
+      await mediaRepo.claimDerivative(
+        assetId,
+        registered.derivative.derivativeKey,
+        60_000,
+        `claim_b_${suffix}`,
+      ),
       null,
     );
     await assert.rejects(
@@ -155,12 +162,14 @@ test('PostgreSQL media lifecycle is immutable, leased and stale-worker safe', {s
     assert.equal(ready.state, 'ready');
     assert.equal(ready.videoCodec, 'h264');
     assert.equal(
-      (await mediaRepo.markDerivativeReady(
-        assetId,
-        registered.derivative.derivativeKey,
-        firstClaim.claimToken,
-        playbackOutput,
-      )).state,
+      (
+        await mediaRepo.markDerivativeReady(
+          assetId,
+          registered.derivative.derivativeKey,
+          firstClaim.claimToken,
+          playbackOutput,
+        )
+      ).state,
       'ready',
     );
     await assert.rejects(
@@ -209,12 +218,14 @@ test('PostgreSQL media lifecycle is immutable, leased and stale-worker safe', {s
       MediaIdentityConflictError,
     );
     assert.equal(
-      (await mediaRepo.markDerivativeFailed(
-        assetId,
-        retryDerivative.derivativeKey,
-        replacementClaim.claimToken,
-        'transcode_failed',
-      )).state,
+      (
+        await mediaRepo.markDerivativeFailed(
+          assetId,
+          retryDerivative.derivativeKey,
+          replacementClaim.claimToken,
+          'transcode_failed',
+        )
+      ).state,
       'failed',
     );
 
@@ -227,7 +238,10 @@ test('PostgreSQL media lifecycle is immutable, leased and stale-worker safe', {s
     assert.ok(finalClaim);
     assert.equal(await mediaRepo.revokeAsset(assetId), true);
     assert.equal((await mediaRepo.getAsset(assetId))?.state, 'revoked');
-    assert.equal((await mediaRepo.getDerivative(assetId, retryDerivative.derivativeKey))?.state, 'revoked');
+    assert.equal(
+      (await mediaRepo.getDerivative(assetId, retryDerivative.derivativeKey))?.state,
+      'revoked',
+    );
     await assert.rejects(
       mediaRepo.markDerivativeReady(
         assetId,
@@ -237,18 +251,193 @@ test('PostgreSQL media lifecycle is immutable, leased and stale-worker safe', {s
       ),
       MediaIdentityConflictError,
     );
-    await assert.rejects(mediaRepo.registerDerivative(assetId, playbackPlan), MediaIdentityConflictError);
+    await assert.rejects(
+      mediaRepo.registerDerivative(assetId, playbackPlan),
+      MediaIdentityConflictError,
+    );
   } finally {
     await pool.end();
   }
 });
 
-test('media foundation down migration removes only media schema and cleanly reapplies', {skip: !databaseUrl}, async () => {
+test('search, profile, actions, canvas, image, actor access, consumer and media migrations roll back in order and cleanly reapply', {skip: !databaseUrl}, async () => {
   await runMigration('up');
+
   await runMigration('down');
-  const pool = new Pool({connectionString: databaseUrl});
+  const searchDownPool = new Pool({connectionString: databaseUrl});
   try {
-    const result = await pool.query<{
+    const afterSearchDown = await searchDownPool.query<{
+      consumer_search_decisions: string | null;
+      consumer_signal_profiles: string | null;
+    }>(
+      `select to_regclass('public.consumer_search_decisions')::text as consumer_search_decisions,
+              to_regclass('public.consumer_signal_profiles')::text as consumer_signal_profiles`,
+    );
+    assert.equal(afterSearchDown.rows[0]?.consumer_search_decisions, null);
+    assert.equal(afterSearchDown.rows[0]?.consumer_signal_profiles, 'consumer_signal_profiles');
+  } finally {
+    await searchDownPool.end();
+  }
+
+  await runMigration('down');
+  const profileDownPool = new Pool({connectionString: databaseUrl});
+  try {
+    const afterProfileDown = await profileDownPool.query<{
+      consumer_signal_profiles: string | null;
+      actor_topic_mutes: string | null;
+    }>(
+      `select to_regclass('public.consumer_signal_profiles')::text as consumer_signal_profiles,
+              to_regclass('public.actor_topic_mutes')::text as actor_topic_mutes`,
+    );
+    assert.equal(afterProfileDown.rows[0]?.consumer_signal_profiles, null);
+    assert.equal(afterProfileDown.rows[0]?.actor_topic_mutes, 'actor_topic_mutes');
+  } finally {
+    await profileDownPool.end();
+  }
+
+  await runMigration('down');
+  const actionsDownPool = new Pool({connectionString: databaseUrl});
+  try {
+    const afterActionsDown = await actionsDownPool.query<{
+      actor_play_actions: string | null;
+      actor_topic_mutes: string | null;
+      canvas_assets: string | null;
+      actor_access_credentials: string | null;
+      purpose_check: string | null;
+    }>(
+      `select to_regclass('public.actor_play_actions')::text as actor_play_actions,
+              to_regclass('public.actor_topic_mutes')::text as actor_topic_mutes,
+              to_regclass('public.canvas_assets')::text as canvas_assets,
+              to_regclass('public.actor_access_credentials')::text as actor_access_credentials,
+              (
+                select pg_get_constraintdef(oid)
+                from pg_constraint
+                where conname = 'media_derivatives_purpose_check'
+              ) as purpose_check`,
+    );
+    assert.equal(afterActionsDown.rows[0]?.actor_play_actions, null);
+    assert.equal(afterActionsDown.rows[0]?.actor_topic_mutes, null);
+    assert.equal(afterActionsDown.rows[0]?.canvas_assets, 'canvas_assets');
+    assert.equal(
+      afterActionsDown.rows[0]?.actor_access_credentials,
+      'actor_access_credentials',
+    );
+    const purposeCheck = afterActionsDown.rows[0]?.purpose_check;
+    assert.ok(purposeCheck);
+    assert.equal(purposeCheck.includes("'image'"), true);
+  } finally {
+    await actionsDownPool.end();
+  }
+
+  await runMigration('down');
+  const canvasDownPool = new Pool({connectionString: databaseUrl});
+  try {
+    const afterCanvasDown = await canvasDownPool.query<{
+      canvas_assets: string | null;
+      actor_access_credentials: string | null;
+      purpose_check: string | null;
+    }>(
+      `select to_regclass('public.canvas_assets')::text as canvas_assets,
+              to_regclass('public.actor_access_credentials')::text as actor_access_credentials,
+              (
+                select pg_get_constraintdef(oid)
+                from pg_constraint
+                where conname = 'media_derivatives_purpose_check'
+              ) as purpose_check`,
+    );
+    assert.equal(afterCanvasDown.rows[0]?.canvas_assets, null);
+    assert.equal(
+      afterCanvasDown.rows[0]?.actor_access_credentials,
+      'actor_access_credentials',
+    );
+    const purposeCheck = afterCanvasDown.rows[0]?.purpose_check;
+    assert.ok(purposeCheck);
+    assert.equal(purposeCheck.includes("'image'"), true);
+  } finally {
+    await canvasDownPool.end();
+  }
+
+  const imageCleanupPool = new Pool({connectionString: databaseUrl});
+  try {
+    await imageCleanupPool.query("delete from media_derivatives where purpose = 'image'");
+  } finally {
+    await imageCleanupPool.end();
+  }
+
+  await runMigration('down');
+  const imagePurposeDownPool = new Pool({connectionString: databaseUrl});
+  try {
+    const afterImagePurposeDown = await imagePurposeDownPool.query<{
+      actor_access_credentials: string | null;
+      purpose_check: string | null;
+    }>(
+      `select to_regclass('public.actor_access_credentials')::text as actor_access_credentials,
+              (
+                select pg_get_constraintdef(oid)
+                from pg_constraint
+                where conname = 'media_derivatives_purpose_check'
+              ) as purpose_check`,
+    );
+    assert.equal(
+      afterImagePurposeDown.rows[0]?.actor_access_credentials,
+      'actor_access_credentials',
+    );
+    const purposeCheck = afterImagePurposeDown.rows[0]?.purpose_check;
+    assert.ok(purposeCheck);
+    assert.equal(purposeCheck.includes("'image'"), false);
+    assert.equal(purposeCheck.includes("'playback'"), true);
+  } finally {
+    await imagePurposeDownPool.end();
+  }
+
+  await runMigration('down');
+  const actorAccessDownPool = new Pool({connectionString: databaseUrl});
+  try {
+    const afterActorAccessDown = await actorAccessDownPool.query<{
+      actor_access_credentials: string | null;
+      feed_decisions: string | null;
+      media_assets: string | null;
+      actors: string | null;
+    }>(
+      `select to_regclass('public.actor_access_credentials')::text as actor_access_credentials,
+              to_regclass('public.feed_decisions')::text as feed_decisions,
+              to_regclass('public.media_assets')::text as media_assets,
+              to_regclass('public.actors')::text as actors`,
+    );
+    assert.equal(afterActorAccessDown.rows[0]?.actor_access_credentials, null);
+    assert.equal(afterActorAccessDown.rows[0]?.feed_decisions, 'feed_decisions');
+    assert.equal(afterActorAccessDown.rows[0]?.media_assets, 'media_assets');
+    assert.equal(afterActorAccessDown.rows[0]?.actors, 'actors');
+  } finally {
+    await actorAccessDownPool.end();
+  }
+
+  await runMigration('down');
+  const consumerDownPool = new Pool({connectionString: databaseUrl});
+  try {
+    const afterConsumerDown = await consumerDownPool.query<{
+      feed_decisions: string | null;
+      media_assets: string | null;
+      media_derivatives: string | null;
+      actors: string | null;
+    }>(
+      `select to_regclass('public.feed_decisions')::text as feed_decisions,
+              to_regclass('public.media_assets')::text as media_assets,
+              to_regclass('public.media_derivatives')::text as media_derivatives,
+              to_regclass('public.actors')::text as actors`,
+    );
+    assert.equal(afterConsumerDown.rows[0]?.feed_decisions, null);
+    assert.equal(afterConsumerDown.rows[0]?.media_assets, 'media_assets');
+    assert.equal(afterConsumerDown.rows[0]?.media_derivatives, 'media_derivatives');
+    assert.equal(afterConsumerDown.rows[0]?.actors, 'actors');
+  } finally {
+    await consumerDownPool.end();
+  }
+
+  await runMigration('down');
+  const mediaDownPool = new Pool({connectionString: databaseUrl});
+  try {
+    const afterMediaDown = await mediaDownPool.query<{
       media_assets: string | null;
       media_derivatives: string | null;
       actors: string | null;
@@ -257,11 +446,11 @@ test('media foundation down migration removes only media schema and cleanly reap
               to_regclass('public.media_derivatives')::text as media_derivatives,
               to_regclass('public.actors')::text as actors`,
     );
-    assert.equal(result.rows[0]?.media_assets, null);
-    assert.equal(result.rows[0]?.media_derivatives, null);
-    assert.equal(result.rows[0]?.actors, 'actors');
+    assert.equal(afterMediaDown.rows[0]?.media_assets, null);
+    assert.equal(afterMediaDown.rows[0]?.media_derivatives, null);
+    assert.equal(afterMediaDown.rows[0]?.actors, 'actors');
   } finally {
-    await pool.end();
+    await mediaDownPool.end();
     await runMigration('up');
   }
 });

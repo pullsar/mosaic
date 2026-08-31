@@ -3,15 +3,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mosaic_app/main.dart';
 
 void main() {
-  testWidgets('opens directly into a declaratively rendered Play', (
+  testWidgets('first launch opens the optional visual onboarding', (
     tester,
   ) async {
     await tester.pumpWidget(const ProviderScope(child: MosaicApp()));
     await tester.pumpAndSettle();
 
-    expect(find.text('Where is this?'), findsOneWidget);
-    expect(find.text('Lisbon'), findsOneWidget);
-    expect(find.text('Marrakech'), findsOneWidget);
-    expect(find.bySemanticsLabel('Warm walkable city scene'), findsOneWidget);
+    expect(find.text('What are you into?'), findsOneWidget);
+    expect(find.text('Surprise me'), findsOneWidget);
+    expect(find.text('Continue'), findsOneWidget);
+    expect(find.text('Where is this?'), findsNothing);
   });
 }

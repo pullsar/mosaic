@@ -1,6 +1,6 @@
 # Mosaic API
 
-Small Fastify/PostgreSQL foundation for identity, immutable Play revisions, idempotent interaction events, and asynchronous media processing.
+Small Fastify/PostgreSQL foundation for identity, immutable Play revisions, idempotent interaction events, an interpretable anonymous consumer feed, and asynchronous media processing.
 
 ## Local
 
@@ -28,18 +28,81 @@ npm run migrate:down
 
 Production migrations are forward-first. A migration that has reached production should normally be repaired by a new forward migration instead of editing the historical file. `down` exists for local/test rollback and emergency procedures whose data implications have been reviewed.
 
-Every migration runs transactionally when PostgreSQL permits it. CI applies migrations to a clean database and exercises the event/idempotency and media integration suites.
+Every migration runs transactionally when PostgreSQL permits it. CI applies migrations to a clean database and exercises identity/event, consumer-feed, actor-access, and media integration suites, including ordered rollback/reapply coverage.
 
 ## API foundation
 
 - `GET /health` — process liveness.
 - `GET /ready` — PostgreSQL readiness.
-- `POST /v1/actors` — idempotent anonymous actor creation.
-- `POST /v1/actors/:actorId/bind-user` — bind anonymous history to a durable user.
-- `POST /v1/events` — idempotent event ingestion keyed by `eventId`; server stores independent `received_at`.
-- `POST /v1/plays/:playId/revisions/:revisionId` — immutable revision retrieval after client capability eligibility check.
+- `POST /v1/actors` — register/idempotently confirm an anonymous actor using its bearer proof-of-possession secret.
+- `POST /v1/actors/:actorId/bind-user` — reserved for authenticated account binding; currently returns `account_auth_not_configured` after actor proof rather than trusting a client-supplied user ID.
+- `POST /v1/events` — actor-authenticated idempotent event ingestion keyed by `eventId`; server stores independent `received_at`.
+- `POST /v1/plays/:playId/revisions/:revisionId` — public immutable revision retrieval after client capability eligibility check.
+- `GET /v1/topics?q=<query>&limit=<1..100>` — public bounded topic search/catalog listing.
+- `GET /v1/actors/:actorId/preferences` — actor-authenticated read of separate explicit interest and learning selections.
+- `PUT /v1/actors/:actorId/preferences` — actor-authenticated atomic replacement of explicit interest and learning selections.
+- `POST /v1/feed` — actor-authenticated creation/continuation of a bounded capability-compatible feed decision.
 
-The Play eligibility matcher mirrors `packages/play_schema` and `contracts/` from issue #18. Server and client must remain conformant through pinned fixtures.
+The Play eligibility matcher mirrors `packages/play_schema` and `contracts/` from issue #18. Server and client must remain conformant through pinned fixtures. The same capability parser is used for direct revision retrieval and feed selection.
+
+## Anonymous actor ownership
+
+`actorId` is a pseudonymous identifier, **not a secret**. Anonymous clients persist a separate 32-byte random base64url access token and send it as:
+
+```text
+Authorization: Bearer <actor-access-token>
+```
+
+The server stores only the SHA-256 digest of that token in `actor_access_credentials` and uses a timing-safe digest comparison. The raw token must never appear in event payloads, URLs, feed cursors, Play documents, or server logs.
+
+Registration semantics are fail-closed:
+
+- a new actor + credential returns `201`;
+- exact retry with the same credential returns `200`;
+- a different credential for an already credentialed actor returns `403 actor_credential_rejected`;
+- an actor created before credential support but lacking a credential returns `409 actor_rotation_required` and **cannot be claimed** by a newly supplied token.
+
+Upgraded native/web clients therefore rotate to a fresh actor ID + credential pair when local storage contains a legacy actor ID without a valid token. This intentionally gives up stale pre-beta anonymous state rather than creating an actor-takeover path.
+
+Actor proof is required for events, preference reads/writes, feed requests, and future actor-private mutations. Public topic catalog and compatible public Play reads remain unauthenticated.
+
+### Flutter web CORS
+
+Set `MOSAIC_WEB_ORIGINS` to an explicit comma-separated allowlist of web app origins, for example:
+
+```text
+MOSAIC_WEB_ORIGINS=https://app.example.com,http://localhost:3000
+```
+
+Production origins must use HTTPS; HTTP is accepted only for explicit localhost development. Cross-origin responses echo only an allowlisted exact origin, include `Vary: Origin`, and preflight permits only `GET,POST,PUT,OPTIONS` plus `content-type,authorization`. Unknown origins receive no permissive CORS headers. Cookie credentials are not enabled for the anonymous actor-token flow.
+
+## Anonymous consumer feed
+
+The first M2 feed is intentionally rules-based and inspectable. Interest and learning intent remain separate inputs; `More Like This` is a distinct affinity, one dismissal is weak evidence, repeated dismissal is progressively stronger, explicit topic mute excludes a candidate, and ranking does not optimize raw session duration.
+
+Only revisions explicitly present in `feed_catalog_entries` with `state = 'eligible'` can enter the feed. Compatibility is checked before ranking, so a persisted decision never contains a Play the requesting client cannot render. Seed fixtures materialize their authored `topics` and `learningTopics` into role-specific revision links and receive deterministic curated ordering for development/test supply.
+
+A new authenticated feed request accepts:
+
+```json
+{
+  "actorId": "anonymous-actor-id",
+  "capabilities": {
+    "schemaVersions": [1],
+    "presentationTypes": ["text", "image", "canvas"],
+    "inputTypes": ["tap", "single_choice"],
+    "validatorTypes": ["none", "equals"],
+    "platformFlags": []
+  },
+  "limit": 8
+}
+```
+
+`limit` defaults to 8 and is capped at 20. The server considers at most 200 eligible candidates by default, persists at most a 64-item decision window by default, and hard-caps windows at 100. The response includes a server-generated `requestId`, ranking config version, whether curated fallback was used, Play documents, and an opaque `nextCursor` when more of the same decision remains.
+
+Feed decisions expire after 24 hours. Cursor reads are fenced to the authenticated actor and a SHA-256 fingerprint of the canonical client capability set; an expired, malformed, cross-actor, or capability-mismatched cursor returns `invalid_feed_cursor`. Clients register/confirm their actor credential before private feed/preference/event operations.
+
+Stage-1 ranking persists each selected revision's source bucket, score, and named feature contributions for reproducibility/debugging. A small exploration guarantee substitutes one wildcard only when a wildcard exists and the selected multi-item window otherwise contains none; there is no permanent fixed bucket split. If the ranking implementation/configuration throws, the service logs the failure and degrades to compatible curated ordering rather than trapping the client. Database/candidate-source failure is not hidden because no trustworthy fallback inventory exists in that case.
 
 ## Media workers
 
@@ -114,4 +177,4 @@ The workers never expose raw source object keys for consumer delivery. Publicati
 
 ## Scope boundary
 
-This service intentionally avoids ranking infrastructure, creator Studio, Redis/queue infrastructure without measured need, payments, and a generic ORM. Media processing is deliberately narrow: deterministic FFmpeg normalization, managed immutable storage, transcript/caption work, and compatibility-safe publication required by the launch media contract. Add broader infrastructure only when a concrete milestone requires it.
+The current consumer ranker is deliberately a small weighted rules baseline with persisted explainability, not learned ranking infrastructure. This service still avoids creator Studio, Redis/queue infrastructure without measured need, payments, a generic ORM, pgvector/semantic ranking, and opaque engagement optimization. Account authentication/anonymous-to-user merge is intentionally separate from anonymous actor proof and is tracked independently. Add broader infrastructure only when a concrete milestone and measured need justify it.

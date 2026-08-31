@@ -11,7 +11,8 @@ export type MediaPublicationBlockReason =
   | 'asset_revoked'
   | 'asset_not_ready'
   | 'source_unverified'
-  | 'image_delivery_not_implemented'
+  | 'image_not_ready'
+  | 'image_incompatible'
   | 'playback_not_ready'
   | 'playback_incompatible'
   | 'poster_not_ready'
@@ -84,7 +85,7 @@ export interface MediaDeliveryObject {
 
 export interface MediaDeliverySelection {
   assetId: string;
-  kind: 'video' | 'audio';
+  kind: 'image' | 'video' | 'audio';
   sourceSha256: string;
   primary: MediaDeliveryObject;
   poster: MediaDeliveryObject | null;
@@ -119,6 +120,7 @@ type DerivativeRow = {
   dynamic_range: 'sdr' | 'hdr' | null;
 };
 
+const IMAGE_PROCESSOR = 'ffmpeg-image-normalize-v1';
 const PLAYBACK_PROCESSOR = 'ffmpeg-video-normalize-v1';
 const POSTER_PROCESSOR = 'ffmpeg-poster-v1';
 const AUDIO_PROCESSOR = 'ffmpeg-audio-normalize-v1';
@@ -127,7 +129,7 @@ const CAPTIONS_PROCESSOR = 'speech-transcript-v1';
 /**
  * Selects only managed, verified derivatives. Source object keys are deliberately
  * absent from the returned shape so callers cannot accidentally expose a
- * quarantined HEVC/HDR source as a playback fallback.
+ * quarantined source as a delivery fallback.
  */
 export function selectMediaDelivery(
   asset: MediaPublicationAsset,
@@ -135,13 +137,31 @@ export function selectMediaDelivery(
 ): MediaDeliverySelection {
   if (asset.state === 'revoked') block(asset.id, 'asset_revoked');
   if (asset.sourceSha256 === null) block(asset.id, 'source_unverified');
-  if (asset.kind === 'image') block(asset.id, 'image_delivery_not_implemented');
 
   const current = derivatives.filter(
     (derivative) => derivative.sourceSha256 === asset.sourceSha256,
   );
-  const captions = selectOptionalCaptions(asset.id, current);
 
+  if (asset.kind === 'image') {
+    const primary = requireCompatible(
+      asset.id,
+      current,
+      'image',
+      'image_not_ready',
+      'image_incompatible',
+      isCompatibleImage,
+    );
+    return Object.freeze({
+      assetId: asset.id,
+      kind: 'image',
+      sourceSha256: asset.sourceSha256,
+      primary,
+      poster: null,
+      captions: null,
+    });
+  }
+
+  const captions = selectOptionalCaptions(asset.id, current);
   if (asset.kind === 'video') {
     const primary = requireCompatible(
       asset.id,
@@ -277,6 +297,15 @@ function ordered(
   return [...derivatives].sort((left, right) =>
     right.planVersion - left.planVersion || left.derivativeKey.localeCompare(right.derivativeKey),
   );
+}
+
+function isCompatibleImage(value: MediaPublicationDerivative): value is PublishedMediaDerivative {
+  return hasPublishedObject(value) &&
+    value.processor === IMAGE_PROCESSOR &&
+    value.mimeType === 'image/jpeg' &&
+    value.dynamicRange === 'sdr' &&
+    positiveDimension(value.width) &&
+    positiveDimension(value.height);
 }
 
 function isCompatiblePlayback(value: MediaPublicationDerivative): value is PublishedMediaDerivative {

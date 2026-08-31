@@ -1,14 +1,17 @@
 import 'package:event_delivery/event_delivery.dart';
 
+import 'consumer_local_state_web.dart';
 import 'event_runtime_resources.dart';
 
 Future<AppEventResources> openPlatformEventResources() async {
   final store = await IndexedDbEventStore.open();
   try {
-    final actorId = await store.getOrCreateActorId();
+    final actorAccess = await store.getOrCreateActorAccess();
     return AppEventResources(
       outbox: store,
-      actorId: actorId,
+      consumerLocalState: IndexedDbConsumerLocalState(store),
+      actorId: actorAccess.actorId,
+      actorAccessToken: actorAccess.accessToken,
       close: store.close,
     );
   } on Object {

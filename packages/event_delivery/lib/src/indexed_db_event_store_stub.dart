@@ -24,10 +24,19 @@ final class IndexedDbEventStore implements EventOutbox, ActorIdentityStore {
   @override
   Future<String> getOrCreateActorId() => _unsupported();
 
+  Future<ActorAccessIdentity> getOrCreateActorAccess() => _unsupported();
+
   @override
   Future<void> bindActorToUser(String actorId, String userId) => _unsupported();
 
   Future<String?> boundUserId() => _unsupported();
+
+  Future<String?> readConsumerMetadata(String key) => _unsupported();
+
+  Future<void> writeConsumerMetadata(String key, String value) =>
+      _unsupported();
+
+  Future<void> deleteConsumerMetadata(String key) => _unsupported();
 
   @override
   Future<void> enqueue(

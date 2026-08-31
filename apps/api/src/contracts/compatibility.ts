@@ -12,6 +12,61 @@ export interface CompatibilityDecision {
   missing: string[];
 }
 
+const MAX_CAPABILITY_VALUES = 256;
+const MAX_CAPABILITY_TEXT_LENGTH = 100;
+
+export function parseClientCapabilities(value: unknown): ClientCapabilities | null {
+  if (!isRecord(value)) return null;
+  const schemaVersions = integerArray(value.schemaVersions);
+  const presentationTypes = textArray(value.presentationTypes);
+  const inputTypes = textArray(value.inputTypes);
+  const validatorTypes = textArray(value.validatorTypes);
+  const platformFlags = textArray(value.platformFlags);
+  if (
+    schemaVersions === null ||
+    presentationTypes === null ||
+    inputTypes === null ||
+    validatorTypes === null ||
+    platformFlags === null
+  ) {
+    return null;
+  }
+  return {
+    schemaVersions,
+    presentationTypes,
+    inputTypes,
+    validatorTypes,
+    platformFlags,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function integerArray(value: unknown): number[] | null {
+  if (
+    !Array.isArray(value) ||
+    value.length > MAX_CAPABILITY_VALUES ||
+    value.some((item) => !Number.isSafeInteger(item) || (item as number) < 1)
+  ) {
+    return null;
+  }
+  return [...new Set(value as number[])].sort((left, right) => left - right);
+}
+
+function textArray(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.length > MAX_CAPABILITY_VALUES) return null;
+  const normalized: string[] = [];
+  for (const item of value) {
+    if (typeof item !== 'string') return null;
+    const text = item.trim();
+    if (text.length === 0 || text.length > MAX_CAPABILITY_TEXT_LENGTH) return null;
+    normalized.push(text);
+  }
+  return [...new Set(normalized)].sort();
+}
+
 function stringSet(value: unknown): Set<string> | null {
   if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) return null;
   return new Set(value as string[]);
@@ -27,7 +82,12 @@ export function checkPlayCompatibility(
   const play = raw as Record<string, unknown>;
   const schemaVersion = play.schemaVersion;
   const states = play.states;
-  if (!Number.isInteger(schemaVersion) || !states || typeof states !== 'object' || Array.isArray(states)) {
+  if (
+    !Number.isInteger(schemaVersion) ||
+    !states ||
+    typeof states !== 'object' ||
+    Array.isArray(states)
+  ) {
     return {compatible: false, reason: 'malformed', missing: []};
   }
 
@@ -39,9 +99,10 @@ export function checkPlayCompatibility(
     };
   }
 
-  const requiredFlags = play.requiredPlatformFlags === undefined
-    ? new Set<string>()
-    : stringSet(play.requiredPlatformFlags);
+  const requiredFlags =
+    play.requiredPlatformFlags === undefined
+      ? new Set<string>()
+      : stringSet(play.requiredPlatformFlags);
   if (requiredFlags === null) {
     return {compatible: false, reason: 'malformed', missing: []};
   }
@@ -58,9 +119,17 @@ export function checkPlayCompatibility(
     const presentation = state.presentation;
     const input = state.input;
     const validation = state.validation;
-    if (!presentation || typeof presentation !== 'object' || Array.isArray(presentation) ||
-        !input || typeof input !== 'object' || Array.isArray(input) ||
-        !validation || typeof validation !== 'object' || Array.isArray(validation)) {
+    if (
+      !presentation ||
+      typeof presentation !== 'object' ||
+      Array.isArray(presentation) ||
+      !input ||
+      typeof input !== 'object' ||
+      Array.isArray(input) ||
+      !validation ||
+      typeof validation !== 'object' ||
+      Array.isArray(validation)
+    ) {
       return {compatible: false, reason: 'malformed', missing: []};
     }
 

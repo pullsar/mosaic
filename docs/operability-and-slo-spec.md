@@ -1,4 +1,4 @@
-# Mosaic — Operability & SLO Specification
+# Mixli — Operability & SLO Specification
 
 ## 1. Purpose
 
@@ -128,7 +128,7 @@ Remote configuration must be able to disable or change without a client release:
 
 Every risky rollout should have a named rollback flag before release.
 
-GrowthBook Flutter is a preferred candidate for feature flags/experimentation, subject to license/deployment review and isolated behind Mosaic's flag interface.
+GrowthBook Flutter is a preferred candidate for feature flags/experimentation, subject to license/deployment review and isolated behind Mixli's flag interface.
 
 ### Failure defaults
 

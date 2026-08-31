@@ -6,6 +6,8 @@ import {buildApp} from '../src/app.js';
 import {PostgresRepository} from '../src/repository.js';
 
 const databaseUrl = process.env.DATABASE_URL;
+const actorToken = 'A'.repeat(43);
+const actorAuthorization = {authorization: `Bearer ${actorToken}`};
 
 async function runMigration(): Promise<void> {
   await new Promise<void>((resolve, reject) => {
@@ -52,6 +54,7 @@ test(
       const actor = await app.inject({
         method: 'POST',
         url: '/v1/actors',
+        headers: actorAuthorization,
         payload: {actorId},
       });
       assert.equal(actor.statusCode, 201);
@@ -66,8 +69,18 @@ test(
         playRevisionId,
         payload,
       };
-      const first = await app.inject({method: 'POST', url: '/v1/events', payload: event});
-      const duplicate = await app.inject({method: 'POST', url: '/v1/events', payload: event});
+      const first = await app.inject({
+        method: 'POST',
+        url: '/v1/events',
+        headers: actorAuthorization,
+        payload: event,
+      });
+      const duplicate = await app.inject({
+        method: 'POST',
+        url: '/v1/events',
+        headers: actorAuthorization,
+        payload: event,
+      });
       assert.equal(first.statusCode, 202);
       assert.equal(duplicate.statusCode, 200);
 
