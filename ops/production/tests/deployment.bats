@@ -309,6 +309,16 @@ deploy() {
   [ "$(cat "$TEST_ROOT/runtime/compose.yaml")" = "compose:$OLD_SHA" ]
 }
 
+@test "failed deployment removes only production tags created by that attempt" {
+  MIXLI_TEST_FAIL_STAGE=public-smoke run deploy "$SHA"
+  [ "$status" -ne 0 ]
+
+  [ ! -e "$TEST_ROOT/images/mixli-api__$SHA" ]
+  [ ! -e "$TEST_ROOT/images/mixli-postgres__$SHA" ]
+  grep -Fxq "image rm mixli-api:$SHA" "$COMMAND_LOG"
+  grep -Fxq "image rm mixli-postgres:$SHA" "$COMMAND_LOG"
+}
+
 @test "failed first deployment leaves no latent upstream or web link" {
   rm -f "$TEST_ROOT/current" "$TEST_ROOT/runtime/api-upstream.conf" "$TEST_ROOT/runtime/compose.yaml" \
     "$TEST_ROOT/state/current.json" "$TEST_ROOT/state/previous.json"
