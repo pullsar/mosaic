@@ -670,16 +670,29 @@ wait_for_candidate() {
   return 1
 }
 
+nginx_origin_ip() {
+  local container_id origin_ip
+  container_id="$(compose ps -q nginx)"
+  [[ -n "$container_id" ]]
+  origin_ip="$(docker inspect --format \
+    '{{with index .NetworkSettings.Networks "mixli_backend"}}{{.IPAddress}}{{end}}' \
+    "$container_id")"
+  [[ "$origin_ip" =~ ^[0-9]+(\.[0-9]+){3}$ ]]
+  printf '%s\n' "$origin_ip"
+}
+
 smoke_release() {
+  local origin_ip
   fail_if_requested public-smoke
   [[ "$TEST_MODE" == '1' ]] && return 0
+  origin_ip="$(nginx_origin_ip)"
   curl --fail --silent --show-error --max-time 10 \
     --retry 20 --retry-delay 1 --retry-max-time 30 --retry-all-errors \
-    --cacert "$ORIGIN_CA" --resolve api.mixli.app:443:127.0.0.1 \
+    --cacert "$ORIGIN_CA" --resolve "api.mixli.app:443:$origin_ip" \
     https://api.mixli.app/ready >/dev/null
   curl --fail --silent --show-error --max-time 10 \
     --retry 20 --retry-delay 1 --retry-max-time 30 --retry-all-errors \
-    --cacert "$ORIGIN_CA" --resolve mixli.app:443:127.0.0.1 \
+    --cacert "$ORIGIN_CA" --resolve "mixli.app:443:$origin_ip" \
     https://mixli.app/ >/dev/null
   curl --fail --silent --show-error --max-time 15 https://api.mixli.app/ready >/dev/null
   curl --fail --silent --show-error --max-time 15 https://mixli.app/ >/dev/null
