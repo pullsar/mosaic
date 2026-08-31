@@ -277,6 +277,13 @@ deploy() {
   [ "$(cat "$TEST_ROOT/runtime/compose.yaml")" = "compose:$SHA" ]
 }
 
+@test "existing exact checkout ownership is normalized before CI reuse" {
+  script="$REPO_ROOT/ops/production/bin/deployment.sh"
+  prepare="$(sed -n '/^prepare_checkout()/,/^}/p' "$script")"
+
+  grep -Fq 'chown -hR mixli-build:mixli-build -- "$build_dir"' <<<"$prepare"
+}
+
 @test "direct Nginx publish verifies the Cloudflare nft boundary first" {
   script="$REPO_ROOT/ops/production/bin/deployment.sh"
   reload="$(sed -n '/^reload_nginx()/,/^}/p' "$script")"
