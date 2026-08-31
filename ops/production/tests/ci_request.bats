@@ -48,12 +48,16 @@ setup() {
   grep -Fq 'log_result ci-failed' "$script"
 }
 
-@test "deployment requests enqueue the synchronous deployer" {
+@test "deployment requests enqueue the exact SHA versioned deployer" {
   request="$REPO_ROOT/ops/production/bin/deployment-request.sh"
   run env MIXLI_DEPLOY_REQUEST_TEST_MODE=1 "$request" "$SHA"
   [ "$status" -eq 0 ]
   [ "$output" = "queued:mixli-deploy-${SHA:0:12}" ]
-  grep -Fq '/opt/mixli/bin/deployment.sh "$SHA"' "$request"
+  grep -Fq 'fetch --prune origin main' "$request"
+  grep -Fq 'merge-base --is-ancestor "$SHA" origin/main' "$request"
+  grep -Fq 'DEPLOY_RUNNER="$CHECKOUT/ops/production/bin/deployment.sh"' "$request"
+  grep -Fq '"$DEPLOY_RUNNER" "$SHA"' "$request"
+  ! grep -Fq '/opt/mixli/bin/deployment.sh "$SHA"' "$request"
 }
 
 @test "production deployment synchronously preempts review units" {

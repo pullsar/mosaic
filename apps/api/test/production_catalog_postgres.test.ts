@@ -91,6 +91,21 @@ test(
         );
       }
 
+      try {
+        await pool.query(
+          `delete from play_revision_topics
+            where play_id = 'mixli_starter_city_instinct'
+              and revision_id = 'rev_1'
+              and topic_id = 'travel'`,
+        );
+        await assert.rejects(
+          verifyProductionCatalog(pool),
+          /topic links differ from release content/,
+        );
+      } finally {
+        await applyProductionCatalog(pool);
+      }
+
       const unrelatedCount = await pool.query<{count: number}>(
         'select count(*)::int as count from plays where id = $1',
         [unrelated],
