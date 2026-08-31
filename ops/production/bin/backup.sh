@@ -33,12 +33,12 @@ run_pgbackrest() {
   fi
 }
 
-for repo in 1 2; do
-  if [[ "$OPERATION" != 'check' ]]; then
+if [[ "$OPERATION" != 'check' ]]; then
+  for repo in 1 2; do
     run_pgbackrest "--repo=$repo" "--type=$OPERATION" backup
-  fi
-  run_pgbackrest "--repo=$repo" check
-done
+  done
+fi
+run_pgbackrest check
 
 now="$(date -u +%s)"
 last_backup=''

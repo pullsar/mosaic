@@ -189,8 +189,7 @@ check_backup_wal() {
   [[ -s "$METRICS_FILE" ]]
   fresh_metric mixli_pgbackrest_last_backup_success_timestamp 93600
   fresh_metric mixli_pgbackrest_last_check_success_timestamp 93600
-  compose exec -T --user postgres postgres pgbackrest --stanza=mixli --repo=1 check
-  compose exec -T --user postgres postgres pgbackrest --stanza=mixli --repo=2 check
+  compose exec -T --user postgres postgres pgbackrest --stanza=mixli check
   wal_age="$(compose exec -T --user postgres postgres psql -d mixli -Atqc \
     "select coalesce(extract(epoch from now() - last_archived_time)::bigint, -1) from pg_stat_archiver")"
   [[ "$wal_age" =~ ^[0-9]+$ && "$wal_age" -le 900 ]]
