@@ -674,9 +674,11 @@ smoke_release() {
   fail_if_requested public-smoke
   [[ "$TEST_MODE" == '1' ]] && return 0
   curl --fail --silent --show-error --max-time 10 \
+    --retry 20 --retry-delay 1 --retry-max-time 30 --retry-all-errors \
     --cacert "$ORIGIN_CA" --resolve api.mixli.app:443:127.0.0.1 \
     https://api.mixli.app/ready >/dev/null
   curl --fail --silent --show-error --max-time 10 \
+    --retry 20 --retry-delay 1 --retry-max-time 30 --retry-all-errors \
     --cacert "$ORIGIN_CA" --resolve mixli.app:443:127.0.0.1 \
     https://mixli.app/ >/dev/null
   curl --fail --silent --show-error --max-time 15 https://api.mixli.app/ready >/dev/null
