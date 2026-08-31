@@ -102,7 +102,7 @@ final class _GuestHomeState extends State<GuestHome> {
           children: <Widget>[
             widget.child,
             SafeArea(
-              minimum: const EdgeInsetsDirectional.fromSTEB(16, 8, 8, 0),
+              minimum: const EdgeInsets.fromLTRB(16, 8, 8, 0),
               child: Align(
                 alignment: AlignmentDirectional.topCenter,
                 child: SizedBox(

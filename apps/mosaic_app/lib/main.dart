@@ -131,7 +131,7 @@ final class _MosaicAppState extends State<MosaicApp> {
     final localState = _eventRuntime.resources.consumerLocalState;
     _guestEngagement = GuestEngagementController(
       store: localState is GuestEngagementStore
-          ? localState
+          ? localState as GuestEngagementStore
           : MemoryGuestEngagementStore(),
     );
     unawaited(_guestEngagement.initialize());
@@ -453,7 +453,7 @@ final class _MosaicAppState extends State<MosaicApp> {
             ),
             if (scope != null)
               SafeArea(
-                minimum: const EdgeInsetsDirectional.fromSTEB(12, 58, 12, 0),
+                minimum: const EdgeInsets.fromLTRB(12, 58, 12, 0),
                 child: Align(
                   alignment: AlignmentDirectional.topStart,
                   child: InputChip(
