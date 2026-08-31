@@ -227,4 +227,3 @@ Ordinary pull-request updates and `main` pushes consume only a short GitHub-host
 - GitHub secure-use guidance: <https://docs.github.com/en/actions/reference/security/secure-use>
 - GitHub event semantics: <https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows>
 - GitHub Actions repository settings: <https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository>
-
