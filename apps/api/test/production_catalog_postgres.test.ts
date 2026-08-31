@@ -50,6 +50,47 @@ test(
       assert.deepEqual(second, first);
       assert.deepEqual(await verifyProductionCatalog(pool), first);
 
+      const playSnapshot = await pool.query<{document: unknown}>(
+        `select document from play_revisions
+          where play_id = 'mixli_starter_quick_logic' and revision_id = 'rev_1'`,
+      );
+      try {
+        await pool.query(
+          `update play_revisions
+              set document = document - 'states'
+            where play_id = 'mixli_starter_quick_logic' and revision_id = 'rev_1'`,
+        );
+        await assert.rejects(
+          verifyProductionCatalog(pool),
+          /differs from release content/,
+        );
+      } finally {
+        await pool.query(
+          `update play_revisions set document = $1::jsonb
+            where play_id = 'mixli_starter_quick_logic' and revision_id = 'rev_1'`,
+          [JSON.stringify(playSnapshot.rows[0]?.document)],
+        );
+      }
+
+      const canvasSnapshot = await pool.query<{content_sha256: string}>(
+        `select content_sha256 from canvas_assets
+          where id = 'mixli_canvas_quick_logic'`,
+      );
+      try {
+        await pool.query(
+          `update canvas_assets
+              set content_sha256 = repeat('0', 64)
+            where id = 'mixli_canvas_quick_logic'`,
+        );
+        await assert.rejects(verifyProductionCatalog(pool), /content hash changed/);
+      } finally {
+        await pool.query(
+          `update canvas_assets set content_sha256 = $1
+            where id = 'mixli_canvas_quick_logic'`,
+          [canvasSnapshot.rows[0]?.content_sha256],
+        );
+      }
+
       const unrelatedCount = await pool.query<{count: number}>(
         'select count(*)::int as count from plays where id = $1',
         [unrelated],

@@ -1,5 +1,9 @@
 import type {Pool, PoolClient} from 'pg';
-import {PostgresCanvasAssetRepository} from './canvas_asset.js';
+import {
+  normalizeCanvasAssetDocument,
+  PostgresCanvasAssetRepository,
+} from './canvas_asset.js';
+import {canonicalJson} from './media.js';
 
 export const productionStarterPrefix = 'mixli_starter_';
 export const productionStarterCount = 6;
@@ -359,14 +363,20 @@ export async function verifyProductionCatalog(
   ) {
     throw new Error('Starter Play catalog does not match the exact release set');
   }
-  const assets = await pool.query<{count: number}>(
-    `select count(*)::int as count
-       from canvas_assets
-      where id = any($1::text[]) and state = 'ready'`,
-    [canvasAssets.map((asset) => asset.id)],
-  );
   const eligiblePlays = actualCatalog.size;
-  const canvasAssetCount = assets.rows[0]?.count ?? 0;
+  const canvasRepository = new PostgresCanvasAssetRepository(pool);
+  let canvasAssetCount = 0;
+  for (const authoredAsset of canvasAssets) {
+    const expected = normalizeCanvasAssetDocument(authoredAsset);
+    const stored = await canvasRepository.get(expected.id);
+    if (
+      stored?.state !== 'ready' ||
+      canonicalJson(stored.document) !== canonicalJson(expected)
+    ) {
+      throw new Error(`Starter canvas ${expected.id} differs from release content`);
+    }
+    canvasAssetCount += 1;
+  }
   if (eligiblePlays !== productionStarterCount) {
     throw new Error(
       `Expected ${productionStarterCount} eligible starter Plays, found ${eligiblePlays}`,
@@ -378,21 +388,27 @@ export async function verifyProductionCatalog(
     );
   }
 
-  const documents = await pool.query<{play_id: string; assets: unknown}>(
-    `select revision.play_id, revision.document -> 'assets' as assets
+  const documents = await pool.query<{
+    play_id: string;
+    revision_id: string;
+    document: unknown;
+  }>(
+    `select revision.play_id, revision.revision_id, revision.document
        from play_revisions revision
        join feed_catalog_entries catalog using (play_id, revision_id)
       where catalog.play_id = any($1::text[]) and catalog.state = 'eligible'`,
     [starterPlays.map((play) => play.id)],
   );
-  const knownAssets = new Set<string>(canvasAssets.map((asset) => asset.id));
+  const expectedDocuments = new Map(
+    starterPlays.map((play) => [
+      `${play.id}\u0000${play.revisionId}`,
+      canonicalJson(play.document),
+    ]),
+  );
   for (const row of documents.rows) {
-    if (!Array.isArray(row.assets) || row.assets.length !== 1) {
-      throw new Error(`Starter Play ${row.play_id} must reference one canvas`);
-    }
-    const [assetId] = row.assets;
-    if (typeof assetId !== 'string' || !knownAssets.has(assetId)) {
-      throw new Error(`Starter Play ${row.play_id} references an unknown asset`);
+    const identity = `${row.play_id}\u0000${row.revision_id}`;
+    if (canonicalJson(row.document) !== expectedDocuments.get(identity)) {
+      throw new Error(`Starter Play ${row.play_id} differs from release content`);
     }
   }
   if (documents.rows.length !== starterPlays.length) {
