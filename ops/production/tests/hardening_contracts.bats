@@ -110,6 +110,21 @@ setup() { setup_repo_root; }
   [[ "$origin_ip" == *'mixli_backend'* ]]
 }
 
+@test "rollback and verification origin probes use the routable private Nginx address" {
+  deploy="$REPO_ROOT/ops/production/bin/deployment.sh"
+  verify="$REPO_ROOT/ops/production/bin/verify-production.sh"
+  rollback="$(sed -n '/^verify_rollback_traffic()/,/^}/p' "$deploy")"
+  verify_origin="$(sed -n '/^nginx_origin_ip()/,/^}/p; /^curl_endpoint()/,/^}/p; /^curl_headers()/,/^}/p' "$verify")"
+
+  [[ "$rollback" == *'origin_ip="$(nginx_origin_ip)"'* ]]
+  [[ "$rollback" == *'--resolve "api.mixli.app:443:$origin_ip"'* ]]
+  [[ "$rollback" != *'127.0.0.1'* ]]
+  [[ "$verify_origin" == *'compose ps -q nginx'* ]]
+  [[ "$verify_origin" == *'mixli_backend'* ]]
+  [[ "$(grep -Fc -- '--resolve "$host:443:$origin_ip"' <<<"$verify_origin")" -eq 2 ]]
+  [[ "$verify_origin" != *'127.0.0.1'* ]]
+}
+
 @test "monitoring secrets are staged with identity-specific modes" {
   stage="$REPO_ROOT/ops/production/bin/stage-container-secrets.sh"
   [ -f "$stage" ]
