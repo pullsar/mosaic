@@ -68,14 +68,8 @@ void main() {
     }
 
     expect(controller.shouldPrompt, isTrue);
-    expect(
-      controller.state.toJson()['hasMeaningfulInteraction'],
-      isTrue,
-    );
-    expect(
-      store.state?.toJson()['hasMeaningfulInteraction'],
-      isTrue,
-    );
+    expect(controller.state.toJson()['hasMeaningfulInteraction'], isTrue);
+    expect(store.state?.toJson()['hasMeaningfulInteraction'], isTrue);
   });
 
   test('eight distinct views prompt without an interaction', () async {

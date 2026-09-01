@@ -51,11 +51,8 @@ final class GuestEngagementState {
     }
 
     final rawMeaningfulInteraction = json['hasMeaningfulInteraction'];
-    if (rawMeaningfulInteraction != null &&
-        rawMeaningfulInteraction is! bool) {
-      throw const FormatException(
-        'hasMeaningfulInteraction must be a boolean',
-      );
+    if (rawMeaningfulInteraction != null && rawMeaningfulInteraction is! bool) {
+      throw const FormatException('hasMeaningfulInteraction must be a boolean');
     }
 
     return GuestEngagementState(
@@ -121,7 +118,8 @@ final class GuestEngagementController extends ChangeNotifier {
       return false;
     }
     final viewCount = _state.seenIdentities.length;
-    final eligible = viewCount >= viewOnlyPromptThreshold ||
+    final eligible =
+        viewCount >= viewOnlyPromptThreshold ||
         (viewCount >= interactionPromptThreshold &&
             _state.hasMeaningfulInteraction);
     if (!eligible) return false;

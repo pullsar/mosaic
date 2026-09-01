@@ -211,17 +211,13 @@ void main() {
         ];
         for (final (id, label) in destinations) {
           expect(find.text(label), findsOneWidget);
-          expect(
-            find.byKey(ValueKey<String>('guest-nav-$id')),
-            findsOneWidget,
-          );
+          expect(find.byKey(ValueKey<String>('guest-nav-$id')), findsOneWidget);
         }
         if (destinations.any(
-          (destination) =>
-              find
-                  .byKey(ValueKey<String>('guest-nav-${destination.$1}'))
-                  .evaluate()
-                  .isEmpty,
+          (destination) => find
+              .byKey(ValueKey<String>('guest-nav-${destination.$1}'))
+              .evaluate()
+              .isEmpty,
         )) {
           return;
         }

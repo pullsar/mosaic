@@ -136,9 +136,7 @@ final class _ConsumerActionControlsState extends State<ConsumerActionControls> {
             tooltip: state?.saved == true ? 'Unsave' : 'Save',
             onPressed: busy ? null : _toggleSave,
             icon: Icon(
-              state?.saved == true
-                  ? Icons.bookmark
-                  : Icons.bookmark_border,
+              state?.saved == true ? Icons.bookmark : Icons.bookmark_border,
             ),
           ),
           if (widget.onShare != null)
