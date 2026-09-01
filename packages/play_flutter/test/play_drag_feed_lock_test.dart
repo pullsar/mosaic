@@ -165,9 +165,11 @@ void main() {
   ) async {
     await tester.pumpWidget(
       MaterialApp(
-        home: SizedBox.square(
-          dimension: 300,
-          child: PlayDragInput(spec: _accessibleMatchSpec, onTarget: (_) {}),
+        home: Center(
+          child: SizedBox.square(
+            dimension: 300,
+            child: PlayDragInput(spec: _accessibleMatchSpec, onTarget: (_) {}),
+          ),
         ),
       ),
     );
@@ -192,60 +194,70 @@ void main() {
     tester,
   ) async {
     final semantics = tester.ensureSemantics();
-    addTearDown(semantics.dispose);
-    final targets = <String>[];
-    final locks = <bool>[];
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: SizedBox.square(
-          dimension: 300,
-          child: PlayDragInput(
-            spec: _accessibleMatchSpec,
-            onTarget: targets.add,
-            onManipulationChanged: locks.add,
-          ),
-        ),
-      ),
-    );
-
-    final node = tester.getSemantics(find.bySemanticsLabel('Move match'));
-    expect(node.getSemanticsData().hasAction(SemanticsAction.tap), isTrue);
-
-    tester.semantics.tap(find.semantics.byLabel('Move match'));
-    await tester.pump();
-
-    expect(targets, ['solution']);
-    expect(locks, isEmpty);
-  });
-
-  testWidgets(
-    'semantic activation uses the validated target when it is second',
-    (tester) async {
-      final semantics = tester.ensureSemantics();
-      addTearDown(semantics.dispose);
+    try {
       final targets = <String>[];
       final locks = <bool>[];
 
       await tester.pumpWidget(
         MaterialApp(
-          home: SizedBox.square(
-            dimension: 300,
-            child: PlayDragInput(
-              spec: _multipleTargetSpec,
-              semanticTargetId: 'solution',
-              onTarget: targets.add,
-              onManipulationChanged: locks.add,
+          home: Center(
+            child: SizedBox.square(
+              dimension: 300,
+              child: PlayDragInput(
+                spec: _accessibleMatchSpec,
+                onTarget: targets.add,
+                onManipulationChanged: locks.add,
+              ),
             ),
           ),
         ),
       );
+
+      final node = tester.getSemantics(find.bySemanticsLabel('Move match'));
+      expect(node.getSemanticsData().hasAction(SemanticsAction.tap), isTrue);
 
       tester.semantics.tap(find.semantics.byLabel('Move match'));
       await tester.pump();
 
       expect(targets, ['solution']);
       expect(locks, isEmpty);
+    } finally {
+      semantics.dispose();
+    }
+  });
+
+  testWidgets(
+    'semantic activation uses the validated target when it is second',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      try {
+        final targets = <String>[];
+        final locks = <bool>[];
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Center(
+              child: SizedBox.square(
+                dimension: 300,
+                child: PlayDragInput(
+                  spec: _multipleTargetSpec,
+                  semanticTargetId: 'solution',
+                  onTarget: targets.add,
+                  onManipulationChanged: locks.add,
+                ),
+              ),
+            ),
+          ),
+        );
+
+        tester.semantics.tap(find.semantics.byLabel('Move match'));
+        await tester.pump();
+
+        expect(targets, ['solution']);
+        expect(locks, isEmpty);
+      } finally {
+        semantics.dispose();
+      }
     },
   );
 
@@ -253,24 +265,27 @@ void main() {
     tester,
   ) async {
     final semantics = tester.ensureSemantics();
-    addTearDown(semantics.dispose);
-    final locks = <bool>[];
-    final canvas = _dragCanvas();
+    try {
+      final locks = <bool>[];
+      final canvas = _dragCanvas();
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: PlaySurface(
-          play: _multipleTargetPlay(),
-          mediaBuilder: (context, layer) => PlayCanvas(asset: canvas),
-          onDirectManipulationChanged: locks.add,
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PlaySurface(
+            play: _multipleTargetPlay(),
+            mediaBuilder: (context, layer) => PlayCanvas(asset: canvas),
+            onDirectManipulationChanged: locks.add,
+          ),
         ),
-      ),
-    );
+      );
 
-    tester.semantics.tap(find.semantics.byLabel('Move match'));
-    await tester.pumpAndSettle();
+      tester.semantics.tap(find.semantics.byLabel('Move match'));
+      await tester.pumpAndSettle();
 
-    expect(find.text('Solved target.'), findsOneWidget);
-    expect(locks, isEmpty);
+      expect(find.text('Solved target.'), findsOneWidget);
+      expect(locks, isEmpty);
+    } finally {
+      semantics.dispose();
+    }
   });
 }

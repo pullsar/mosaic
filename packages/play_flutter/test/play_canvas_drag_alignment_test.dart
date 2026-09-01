@@ -114,15 +114,8 @@ void main() {
         );
         final handle = find.byKey(const ValueKey<String>('play-drag-object'));
         final semanticHandle = find.bySemanticsLabel('Move tile');
-        final targetHint = find.descendant(
-          of: find.byType(PlayDragInput),
-          matching: find.byWidgetPredicate(
-            (widget) =>
-                widget is DecoratedBox &&
-                widget.decoration is BoxDecoration &&
-                (widget.decoration as BoxDecoration).border != null,
-            description: 'authored drag target hint',
-          ),
+        final targetHint = find.byKey(
+          const ValueKey<String>('play-drag-target:target'),
         );
 
         expect(canvasPaint, findsOneWidget);

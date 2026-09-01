@@ -91,56 +91,69 @@ final class _PlayPianoInputState extends State<PlayPianoInput> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Semantics(
-      container: true,
-      label: 'Piano keyboard',
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            height: 6,
-            child: Center(
-              child: Wrap(
-                spacing: 4,
-                children: List<Widget>.generate(
-                  widget.sequenceLength,
-                  (index) => DecoratedBox(
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: index < _sequence.length
-                          ? colorScheme.primary
-                          : colorScheme.outlineVariant,
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final colorScheme = Theme.of(context).colorScheme;
+      final availableHeight = constraints.hasBoundedHeight
+          ? constraints.maxHeight
+          : 118.0;
+      final showProgress = availableHeight >= 70;
+      final reservedHeight = showProgress ? 14.0 : 0.0;
+      final keyboardHeight = math
+          .min(104.0, math.max(48.0, availableHeight - reservedHeight))
+          .toDouble();
+
+      return Semantics(
+        container: true,
+        label: 'Piano keyboard',
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (showProgress) ...[
+              SizedBox(
+                height: 6,
+                child: Center(
+                  child: Wrap(
+                    spacing: 4,
+                    children: List<Widget>.generate(
+                      widget.sequenceLength,
+                      (index) => DecoratedBox(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: index < _sequence.length
+                              ? colorScheme.primary
+                              : colorScheme.outlineVariant,
+                        ),
+                        child: const SizedBox.square(dimension: 5),
+                      ),
                     ),
-                    child: const SizedBox.square(dimension: 5),
                   ),
                 ),
               ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 104,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  for (final note in widget.keys)
-                    _PianoKey(
-                      note: note,
-                      selected: note == _lastKey,
-                      onPressed: _locked ? null : () => _press(note),
-                    ),
-                ],
+              const SizedBox(height: 8),
+            ],
+            SizedBox(
+              height: keyboardHeight,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (final note in widget.keys)
+                      _PianoKey(
+                        note: note,
+                        selected: note == _lastKey,
+                        onPressed: _locked ? null : () => _press(note),
+                      ),
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
+          ],
+        ),
+      );
+    },
+  );
 }
 
 final class _PianoKey extends StatelessWidget {
@@ -186,7 +199,7 @@ final class _PianoKey extends StatelessWidget {
               bottom: Radius.circular(8),
             ),
             child: SizedBox(
-              width: 46,
+              width: 48,
               child: Align(
                 alignment: Alignment.bottomCenter,
                 child: Padding(
@@ -431,10 +444,13 @@ final class _PlayDragInputState extends State<PlayDragInput> {
                 width: target.rect.width * bounds.width,
                 height: target.rect.height * bounds.height,
                 child: IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      border: Border.all(color: colorScheme.outlineVariant),
-                      borderRadius: BorderRadius.circular(12),
+                  key: ValueKey<String>('play-drag-target:${target.id}'),
+                  child: ExcludeSemantics(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        border: Border.all(color: colorScheme.outlineVariant),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                   ),
                 ),

@@ -207,6 +207,14 @@ final class _TextOverlay extends StatelessWidget {
           duration: reduceMotion
               ? Duration.zero
               : MosaicVisualTokens.revealTransition,
+          layoutBuilder: (currentChild, previousChildren) => Stack(
+            fit: StackFit.expand,
+            children: [
+              for (final child in previousChildren)
+                Positioned.fill(child: child),
+              if (currentChild != null) Positioned.fill(child: currentChild),
+            ],
+          ),
           transitionBuilder: (child, animation) {
             if (reduceMotion) return child;
             return FadeTransition(

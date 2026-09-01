@@ -93,6 +93,34 @@ PlayDocument _composedCanvasPlay({
   },
 });
 
+PlayDocument _revealEntryPlay() => PlayDocument.fromJson({
+  'schemaVersion': 1,
+  'id': 'reveal_entry_canvas',
+  'revisionId': 'reveal_entry_canvas_rev_1',
+  'format': 'solve',
+  'classification': 'challenge',
+  'topics': ['puzzles'],
+  'learningTopics': <String>[],
+  'estimatedDurationSec': 8,
+  'assets': ['composition_canvas'],
+  'sources': <Object>[],
+  'entryState': 'reveal',
+  'states': {
+    'reveal': {
+      'presentation': {
+        'layers': [
+          {'type': 'canvas', 'role': 'media', 'assetId': 'composition_canvas'},
+          {'type': 'text', 'role': 'reveal_title', 'value': 'Balanced.'},
+          {'type': 'text', 'role': 'reveal_detail', 'value': _maximumReveal},
+        ],
+      },
+      'input': {'type': 'tap', 'label': 'Done'},
+      'validation': {'type': 'none'},
+      'transition': {'default': r'$end'},
+    },
+  },
+});
+
 PlayCanvasAsset _compositionCanvas() => PlayCanvasAsset(
   id: 'composition_canvas',
   semanticLabel: 'A matchstick equation',
@@ -143,10 +171,18 @@ void main() {
       tester.getRect(find.byKey(_inputKey)),
       tester.getRect(find.byKey(_utilitiesKey)),
     ]);
-    _expectContained(
-      tester.getRect(find.byKey(_promptKey)),
-      tester.getRect(find.text('Place the match.')),
+    final promptRect = tester.getRect(find.byKey(_promptKey));
+    final textScroll = find.byKey(const ValueKey<String>('play-text-scroll'));
+    _expectContained(promptRect, tester.getRect(textScroll));
+    _expectContained(promptRect, tester.getRect(find.text('Place the match.')));
+    expect(
+      tester.widget<SingleChildScrollView>(textScroll).clipBehavior,
+      Clip.hardEdge,
     );
+    final moreControl = find.byKey(const ValueKey<String>('play-text-more'));
+    if (moreControl.evaluate().isNotEmpty) {
+      _expectContained(promptRect, tester.getRect(moreControl));
+    }
     _expectContained(
       tester.getRect(find.byKey(_inputKey)),
       tester.getRect(find.widgetWithText(FilledButton, 'Place it')),
@@ -199,6 +235,10 @@ void main() {
           const ValueKey<String>('play-text-scroll'),
         );
         _expectContained(promptRect, tester.getRect(textScroll));
+        _expectContained(
+          promptRect,
+          tester.getRect(find.text('Balanced.')),
+        );
         final textPosition = tester.state<ScrollableState>(
           find.descendant(of: textScroll, matching: find.byType(Scrollable)),
         );
@@ -208,6 +248,11 @@ void main() {
         await tester.pumpAndSettle();
         expect(textPosition.position.pixels, greaterThan(beforeScroll));
         expect(find.text(_maximumReveal), findsOneWidget);
+        final visibleDetail = promptRect.intersect(
+          tester.getRect(find.text(_maximumReveal)),
+        );
+        expect(visibleDetail.height, greaterThanOrEqualTo(24));
+        _expectContained(promptRect, visibleDetail);
         expect(tester.takeException(), isNull);
         _expectSurfaceRegionsMatch(tester, composition);
       },
@@ -244,7 +289,7 @@ void main() {
               scrollDirection: Axis.vertical,
               children: [
                 PlaySurface(
-                  play: _composedCanvasPlay(revealDetail: _maximumReveal),
+                  play: _revealEntryPlay(),
                   mediaBuilder: (context, layer) => PlayCanvas(asset: canvas),
                 ),
                 const ColoredBox(
@@ -257,8 +302,6 @@ void main() {
         ),
       ),
     );
-    await tester.ensureVisible(find.widgetWithText(FilledButton, 'Place it'));
-    await tester.tap(find.widgetWithText(FilledButton, 'Place it'));
     await tester.pumpAndSettle();
 
     final gesture = await tester.startGesture(

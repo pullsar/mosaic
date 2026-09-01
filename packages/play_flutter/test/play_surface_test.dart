@@ -376,20 +376,33 @@ void main() {
     final inputRect = tester.getRect(
       find.byKey(const ValueKey<String>('play-input')),
     );
-    final revealRects = <Rect>[
-      tester.getRect(find.text('8 − 4 = 4')),
-      tester.getRect(find.text('One match changes the six to eight.')),
-    ];
+    final textScroll = find.byKey(
+      const ValueKey<String>('play-text-scroll'),
+    );
+    final textScrollRect = tester.getRect(textScroll);
 
     expect(identical(canvasElementBefore, canvasElementAfter), isTrue);
     expect(stageAfter, stageBefore);
     expect(find.text('Move one match.'), findsNothing);
     expect(find.text('One match changes the six to eight.'), findsOneWidget);
-    for (final revealRect in revealRects) {
-      expect(_containsRect(promptRect, revealRect), isTrue);
-      expect(revealRect.overlaps(stageAfter), isFalse);
-      expect(revealRect.overlaps(inputRect), isFalse);
-    }
+    expect(
+      _containsRect(promptRect, tester.getRect(find.text('8 − 4 = 4'))),
+      isTrue,
+    );
+    expect(
+      _containsRect(
+        promptRect,
+        tester.getRect(find.text('One match changes the six to eight.')),
+      ),
+      isTrue,
+    );
+    expect(_containsRect(promptRect, textScrollRect), isTrue);
+    expect(textScrollRect.overlaps(stageAfter), isFalse);
+    expect(textScrollRect.overlaps(inputRect), isFalse);
+    expect(
+      tester.widget<SingleChildScrollView>(textScroll).clipBehavior,
+      Clip.hardEdge,
+    );
   });
 
   testWidgets('reduced motion reveals directly without moving the stage', (
