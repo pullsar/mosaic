@@ -383,14 +383,17 @@ Future<_ScenarioHandle> _pumpScenario(
 
   if (scenario.reveal) {
     final semantics = tester.ensureSemantics();
-    addTearDown(semantics.dispose);
-    tester.semantics.tap(find.semantics.byLabel('Move match'));
-    await tester.pumpAndSettle();
-    expect(find.text('8 − 4 = 4'), findsOneWidget);
-    expect(
-      find.bySemanticsLabel('Solved matchstick equation: 8 minus 4 equals 4'),
-      findsOneWidget,
-    );
+    try {
+      tester.semantics.tap(find.semantics.byLabel('Move match'));
+      await tester.pumpAndSettle();
+      expect(find.text('8 − 4 = 4'), findsOneWidget);
+      expect(
+        find.bySemanticsLabel('Solved matchstick equation: 8 minus 4 equals 4'),
+        findsOneWidget,
+      );
+    } finally {
+      semantics.dispose();
+    }
   }
   if (scenario.openMore) {
     await tester.tap(find.byKey(const ValueKey<String>('play-action-more')));
