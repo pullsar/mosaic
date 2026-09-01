@@ -201,18 +201,20 @@ final class GuestEngagementController extends ChangeNotifier {
     await _persist();
   }
 
-  Future<void> dismissPrompt() async {
+  Future<void> recordPromptDisposition() async {
     if (!_initialized) {
       await initialize();
     }
     _state = GuestEngagementState(
-      seenIdentities: _state.seenIdentities,
+      seenIdentities: const <String>[],
       dismissedAt: _clock().toUtc(),
-      hasMeaningfulInteraction: _state.hasMeaningfulInteraction,
+      hasMeaningfulInteraction: false,
     );
     if (!_disposed) notifyListeners();
     await _persist();
   }
+
+  Future<void> dismissPrompt() => recordPromptDisposition();
 
   List<String> _bounded(LinkedHashSet<String> identities) => identities
       .skip(

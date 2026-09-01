@@ -475,43 +475,24 @@ final class _MosaicAppState extends State<MosaicApp> {
           directManipulationActive:
               _directManipulationActive || conversionPromptBlocked,
           onSearch: () => unawaited(_openSearch(homeContext)),
-          child: Stack(
-            fit: StackFit.expand,
-            children: <Widget>[
-              ConsumerFeed(
-                key: ValueKey<String>(feedKey),
-                runtime: _consumerRuntime,
-                itemBuilder: _buildFeedPlay,
-                controller: _feedController,
-                searchIntent: scope?.intent,
-                persistRecovery: scope == null,
-                onEvent: _recordFeedEvent,
-                onWarmWindow: _warmFeedWindow,
-                onCancelWarmWindow: _cancelWarmWindow,
-                onDirectManipulationChanged: (active) {
-                  if (_directManipulationActive == active) return;
-                  setState(() => _directManipulationActive = active);
-                },
-              ),
-              if (scope != null)
-                SafeArea(
-                  minimum: const EdgeInsets.fromLTRB(12, 58, 12, 0),
-                  child: Align(
-                    alignment: AlignmentDirectional.topStart,
-                    child: InputChip(
-                      key: const ValueKey<String>('search-scope'),
-                      avatar: Icon(
-                        scope.intent.intent == ConsumerSearchIntent.learning
-                            ? Icons.school_outlined
-                            : Icons.explore_outlined,
-                        size: 18,
-                      ),
-                      label: Text(scope.label, overflow: TextOverflow.ellipsis),
-                      onDeleted: () => setState(() => _searchScope = null),
-                    ),
-                  ),
-                ),
-            ],
+          activeSearchLabel: scope?.label,
+          onClearSearch: scope == null
+              ? null
+              : () => setState(() => _searchScope = null),
+          child: ConsumerFeed(
+            key: ValueKey<String>(feedKey),
+            runtime: _consumerRuntime,
+            itemBuilder: _buildFeedPlay,
+            controller: _feedController,
+            searchIntent: scope?.intent,
+            persistRecovery: scope == null,
+            onEvent: _recordFeedEvent,
+            onWarmWindow: _warmFeedWindow,
+            onCancelWarmWindow: _cancelWarmWindow,
+            onDirectManipulationChanged: (active) {
+              if (_directManipulationActive == active) return;
+              setState(() => _directManipulationActive = active);
+            },
           ),
         ),
       ),

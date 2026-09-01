@@ -12,13 +12,20 @@ final class GuestHome extends StatefulWidget {
     required this.engagement,
     required this.child,
     required this.onSearch,
+    this.activeSearchLabel,
+    this.onClearSearch,
     this.directManipulationActive = false,
     super.key,
-  });
+  }) : assert(
+         (activeSearchLabel == null) == (onClearSearch == null),
+         'activeSearchLabel and onClearSearch must be provided together',
+       );
 
   final GuestEngagementController engagement;
   final Widget child;
   final VoidCallback onSearch;
+  final String? activeSearchLabel;
+  final VoidCallback? onClearSearch;
   final bool directManipulationActive;
 
   @override
@@ -91,11 +98,13 @@ final class _GuestHomeState extends State<GuestHome> {
     );
     if (!mounted) return;
     if (result == _GuestPromptResult.join) {
+      await widget.engagement.recordPromptDisposition();
+      if (!mounted) return;
       await Navigator.of(context).push<void>(
         MaterialPageRoute<void>(builder: (_) => const _EarlyAccessPage()),
       );
     } else {
-      await widget.engagement.dismissPrompt();
+      await widget.engagement.recordPromptDisposition();
     }
   }
 
@@ -119,7 +128,11 @@ final class _GuestHomeState extends State<GuestHome> {
               widget.child,
               Positioned.fromRect(
                 rect: composition.chromeRect,
-                child: _GuestChrome(onSearch: widget.onSearch),
+                child: _GuestChrome(
+                  onSearch: widget.onSearch,
+                  activeSearchLabel: widget.activeSearchLabel,
+                  onClearSearch: widget.onClearSearch,
+                ),
               ),
               Positioned.fromRect(
                 rect: composition.navigationRect,
@@ -134,9 +147,15 @@ final class _GuestHomeState extends State<GuestHome> {
 }
 
 final class _GuestChrome extends StatelessWidget {
-  const _GuestChrome({required this.onSearch});
+  const _GuestChrome({
+    required this.onSearch,
+    this.activeSearchLabel,
+    this.onClearSearch,
+  });
 
   final VoidCallback onSearch;
+  final String? activeSearchLabel;
+  final VoidCallback? onClearSearch;
 
   @override
   Widget build(BuildContext context) => Material(
@@ -144,17 +163,40 @@ final class _GuestChrome extends StatelessWidget {
     child: Stack(
       alignment: Alignment.center,
       children: <Widget>[
-        const Text(
-          'For You',
-          maxLines: 1,
-          overflow: TextOverflow.fade,
-          softWrap: false,
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
+        if (activeSearchLabel != null)
+          PositionedDirectional(
+            start: 8,
+            end: 52,
+            top: 0,
+            bottom: 0,
+            child: Align(
+              alignment: Alignment.center,
+              child: InputChip(
+                key: const ValueKey<String>('search-scope'),
+                label: Text(
+                  activeSearchLabel!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                onDeleted: onClearSearch,
+                deleteButtonTooltipMessage: 'Clear search',
+                materialTapTargetSize: MaterialTapTargetSize.padded,
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
+          )
+        else
+          const Text(
+            'For You',
+            maxLines: 1,
+            overflow: TextOverflow.fade,
+            softWrap: false,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+            ),
           ),
-        ),
         Align(
           alignment: AlignmentDirectional.centerEnd,
           child: Tooltip(
