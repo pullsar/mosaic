@@ -5,6 +5,7 @@ import 'package:play_flutter/play_flutter.dart';
 const _minimumStageAspectRatio = 3 / 4;
 const _maximumStageAspectRatio = 16 / 9;
 const _minimumUsableRailStage = Size(320, 240);
+const _minimumCompactLandscapeStage = Size(300, 168);
 
 typedef _ViewportCase = ({
   String name,
@@ -144,7 +145,177 @@ void main() {
         throwsUnsupportedError,
       );
     });
+
+    group('rejects invalid geometry', () {
+      final invalidCases = <({
+        String name,
+        BoxConstraints constraints,
+        EdgeInsets safeInsets,
+      })>[
+        (
+          name: 'unbounded width',
+          constraints: const BoxConstraints(
+            maxWidth: double.infinity,
+            maxHeight: 640,
+          ),
+          safeInsets: EdgeInsets.zero,
+        ),
+        (
+          name: 'negative inset',
+          constraints: const BoxConstraints.tightFor(width: 320, height: 640),
+          safeInsets: const EdgeInsets.only(left: -1),
+        ),
+        (
+          name: 'non-finite inset',
+          constraints: const BoxConstraints.tightFor(width: 320, height: 640),
+          safeInsets: const EdgeInsets.only(top: double.infinity),
+        ),
+        (
+          name: 'horizontal insets exceed the viewport',
+          constraints: const BoxConstraints.tightFor(width: 320, height: 640),
+          safeInsets: const EdgeInsets.symmetric(horizontal: 161),
+        ),
+        (
+          name: 'vertical insets exceed the viewport',
+          constraints: const BoxConstraints.tightFor(width: 320, height: 640),
+          safeInsets: const EdgeInsets.symmetric(vertical: 321),
+        ),
+      ];
+
+      for (final invalidCase in invalidCases) {
+        test('${invalidCase.name} with ArgumentError', () {
+          expect(
+            () => PlayViewportComposition.fromConstraints(
+              invalidCase.constraints,
+              safeInsets: invalidCase.safeInsets,
+            ),
+            throwsA(isA<ArgumentError>()),
+          );
+        });
+      }
+    });
+
+    test('compact landscape preserves a usable contextual stage', () {
+      final composition = PlayViewportComposition.fromConstraints(
+        const BoxConstraints.tightFor(width: 844, height: 390),
+        safeInsets: const EdgeInsets.fromLTRB(44, 0, 44, 21),
+      );
+
+      expect(
+        composition.utilityPlacement,
+        PlayUtilityPlacement.horizontalDock,
+      );
+      expect(
+        composition.stageRect.width,
+        greaterThanOrEqualTo(_minimumCompactLandscapeStage.width),
+      );
+      expect(
+        composition.stageRect.height,
+        greaterThanOrEqualTo(_minimumCompactLandscapeStage.height),
+      );
+      expect(composition.stageRect.overlaps(composition.inputRect), isFalse);
+    });
+
+    test('2x text remains usable across reference viewports', () {
+      for (final viewportCase in _viewportCases) {
+        final composition = _compositionWithTextScaler(
+          viewportCase.viewport,
+          safeInsets: viewportCase.safeInsets,
+          textScaler: const TextScaler.linear(2),
+        );
+
+        _expectRegionsInBounds(composition);
+        _expectReadingOrder(composition.reservedRegions);
+        _expectPairwiseNonOverlapping(composition.reservedRegions);
+        if (viewportCase.viewport.height > viewportCase.viewport.width) {
+          expect(composition.promptRect.height, greaterThanOrEqualTo(96));
+          expect(composition.inputRect.height, greaterThanOrEqualTo(96));
+          expect(composition.navigationRect.height, greaterThanOrEqualTo(72));
+        }
+        if (viewportCase.name == 'compact phone landscape') {
+          expect(
+            composition.stageRect.width,
+            greaterThanOrEqualTo(_minimumCompactLandscapeStage.width),
+          );
+          expect(
+            composition.stageRect.height,
+            greaterThanOrEqualTo(_minimumCompactLandscapeStage.height),
+          );
+        }
+        final stageAspect =
+            composition.stageRect.width / composition.stageRect.height;
+        expect(stageAspect, greaterThanOrEqualTo(_minimumStageAspectRatio));
+        expect(stageAspect, lessThanOrEqualTo(_maximumStageAspectRatio));
+      }
+    });
+
+    test('desktop caps and centers the stage and utility group', () {
+      final composition = PlayViewportComposition.fromConstraints(
+        const BoxConstraints.tightFor(width: 1440, height: 900),
+        safeInsets: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      );
+      final stageAndUtility = composition.stageRect.expandToInclude(
+        composition.utilityRect,
+      );
+
+      expect(composition.stageRect.width, lessThanOrEqualTo(720));
+      expect(
+        stageAndUtility.center.dx,
+        closeTo(composition.safeRect.center.dx, 0.001),
+      );
+    });
+
+    test('tall fitted stage centers while lower regions stay anchored', () {
+      final composition = PlayViewportComposition.fromConstraints(
+        const BoxConstraints.tightFor(width: 320, height: 900),
+        safeInsets: const EdgeInsets.only(top: 24, bottom: 34),
+      );
+      final stageAllotment = Rect.fromLTRB(
+        composition.safeRect.left,
+        composition.promptRect.bottom,
+        composition.safeRect.right,
+        composition.safeRect.bottom -
+            composition.inputRect.height -
+            composition.utilityRect.height -
+            composition.navigationRect.height,
+      );
+
+      expect(
+        composition.stageRect.center.dx,
+        closeTo(stageAllotment.center.dx, 0.001),
+      );
+      expect(
+        composition.stageRect.center.dy,
+        closeTo(stageAllotment.center.dy, 0.001),
+      );
+      expect(composition.inputRect.bottom, composition.utilityRect.top);
+      expect(composition.utilityRect.bottom, composition.navigationRect.top);
+      expect(composition.navigationRect.bottom, composition.safeRect.bottom);
+    });
   });
+}
+
+PlayViewportComposition _compositionWithTextScaler(
+  Size viewport, {
+  required EdgeInsets safeInsets,
+  required TextScaler textScaler,
+}) {
+  final dynamic factory = PlayViewportComposition.fromConstraints;
+  final result = factory(
+    BoxConstraints.tight(viewport),
+    safeInsets: safeInsets,
+    textScaler: textScaler,
+  );
+  return result as PlayViewportComposition;
+}
+
+void _expectRegionsInBounds(PlayViewportComposition composition) {
+  for (final region in composition.reservedRegions) {
+    expect(region.left, greaterThanOrEqualTo(composition.safeRect.left));
+    expect(region.top, greaterThanOrEqualTo(composition.safeRect.top));
+    expect(region.right, lessThanOrEqualTo(composition.safeRect.right));
+    expect(region.bottom, lessThanOrEqualTo(composition.safeRect.bottom));
+  }
 }
 
 bool _containsRect(Rect outer, Rect inner) =>
