@@ -504,6 +504,13 @@ final class _PlayDragInputState extends State<PlayDragInput> {
         .toDouble();
     final hitRect = Rect.fromLTWH(hitLeft, hitTop, hitWidth, hitHeight);
     final localVisualRect = visualRect.shift(-hitRect.topLeft);
+    final targetCount = widget.spec.targets.length;
+    final selectedTargetNumber = _selectedTargetIndex + 1;
+    final increasedTargetNumber = math.min(
+      selectedTargetNumber + 1,
+      targetCount,
+    );
+    final decreasedTargetNumber = math.max(selectedTargetNumber - 1, 1);
 
     return Positioned.fromRect(
       rect: hitRect,
@@ -513,15 +520,20 @@ final class _PlayDragInputState extends State<PlayDragInput> {
           button: true,
           focusable: true,
           label: widget.spec.handleLabel,
-          value: widget.spec.targets.length > 1
-              ? 'Target ${_selectedTargetIndex + 1} of '
-                    '${widget.spec.targets.length}'
+          value: targetCount > 1
+              ? 'Target $selectedTargetNumber of $targetCount'
+              : null,
+          increasedValue: targetCount > 1
+              ? 'Target $increasedTargetNumber of $targetCount'
+              : null,
+          decreasedValue: targetCount > 1
+              ? 'Target $decreasedTargetNumber of $targetCount'
               : null,
           onTap: _activateWithoutDrag,
-          onIncrease: widget.spec.targets.length > 1
+          onIncrease: targetCount > 1
               ? () => _selectTarget(1)
               : null,
-          onDecrease: widget.spec.targets.length > 1
+          onDecrease: targetCount > 1
               ? () => _selectTarget(-1)
               : null,
           child: Listener(
