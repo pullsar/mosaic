@@ -9,6 +9,7 @@ import 'package:mosaic_app/consumer_api_client.dart';
 import 'package:mosaic_app/consumer_feed.dart';
 import 'package:mosaic_app/consumer_local_state.dart';
 import 'package:mosaic_app/event_runtime_resources.dart';
+import 'package:play_flutter/play_flutter.dart';
 import 'package:play_schema/play_schema.dart';
 
 final class _MemoryOutbox implements EventOutbox {
@@ -119,7 +120,7 @@ final class _Harness {
 }
 
 void main() {
-  testWidgets('active controls stay compact and hide unavailable Share', (
+  testWidgets('primary controls stay compact with preference in More', (
     tester,
   ) async {
     final harness = _Harness();
@@ -134,7 +135,7 @@ void main() {
     );
     expect(
       find.byKey(const ValueKey<String>('play-action-more-like')),
-      findsOneWidget,
+      findsNothing,
     );
     expect(
       find.byKey(const ValueKey<String>('play-action-more')),
@@ -145,10 +146,74 @@ void main() {
       findsNothing,
     );
 
+    await tester.tap(find.byKey(const ValueKey<String>('play-action-more')));
+    await tester.pumpAndSettle();
+    expect(find.text('More like this'), findsOneWidget);
+    await tester.tap(find.text('More like this'));
+    await tester.pumpAndSettle();
+    expect(harness.outbox.events.single.event, MosaicEventName.moreLikeThis);
+
     await tester.tap(find.byKey(const ValueKey<String>('play-action-save')));
     await tester.pumpAndSettle();
-    expect(harness.outbox.events.single.event, MosaicEventName.playSaved);
+    expect(harness.outbox.events.last.event, MosaicEventName.playSaved);
   });
+
+  for (final viewportCase in _utilityViewportCases) {
+    testWidgets(
+      '${viewportCase.name} keeps Save Share More in utilities at 200% RTL',
+      (tester) async {
+        tester.view
+          ..physicalSize = viewportCase.size
+          ..devicePixelRatio = 1;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+        final harness = _Harness();
+        addTearDown(harness.close);
+        final composition = PlayViewportComposition.fromConstraints(
+          BoxConstraints.tight(viewportCase.size),
+          safeInsets: viewportCase.safeInsets,
+          textScaler: const TextScaler.linear(2),
+        );
+
+        await tester.pumpWidget(
+          _composedApp(
+            harness,
+            composition: composition,
+            size: viewportCase.size,
+            safeInsets: viewportCase.safeInsets,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const ValueKey<String>('play-action-more-like')),
+          findsNothing,
+        );
+        final inputRect = tester.getRect(
+          find.byKey(const ValueKey<String>('contextual-input')),
+        );
+        expect(inputRect, composition.inputRect);
+        for (final action in <(String, String)>[
+          ('save', 'Save'),
+          ('share', 'Share'),
+          ('more', 'More'),
+        ]) {
+          final finder = find.byKey(
+            ValueKey<String>('play-action-${action.$1}'),
+          );
+          expect(finder, findsOneWidget);
+          expect(find.byTooltip(action.$2), findsOneWidget);
+          final rect = tester.getRect(finder);
+          _expectContained(composition.utilityRect, rect);
+          expect(rect.overlaps(inputRect), isFalse);
+          expect(rect.width, greaterThanOrEqualTo(48));
+          expect(rect.height, greaterThanOrEqualTo(48));
+        }
+      },
+    );
+  }
 
   testWidgets('Not interested advances without a blocking modal', (
     tester,
@@ -264,6 +329,88 @@ Widget _app(_Harness harness, {bool active = true}) => MaterialApp(
     child: const ColoredBox(color: Colors.black),
   ),
 );
+
+typedef _UtilityViewportCase = ({
+  String name,
+  Size size,
+  EdgeInsets safeInsets,
+});
+
+const _utilityViewportCases = <_UtilityViewportCase>[
+  (
+    name: 'small phone',
+    size: Size(320, 640),
+    safeInsets: EdgeInsets.only(top: 24, bottom: 16),
+  ),
+  (
+    name: 'portrait',
+    size: Size(390, 844),
+    safeInsets: EdgeInsets.only(top: 47, bottom: 34),
+  ),
+  (
+    name: 'landscape',
+    size: Size(844, 390),
+    safeInsets: EdgeInsets.fromLTRB(44, 0, 44, 21),
+  ),
+  (
+    name: 'tablet',
+    size: Size(768, 1024),
+    safeInsets: EdgeInsets.only(top: 24, bottom: 20),
+  ),
+  (
+    name: 'desktop',
+    size: Size(1440, 900),
+    safeInsets: EdgeInsets.fromLTRB(16, 12, 16, 12),
+  ),
+];
+
+Widget _composedApp(
+  _Harness harness, {
+  required PlayViewportComposition composition,
+  required Size size,
+  required EdgeInsets safeInsets,
+}) => MaterialApp(
+  home: MediaQuery(
+    data: MediaQueryData(
+      size: size,
+      padding: safeInsets,
+      textScaler: const TextScaler.linear(2),
+    ),
+    child: Directionality(
+      textDirection: TextDirection.rtl,
+      child: PlayViewportScope(
+        composition: composition,
+        child: ConsumerActionControls(
+          item: _item(),
+          feedRequestId: 'feed_controls',
+          controller: harness.controller,
+          onAdvance: harness.advance,
+          onShare: (_) {},
+          child: Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              const ColoredBox(color: Colors.black),
+              Positioned.fromRect(
+                rect: composition.inputRect,
+                child: const ColoredBox(
+                  key: ValueKey<String>('contextual-input'),
+                  color: Colors.transparent,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  ),
+);
+
+void _expectContained(Rect outer, Rect inner) {
+  expect(inner.left, greaterThanOrEqualTo(outer.left));
+  expect(inner.top, greaterThanOrEqualTo(outer.top));
+  expect(inner.right, lessThanOrEqualTo(outer.right));
+  expect(inner.bottom, lessThanOrEqualTo(outer.bottom));
+}
 
 ConsumerFeedItem _item() => ConsumerFeedItem.fromJson(
   <String, Object?>{

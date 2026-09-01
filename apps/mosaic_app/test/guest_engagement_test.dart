@@ -24,8 +24,35 @@ final class _MemoryGuestStore implements GuestEngagementStore {
 void main() {
   final now = DateTime.utc(2026, 8, 31, 12);
 
-  test('five distinct visible revisions unlock one prompt', () async {
-    final store = _MemoryGuestStore();
+  test(
+    'five distinct views do not prompt without meaningful interaction',
+    () async {
+      final store = _MemoryGuestStore();
+      final controller = GuestEngagementController(
+        store: store,
+        clock: () => now,
+      );
+      addTearDown(controller.dispose);
+      await controller.initialize();
+
+      for (var index = 0; index < 5; index += 1) {
+        await controller.recordVisible(
+          playId: 'play_$index',
+          revisionId: 'rev_1',
+        );
+      }
+
+      expect(controller.shouldPrompt, isFalse);
+      expect(store.state?.seenIdentities, hasLength(5));
+    },
+  );
+
+  test('five distinct views prompt after one persisted interaction', () async {
+    final store = _MemoryGuestStore()
+      ..state = GuestEngagementState.fromJson(<String, Object?>{
+        'seenIdentities': <String>[],
+        'hasMeaningfulInteraction': true,
+      });
     final controller = GuestEngagementController(
       store: store,
       clock: () => now,
@@ -41,7 +68,34 @@ void main() {
     }
 
     expect(controller.shouldPrompt, isTrue);
-    expect(store.state?.seenIdentities, hasLength(5));
+    expect(
+      controller.state.toJson()['hasMeaningfulInteraction'],
+      isTrue,
+    );
+    expect(
+      store.state?.toJson()['hasMeaningfulInteraction'],
+      isTrue,
+    );
+  });
+
+  test('eight distinct views prompt without an interaction', () async {
+    final store = _MemoryGuestStore();
+    final controller = GuestEngagementController(
+      store: store,
+      clock: () => now,
+    );
+    addTearDown(controller.dispose);
+    await controller.initialize();
+
+    for (var index = 0; index < 8; index += 1) {
+      await controller.recordVisible(
+        playId: 'play_$index',
+        revisionId: 'rev_1',
+      );
+    }
+
+    expect(controller.shouldPrompt, isTrue);
+    expect(controller.state.seenIdentities, hasLength(8));
   });
 
   test('duplicates rebuilds and retry visibility do not advance', () async {
@@ -69,7 +123,7 @@ void main() {
     );
     addTearDown(controller.dispose);
     await controller.initialize();
-    for (var index = 0; index < 5; index += 1) {
+    for (var index = 0; index < 8; index += 1) {
       await controller.recordVisible(
         playId: 'play_$index',
         revisionId: 'rev_$index',
@@ -115,12 +169,21 @@ void main() {
     final state = GuestEngagementState.fromJson(<String, Object?>{
       'seenIdentities': List<String>.generate(8, (index) => 'r\u0000$index'),
       'dismissedAt': now.toIso8601String(),
+      'hasMeaningfulInteraction': true,
     });
-    expect(state.seenIdentities, hasLength(5));
+    expect(state.seenIdentities, hasLength(8));
     expect(state.dismissedAt, now);
+    expect(state.toJson()['hasMeaningfulInteraction'], isTrue);
     expect(
       () => GuestEngagementState.fromJson(<String, Object?>{
         'seenIdentities': <Object?>[1],
+      }),
+      throwsFormatException,
+    );
+    expect(
+      () => GuestEngagementState.fromJson(<String, Object?>{
+        'seenIdentities': <String>[],
+        'hasMeaningfulInteraction': 'yes',
       }),
       throwsFormatException,
     );
