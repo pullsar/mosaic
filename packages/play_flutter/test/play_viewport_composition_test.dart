@@ -94,7 +94,12 @@ void main() {
         final stageAspect =
             composition.stageRect.width / composition.stageRect.height;
         expect(stageAspect, greaterThanOrEqualTo(_minimumStageAspectRatio));
-        expect(stageAspect, lessThanOrEqualTo(_maximumStageAspectRatio));
+        expect(
+          stageAspect,
+          lessThanOrEqualTo(
+            _maximumStageAspectRatio + precisionErrorTolerance,
+          ),
+        );
       });
     }
 
@@ -245,7 +250,12 @@ void main() {
         final stageAspect =
             composition.stageRect.width / composition.stageRect.height;
         expect(stageAspect, greaterThanOrEqualTo(_minimumStageAspectRatio));
-        expect(stageAspect, lessThanOrEqualTo(_maximumStageAspectRatio));
+        expect(
+          stageAspect,
+          lessThanOrEqualTo(
+            _maximumStageAspectRatio + precisionErrorTolerance,
+          ),
+        );
       }
     });
 

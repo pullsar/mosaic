@@ -23,7 +23,9 @@ final class PlayViewportComposition {
   factory PlayViewportComposition.fromConstraints(
     BoxConstraints constraints, {
     EdgeInsets safeInsets = EdgeInsets.zero,
+    TextScaler textScaler = TextScaler.noScaling,
   }) {
+    _validateGeometry(constraints, safeInsets);
     final viewportSize = constraints.biggest;
     final viewportRect = Offset.zero & viewportSize;
     final safeRect = Rect.fromLTRB(
@@ -32,127 +34,132 @@ final class PlayViewportComposition {
       viewportSize.width - safeInsets.right,
       viewportSize.height - safeInsets.bottom,
     );
-    final railStageArea = Size(
-      math.max(0.0, safeRect.width - _utilityRailWidth - _regionGap),
-      math.max(
-        0.0,
-        safeRect.height -
-            _chromeHeight -
-            _promptHeight -
-            _inputHeight -
-            _navigationHeight,
+    final textScale = _boundedTextScale(textScaler);
+    final desiredPromptHeight = _promptHeight * textScale;
+    final desiredInputHeight = _inputHeight * textScale;
+    final desiredNavigationHeight = _navigationHeight * textScale;
+    final desiredFixedHeight =
+        _chromeHeight +
+        desiredPromptHeight +
+        desiredInputHeight +
+        _utilityDockHeight +
+        desiredNavigationHeight;
+    final bandFactor = math.min(
+      1.0,
+      safeRect.height * 0.8 / desiredFixedHeight,
+    );
+    final chromeHeight = _chromeHeight * bandFactor;
+    final promptHeight = desiredPromptHeight * bandFactor;
+    final inputHeight = desiredInputHeight * bandFactor;
+    final utilityDockHeight = _utilityDockHeight * bandFactor;
+    final navigationHeight = desiredNavigationHeight * bandFactor;
+    final isCompactLandscape =
+        safeRect.width > safeRect.height &&
+        safeRect.height < _compactLandscapeHeight;
+
+    if (isCompactLandscape) {
+      return _compactLandscape(
+        viewportRect: viewportRect,
+        safeRect: safeRect,
+        navigationHeight: navigationHeight,
+      );
+    }
+
+    final chromeRect = Rect.fromLTWH(
+      safeRect.left,
+      safeRect.top,
+      safeRect.width,
+      chromeHeight,
+    );
+    final promptRect = Rect.fromLTWH(
+      safeRect.left,
+      chromeRect.bottom,
+      safeRect.width,
+      promptHeight,
+    );
+    final navigationRect = Rect.fromLTWH(
+      safeRect.left,
+      safeRect.bottom - navigationHeight,
+      safeRect.width,
+      navigationHeight,
+    );
+    final railInputRect = Rect.fromLTWH(
+      safeRect.left,
+      navigationRect.top - inputHeight,
+      safeRect.width,
+      inputHeight,
+    );
+    final railStageBounds = Rect.fromLTRB(
+      safeRect.left,
+      promptRect.bottom,
+      safeRect.right - _utilityRailWidth - _regionGap,
+      railInputRect.top,
+    );
+    final railStageSize = _fitStage(
+      Size(
+        math.max(0.0, railStageBounds.width),
+        math.max(0.0, railStageBounds.height),
       ),
     );
-    final railStageSize = _fitStage(railStageArea);
     final useRail =
         railStageSize.width >= _minimumRailStage.width &&
         railStageSize.height >= _minimumRailStage.height;
-    final utilityPlacement = useRail
-        ? PlayUtilityPlacement.trailingRail
-        : PlayUtilityPlacement.horizontalDock;
 
-    var top = safeRect.top;
-    final chromeRect = Rect.fromLTWH(
-      safeRect.left,
-      top,
-      safeRect.width,
-      _chromeHeight,
-    );
-    top = chromeRect.bottom;
-    final promptRect = Rect.fromLTWH(
-      safeRect.left,
-      top,
-      safeRect.width,
-      _promptHeight,
-    );
-    top = promptRect.bottom;
-
-    late final Rect stageRect;
-    late final Rect inputRect;
-    late final Rect utilityRect;
-    late final Rect navigationRect;
-    late final List<Rect> reservedRegions;
     if (useRail) {
-      stageRect = Rect.fromLTWH(
-        safeRect.left,
-        top,
+      final groupWidth = railStageSize.width + _regionGap + _utilityRailWidth;
+      final groupLeft = safeRect.left + (safeRect.width - groupWidth) / 2;
+      final stageRect = Rect.fromLTWH(
+        groupLeft,
+        railStageBounds.center.dy - railStageSize.height / 2,
         railStageSize.width,
         railStageSize.height,
       );
-      utilityRect = Rect.fromLTWH(
+      final utilityRect = Rect.fromLTWH(
         stageRect.right + _regionGap,
-        top,
+        stageRect.top,
         _utilityRailWidth,
         stageRect.height,
       );
-      inputRect = Rect.fromLTWH(
-        safeRect.left,
-        stageRect.bottom,
-        safeRect.width,
-        _inputHeight,
+      return PlayViewportComposition._(
+        viewportRect: viewportRect,
+        safeRect: safeRect,
+        chromeRect: chromeRect,
+        promptRect: promptRect,
+        stageRect: stageRect,
+        inputRect: railInputRect,
+        utilityRect: utilityRect,
+        navigationRect: navigationRect,
+        utilityPlacement: PlayUtilityPlacement.trailingRail,
+        reservedRegions: <Rect>[
+          chromeRect,
+          promptRect,
+          stageRect,
+          utilityRect,
+          railInputRect,
+          navigationRect,
+        ],
       );
-      navigationRect = Rect.fromLTWH(
-        safeRect.left,
-        inputRect.bottom,
-        safeRect.width,
-        _navigationHeight,
-      );
-      reservedRegions = <Rect>[
-        chromeRect,
-        promptRect,
-        stageRect,
-        utilityRect,
-        inputRect,
-        navigationRect,
-      ];
-    } else {
-      final stageArea = Size(
-        safeRect.width,
-        math.max(
-          0.0,
-          safeRect.height -
-              _chromeHeight -
-              _promptHeight -
-              _inputHeight -
-              _utilityDockHeight -
-              _navigationHeight,
-        ),
-      );
-      final stageSize = _fitStage(stageArea);
-      stageRect = Rect.fromLTWH(
-        safeRect.left,
-        top,
-        stageSize.width,
-        stageSize.height,
-      );
-      inputRect = Rect.fromLTWH(
-        safeRect.left,
-        stageRect.bottom,
-        safeRect.width,
-        _inputHeight,
-      );
-      utilityRect = Rect.fromLTWH(
-        safeRect.left,
-        inputRect.bottom,
-        safeRect.width,
-        _utilityDockHeight,
-      );
-      navigationRect = Rect.fromLTWH(
-        safeRect.left,
-        utilityRect.bottom,
-        safeRect.width,
-        _navigationHeight,
-      );
-      reservedRegions = <Rect>[
-        chromeRect,
-        promptRect,
-        stageRect,
-        inputRect,
-        utilityRect,
-        navigationRect,
-      ];
     }
 
+    final utilityRect = Rect.fromLTWH(
+      safeRect.left,
+      navigationRect.top - utilityDockHeight,
+      safeRect.width,
+      utilityDockHeight,
+    );
+    final inputRect = Rect.fromLTWH(
+      safeRect.left,
+      utilityRect.top - inputHeight,
+      safeRect.width,
+      inputHeight,
+    );
+    final stageBounds = Rect.fromLTRB(
+      safeRect.left,
+      promptRect.bottom,
+      safeRect.right,
+      inputRect.top,
+    );
+    final stageRect = _centeredStage(stageBounds);
     return PlayViewportComposition._(
       viewportRect: viewportRect,
       safeRect: safeRect,
@@ -162,13 +169,21 @@ final class PlayViewportComposition {
       inputRect: inputRect,
       utilityRect: utilityRect,
       navigationRect: navigationRect,
-      utilityPlacement: utilityPlacement,
-      reservedRegions: reservedRegions,
+      utilityPlacement: PlayUtilityPlacement.horizontalDock,
+      reservedRegions: <Rect>[
+        chromeRect,
+        promptRect,
+        stageRect,
+        inputRect,
+        utilityRect,
+        navigationRect,
+      ],
     );
   }
 
   static const double _minimumStageAspectRatio = 3 / 4;
   static const double _maximumStageAspectRatio = 16 / 9;
+  static const double _maximumStageWidth = 720;
   static const double _chromeHeight = 48;
   static const double _promptHeight = 64;
   static const double _inputHeight = 64;
@@ -176,6 +191,9 @@ final class PlayViewportComposition {
   static const double _utilityRailWidth = 72;
   static const double _navigationHeight = 56;
   static const double _regionGap = 16;
+  static const double _compactLandscapeHeight = 600;
+  static const double _compactChromeHeight = 40;
+  static const double _compactUtilityDockHeight = 48;
   static const Size _minimumRailStage = Size(320, 240);
 
   final Rect viewportRect;
@@ -190,22 +208,163 @@ final class PlayViewportComposition {
   final List<Rect> reservedRegions;
 }
 
+PlayViewportComposition _compactLandscape({
+  required Rect viewportRect,
+  required Rect safeRect,
+  required double navigationHeight,
+}) {
+  final desiredFixedHeight =
+      PlayViewportComposition._compactChromeHeight +
+      PlayViewportComposition._compactUtilityDockHeight +
+      navigationHeight;
+  final bandFactor = math.min(
+    1.0,
+    safeRect.height * 0.6 / desiredFixedHeight,
+  );
+  final chromeHeight =
+      PlayViewportComposition._compactChromeHeight * bandFactor;
+  final utilityHeight =
+      PlayViewportComposition._compactUtilityDockHeight * bandFactor;
+  final boundedNavigationHeight = navigationHeight * bandFactor;
+  final chromeRect = Rect.fromLTWH(
+    safeRect.left,
+    safeRect.top,
+    safeRect.width,
+    chromeHeight,
+  );
+  final navigationRect = Rect.fromLTWH(
+    safeRect.left,
+    safeRect.bottom - boundedNavigationHeight,
+    safeRect.width,
+    boundedNavigationHeight,
+  );
+  final utilityRect = Rect.fromLTWH(
+    safeRect.left,
+    navigationRect.top - utilityHeight,
+    safeRect.width,
+    utilityHeight,
+  );
+  final contextColumnWidth = math.min(160.0, safeRect.width * 0.2);
+  final regionGap = math.min(
+    PlayViewportComposition._regionGap,
+    safeRect.width * 0.04,
+  );
+  final promptRect = Rect.fromLTRB(
+    safeRect.left,
+    chromeRect.bottom,
+    safeRect.left + contextColumnWidth,
+    utilityRect.top,
+  );
+  final inputRect = Rect.fromLTRB(
+    safeRect.right - contextColumnWidth,
+    chromeRect.bottom,
+    safeRect.right,
+    utilityRect.top,
+  );
+  final stageBounds = Rect.fromLTRB(
+    promptRect.right + regionGap,
+    chromeRect.bottom,
+    inputRect.left - regionGap,
+    utilityRect.top,
+  );
+  final stageRect = _centeredStage(stageBounds);
+
+  return PlayViewportComposition._(
+    viewportRect: viewportRect,
+    safeRect: safeRect,
+    chromeRect: chromeRect,
+    promptRect: promptRect,
+    stageRect: stageRect,
+    inputRect: inputRect,
+    utilityRect: utilityRect,
+    navigationRect: navigationRect,
+    utilityPlacement: PlayUtilityPlacement.horizontalDock,
+    reservedRegions: <Rect>[
+      chromeRect,
+      promptRect,
+      stageRect,
+      inputRect,
+      utilityRect,
+      navigationRect,
+    ],
+  );
+}
+
+void _validateGeometry(BoxConstraints constraints, EdgeInsets safeInsets) {
+  final viewportSize = constraints.biggest;
+  if (!constraints.hasBoundedWidth ||
+      !constraints.hasBoundedHeight ||
+      !viewportSize.width.isFinite ||
+      !viewportSize.height.isFinite ||
+      viewportSize.width <= 0 ||
+      viewportSize.height <= 0) {
+    throw ArgumentError.value(
+      constraints,
+      'constraints',
+      'must provide a bounded, finite, positive viewport',
+    );
+  }
+  final insetValues = <double>[
+    safeInsets.left,
+    safeInsets.top,
+    safeInsets.right,
+    safeInsets.bottom,
+  ];
+  if (insetValues.any((value) => !value.isFinite || value < 0)) {
+    throw ArgumentError.value(
+      safeInsets,
+      'safeInsets',
+      'must contain only finite, non-negative values',
+    );
+  }
+  if (safeInsets.horizontal >= viewportSize.width ||
+      safeInsets.vertical >= viewportSize.height) {
+    throw ArgumentError.value(
+      safeInsets,
+      'safeInsets',
+      'must leave positive width and height inside the viewport',
+    );
+  }
+}
+
+double _boundedTextScale(TextScaler textScaler) {
+  const referenceFontSize = 16.0;
+  final scaledFontSize = textScaler.scale(referenceFontSize);
+  if (!scaledFontSize.isFinite || scaledFontSize <= 0) {
+    throw ArgumentError.value(
+      textScaler,
+      'textScaler',
+      'must produce a finite, positive scale',
+    );
+  }
+  return (scaledFontSize / referenceFontSize).clamp(1.0, 2.0).toDouble();
+}
+
+Rect _centeredStage(Rect bounds) {
+  final size = _fitStage(bounds.size);
+  return Rect.fromCenter(
+    center: bounds.center,
+    width: size.width,
+    height: size.height,
+  );
+}
+
 Size _fitStage(Size available) {
-  if (available.width == 0 || available.height == 0) {
+  if (available.width <= 0 || available.height <= 0) {
     return Size.zero;
   }
-  final aspectRatio = available.width / available.height;
-  if (aspectRatio < PlayViewportComposition._minimumStageAspectRatio) {
-    return Size(
-      available.width,
-      available.width / PlayViewportComposition._minimumStageAspectRatio,
-    );
+  var width = math.min(
+    available.width,
+    PlayViewportComposition._maximumStageWidth,
+  );
+  var height = available.height;
+  final aspectRatio = width / height;
+  final minimumAspect = PlayViewportComposition._minimumStageAspectRatio;
+  final maximumAspect = PlayViewportComposition._maximumStageAspectRatio;
+  if (aspectRatio < minimumAspect) {
+    height = width / minimumAspect;
+  } else if (aspectRatio > maximumAspect) {
+    width = height * maximumAspect;
   }
-  if (aspectRatio > PlayViewportComposition._maximumStageAspectRatio) {
-    return Size(
-      available.height * PlayViewportComposition._maximumStageAspectRatio,
-      available.height,
-    );
-  }
-  return available;
+  return Size(width, height);
 }
