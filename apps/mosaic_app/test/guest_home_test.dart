@@ -423,10 +423,7 @@ void main() {
 
     expect(find.text('Your Mixli is getting good'), findsNothing);
     expect(store.state?.seenIdentities, isEmpty);
-    expect(
-      store.state?.toJson()['hasMeaningfulInteraction'],
-      isFalse,
-    );
+    expect(store.state?.toJson()['hasMeaningfulInteraction'], isFalse);
   });
 
   testWidgets('join opens truthful early-access page', (tester) async {
