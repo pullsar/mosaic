@@ -31,6 +31,15 @@ const _canvasViewportCases = <_CanvasViewportCase>[
   (name: 'desktop landscape', viewport: Size(1440, 900)),
 ];
 
+final class _PaletteRoleKey {
+  const _PaletteRoleKey(this.role);
+
+  final String role;
+
+  @override
+  String toString() => role;
+}
+
 PlayCanvasAsset _fixture(String name) {
   final raw =
       jsonDecode(File('fixtures/canvas/$name').readAsStringSync())
@@ -260,6 +269,30 @@ void main() {
           throwsFormatException,
         );
       });
+    }
+  });
+
+  test('canvas asset rejects non-string palette role keys and collisions', () {
+    final masqueradingPalette = <Object, Object?>{
+      const _PaletteRoleKey('background'): '#102030',
+      'foreground': '#F0F0F0',
+      'accent': '#FFCC00',
+      'muted': '#8090A0',
+      'surface': '#405060',
+    };
+    final collidingPalette = <Object, Object?>{
+      ..._authoredPalette,
+      const _PaletteRoleKey('surface'): '#405060',
+    };
+
+    for (final palette in [masqueradingPalette, collidingPalette]) {
+      expect(
+        () => PlayCanvasAsset.fromJson({
+          ..._toneDocument(),
+          'palette': palette,
+        }),
+        throwsFormatException,
+      );
     }
   });
 

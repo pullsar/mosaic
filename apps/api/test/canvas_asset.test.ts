@@ -121,6 +121,12 @@ test('canvas palette rejects non-objects and incomplete or unknown roles', () =>
   assertPaletteRejected({...palette(), highlight: '#FFFFFF'});
 });
 
+test('canvas palette rejects roles inherited through its prototype', () => {
+  const inheritedPalette = Object.create(palette()) as Record<string, unknown>;
+
+  assertPaletteRejected(inheritedPalette);
+});
+
 test('canvas palette accepts only canonical opaque RGB colors', () => {
   const invalidColors = {
     background: '#FFF',
