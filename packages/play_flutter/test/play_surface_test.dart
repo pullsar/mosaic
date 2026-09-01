@@ -49,6 +49,7 @@ PlayDocument _continuousRevealPlay() => PlayDocument.fromJson({
         'type': 'single_choice',
         'options': [
           {'id': 'solve', 'label': 'Solve'},
+          {'id': 'leave', 'label': 'Leave it'},
         ],
       },
       'validation': {'type': 'equals', 'value': 'solve'},
@@ -68,6 +69,73 @@ PlayDocument _continuousRevealPlay() => PlayDocument.fromJson({
             'role': 'reveal_detail',
             'value': 'One match changes the six to eight.',
           },
+        ],
+      },
+      'input': {'type': 'tap', 'label': 'Done'},
+      'validation': {'type': 'none'},
+      'transition': {'default': r'$end'},
+    },
+  },
+});
+
+PlayDocument _duplicateMediaRevealPlay() => PlayDocument.fromJson({
+  'schemaVersion': 1,
+  'id': 'duplicate_media_reveal',
+  'revisionId': 'duplicate_media_reveal_rev_1',
+  'format': 'discover',
+  'classification': 'challenge',
+  'topics': ['patterns'],
+  'learningTopics': <String>[],
+  'estimatedDurationSec': 8,
+  'assets': ['continuous_canvas', 'inserted_image'],
+  'sources': <Object>[],
+  'entryState': 'look',
+  'states': {
+    'look': {
+      'presentation': {
+        'layers': [
+          {
+            'type': 'canvas',
+            'role': 'media',
+            'assetId': 'continuous_canvas',
+          },
+          {
+            'type': 'canvas',
+            'role': 'media',
+            'assetId': 'continuous_canvas',
+          },
+          {'type': 'text', 'role': 'prompt', 'value': 'Look closer.'},
+        ],
+      },
+      'input': {
+        'type': 'single_choice',
+        'options': [
+          {'id': 'reveal', 'label': 'Reveal'},
+          {'id': 'wait', 'label': 'Wait'},
+        ],
+      },
+      'validation': {'type': 'equals', 'value': 'reveal'},
+      'transition': {'correct': 'reveal', 'incorrect': 'look'},
+    },
+    'reveal': {
+      'presentation': {
+        'layers': [
+          {
+            'type': 'image',
+            'role': 'media',
+            'assetId': 'inserted_image',
+          },
+          {
+            'type': 'canvas',
+            'role': 'media',
+            'assetId': 'continuous_canvas',
+          },
+          {
+            'type': 'canvas',
+            'role': 'media',
+            'assetId': 'continuous_canvas',
+          },
+          {'type': 'text', 'role': 'reveal_title', 'value': 'Two layers.'},
         ],
       },
       'input': {'type': 'tap', 'label': 'Done'},
@@ -408,6 +476,38 @@ void main() {
       isTrue,
     );
   });
+
+  testWidgets(
+    'duplicate media layers keep unique stable identities on reveal',
+    (tester) async {
+      final play = _duplicateMediaRevealPlay();
+      final canvas = _continuousCanvas();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: PlaySurface(
+              play: play,
+              mediaBuilder: (context, layer) => PlayCanvas(asset: canvas),
+            ),
+          ),
+        ),
+      );
+
+      final before = tester.elementList(find.byType(PlayCanvas)).toList();
+      expect(before, hasLength(2));
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.widgetWithText(FilledButton, 'Reveal'));
+      await tester.pumpAndSettle();
+
+      final after = tester.elementList(find.byType(PlayCanvas)).toList();
+      expect(after, hasLength(3));
+      expect(identical(before[0], after[1]), isTrue);
+      expect(identical(before[1], after[2]), isTrue);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
 
 bool _containsRect(Rect outer, Rect inner) =>

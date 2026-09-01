@@ -6,6 +6,25 @@ import 'package:flutter/widgets.dart';
 enum PlayUtilityPlacement { horizontalDock, trailingRail }
 
 @immutable
+final class PlayViewportScope extends InheritedWidget {
+  const PlayViewportScope({
+    required this.composition,
+    required super.child,
+    super.key,
+  });
+
+  final PlayViewportComposition composition;
+
+  static PlayViewportComposition? maybeOf(BuildContext context) => context
+      .dependOnInheritedWidgetOfExactType<PlayViewportScope>()
+      ?.composition;
+
+  @override
+  bool updateShouldNotify(covariant PlayViewportScope oldWidget) =>
+      composition != oldWidget.composition;
+}
+
+@immutable
 final class PlayViewportComposition {
   PlayViewportComposition._({
     required this.viewportRect,

@@ -8,6 +8,10 @@ const _promptKey = ValueKey<String>('play-prompt');
 const _stageKey = ValueKey<String>('play-stage');
 const _inputKey = ValueKey<String>('play-input');
 const _utilitiesKey = ValueKey<String>('play-utilities-region');
+const _maximumReveal =
+    'One careful move keeps the original pieces visible while the '
+    'corrected equation appears here with enough detail to explain why the '
+    'solution works without replacing the puzzle or hiding context';
 
 typedef _ViewportCase = ({
   String name,
@@ -43,7 +47,9 @@ const _viewportCases = <_ViewportCase>[
   ),
 ];
 
-PlayDocument _composedCanvasPlay() => PlayDocument.fromJson({
+PlayDocument _composedCanvasPlay({
+  String revealDetail = 'One move restores the equation.',
+}) => PlayDocument.fromJson({
   'schemaVersion': 1,
   'id': 'composed_canvas',
   'revisionId': 'composed_canvas_rev_1',
@@ -71,6 +77,10 @@ PlayDocument _composedCanvasPlay() => PlayDocument.fromJson({
         'type': 'single_choice',
         'options': [
           {'id': 'place', 'label': 'Place it'},
+          {'id': 'lift', 'label': 'Lift left'},
+          {'id': 'shift', 'label': 'Shift top'},
+          {'id': 'turn', 'label': 'Turn it'},
+          {'id': 'reset', 'label': 'Reset'},
         ],
       },
       'validation': {'type': 'equals', 'value': 'place'},
@@ -88,7 +98,7 @@ PlayDocument _composedCanvasPlay() => PlayDocument.fromJson({
           {
             'type': 'text',
             'role': 'reveal_detail',
-            'value': 'One move restores the equation.',
+            'value': revealDetail,
           },
         ],
       },
@@ -160,6 +170,133 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  for (final textDirection in TextDirection.values) {
+    testWidgets(
+      '200% ${textDirection.name} keeps five choices and maximum reveal usable',
+      (tester) async {
+        final composition = await _pumpComposedSurface(
+          tester,
+          viewportCase: _viewportCases[1],
+          textScaler: const TextScaler.linear(2),
+          textDirection: textDirection,
+          play: _composedCanvasPlay(revealDetail: _maximumReveal),
+        );
+        final inputRect = tester.getRect(find.byKey(_inputKey));
+        final choiceScroll = find.byKey(
+          const ValueKey<String>('play-choice-scroll'),
+        );
+
+        _expectContained(inputRect, tester.getRect(choiceScroll));
+        final choicePosition = tester.state<ScrollableState>(
+          find.descendant(
+            of: choiceScroll,
+            matching: find.byType(Scrollable),
+          ),
+        );
+        expect(choicePosition.position.maxScrollExtent, greaterThan(0));
+        for (final label in <String>[
+          'Place it',
+          'Lift left',
+          'Shift top',
+          'Turn it',
+          'Reset',
+        ]) {
+          final button = find.widgetWithText(FilledButton, label);
+          await tester.ensureVisible(button);
+          await tester.pumpAndSettle();
+          _expectContained(inputRect, tester.getRect(button));
+        }
+
+        await tester.ensureVisible(
+          find.widgetWithText(FilledButton, 'Place it'),
+        );
+        await tester.tap(find.widgetWithText(FilledButton, 'Place it'));
+        await tester.pumpAndSettle();
+
+        final promptRect = tester.getRect(find.byKey(_promptKey));
+        final textScroll = find.byKey(
+          const ValueKey<String>('play-text-scroll'),
+        );
+        _expectContained(promptRect, tester.getRect(textScroll));
+        final textPosition = tester.state<ScrollableState>(
+          find.descendant(
+            of: textScroll,
+            matching: find.byType(Scrollable),
+          ),
+        );
+        expect(textPosition.position.maxScrollExtent, greaterThan(0));
+        final beforeScroll = textPosition.position.pixels;
+        await tester.tap(
+          find.byKey(const ValueKey<String>('play-text-more')),
+        );
+        await tester.pumpAndSettle();
+        expect(textPosition.position.pixels, greaterThan(beforeScroll));
+        expect(find.text(_maximumReveal), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        _expectSurfaceRegionsMatch(tester, composition);
+      },
+    );
+  }
+
+  testWidgets('a feed swipe starting over reveal still advances', (
+    tester,
+  ) async {
+    const viewport = Size(390, 844);
+    const insets = EdgeInsets.only(top: 47, bottom: 34);
+    final canvas = _compositionCanvas();
+    final pageController = PageController();
+    addTearDown(pageController.dispose);
+    tester.view
+      ..physicalSize = viewport
+      ..devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(
+            size: viewport,
+            padding: insets,
+            textScaler: TextScaler.linear(2),
+          ),
+          child: Scaffold(
+            body: PageView(
+              controller: pageController,
+              scrollDirection: Axis.vertical,
+              children: [
+                PlaySurface(
+                  play: _composedCanvasPlay(revealDetail: _maximumReveal),
+                  mediaBuilder: (context, layer) => PlayCanvas(asset: canvas),
+                ),
+                const ColoredBox(
+                  key: ValueKey<String>('next-play'),
+                  color: Colors.black,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.ensureVisible(
+      find.widgetWithText(FilledButton, 'Place it'),
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Place it'));
+    await tester.pumpAndSettle();
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byKey(const ValueKey<String>('play-text-scroll'))),
+    );
+    await gesture.moveBy(const Offset(0, -500));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(pageController.page, closeTo(1, 0.001));
+  });
+
   testWidgets('RTL trailing-rail composition aligns prompt from the right', (
     tester,
   ) async {
@@ -186,11 +323,55 @@ void main() {
     expect(promptParagraph.textDirection, TextDirection.rtl);
     expect(promptParagraph.textAlign, TextAlign.start);
   });
+
+  testWidgets('PlayViewportScope overrides fallback geometry and updates', (
+    tester,
+  ) async {
+    const viewport = Size(390, 844);
+    final first = PlayViewportComposition.fromConstraints(
+      const BoxConstraints.tightFor(width: 390, height: 844),
+      safeInsets: const EdgeInsets.only(top: 80, bottom: 24),
+    );
+    final second = PlayViewportComposition.fromConstraints(
+      const BoxConstraints.tightFor(width: 390, height: 844),
+      safeInsets: const EdgeInsets.only(top: 24, bottom: 80),
+    );
+    final canvas = _compositionCanvas();
+    tester.view
+      ..physicalSize = viewport
+      ..devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    Widget scopedSurface(PlayViewportComposition composition) => MaterialApp(
+      home: MediaQuery(
+        data: const MediaQueryData(size: viewport),
+        child: Scaffold(
+          body: PlayViewportScope(
+            composition: composition,
+            child: PlaySurface(
+              play: _composedCanvasPlay(),
+              mediaBuilder: (context, layer) => PlayCanvas(asset: canvas),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(scopedSurface(first));
+    _expectSurfaceRegionsMatch(tester, first);
+
+    await tester.pumpWidget(scopedSurface(second));
+    _expectSurfaceRegionsMatch(tester, second);
+  });
 }
 
 Future<PlayViewportComposition> _pumpComposedSurface(
   WidgetTester tester, {
   required _ViewportCase viewportCase,
+  PlayDocument? play,
   TextScaler textScaler = TextScaler.noScaling,
   TextDirection textDirection = TextDirection.ltr,
   bool disableAnimations = false,
@@ -222,7 +403,7 @@ Future<PlayViewportComposition> _pumpComposedSurface(
           textDirection: textDirection,
           child: Scaffold(
             body: PlaySurface(
-              play: _composedCanvasPlay(),
+              play: play ?? _composedCanvasPlay(),
               mediaBuilder: (context, layer) => PlayCanvas(asset: canvas),
             ),
           ),

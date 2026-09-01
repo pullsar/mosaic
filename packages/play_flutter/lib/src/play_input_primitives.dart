@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -282,12 +283,14 @@ final class PlayDragInput extends StatefulWidget {
     required this.spec,
     required this.onTarget,
     this.onManipulationChanged,
+    this.semanticTargetId,
     super.key,
   });
 
   final PlayDragInputSpec spec;
   final ValueChanged<String> onTarget;
   final ValueChanged<bool>? onManipulationChanged;
+  final String? semanticTargetId;
 
   @override
   State<PlayDragInput> createState() => _PlayDragInputState();
@@ -384,6 +387,31 @@ final class _PlayDragInputState extends State<PlayDragInput> {
     setState(() => _position = widget.spec.origin);
   }
 
+  void _activateWithoutDrag() {
+    final semanticTargetId = widget.semanticTargetId;
+    final target = semanticTargetId == null
+        ? widget.spec.targets.first
+        : widget.spec.targets.firstWhere(
+            (candidate) => candidate.id == semanticTargetId,
+            orElse: () => widget.spec.targets.first,
+          );
+    final targetPosition = Offset(
+      target.rect.x + (target.rect.width - widget.spec.size.width) / 2,
+      target.rect.y + (target.rect.height - widget.spec.size.height) / 2,
+    );
+    setState(() {
+      _position = Offset(
+        targetPosition.dx
+            .clamp(0.0, 1 - widget.spec.size.width)
+            .toDouble(),
+        targetPosition.dy
+            .clamp(0.0, 1 - widget.spec.size.height)
+            .toDouble(),
+      );
+    });
+    widget.onTarget(target.id);
+  }
+
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
@@ -415,42 +443,75 @@ final class _PlayDragInputState extends State<PlayDragInput> {
                   ),
                 ),
               ),
-          Positioned(
-            left: _position.dx * bounds.width,
-            top: _position.dy * bounds.height,
-            width: widget.spec.size.width * bounds.width,
-            height: widget.spec.size.height * bounds.height,
-            child: Semantics(
-              button: true,
-              label: widget.spec.handleLabel,
-              child: Listener(
-                behavior: HitTestBehavior.opaque,
-                onPointerDown: _pointerDown,
-                onPointerUp: _pointerEnded,
-                onPointerCancel: _pointerEnded,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onPanUpdate: (details) => _move(details, bounds),
-                  onPanEnd: (_) => _finish(),
-                  onPanCancel: _cancel,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: colorScheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Icon(
-                      Icons.drag_indicator,
-                      color: colorScheme.onPrimaryContainer,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
+          _dragHandle(bounds, colorScheme),
         ],
       );
     },
   );
+
+  Widget _dragHandle(Size bounds, ColorScheme colorScheme) {
+    final visualRect = Rect.fromLTWH(
+      _position.dx * bounds.width,
+      _position.dy * bounds.height,
+      widget.spec.size.width * bounds.width,
+      widget.spec.size.height * bounds.height,
+    );
+    final hitWidth = math.min(bounds.width, math.max(48.0, visualRect.width));
+    final hitHeight = math.min(
+      bounds.height,
+      math.max(48.0, visualRect.height),
+    );
+    final hitLeft = (visualRect.center.dx - hitWidth / 2)
+        .clamp(0.0, bounds.width - hitWidth)
+        .toDouble();
+    final hitTop = (visualRect.center.dy - hitHeight / 2)
+        .clamp(0.0, bounds.height - hitHeight)
+        .toDouble();
+    final hitRect = Rect.fromLTWH(hitLeft, hitTop, hitWidth, hitHeight);
+    final localVisualRect = visualRect.shift(-hitRect.topLeft);
+
+    return Positioned.fromRect(
+      rect: hitRect,
+      child: Semantics(
+        button: true,
+        label: widget.spec.handleLabel,
+        onTap: _activateWithoutDrag,
+        child: Listener(
+          behavior: HitTestBehavior.opaque,
+          onPointerDown: _pointerDown,
+          onPointerUp: _pointerEnded,
+          onPointerCancel: _pointerEnded,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onPanUpdate: (details) => _move(details, bounds),
+            onPanEnd: (_) => _finish(),
+            onPanCancel: _cancel,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned.fromRect(
+                  rect: localVisualRect,
+                  child: DecoratedBox(
+                    key: const ValueKey<String>('play-drag-object'),
+                    decoration: BoxDecoration(
+                      color: colorScheme.primaryContainer,
+                      border: Border.all(
+                        color: colorScheme.onPrimaryContainer,
+                        width: 1.5,
+                      ),
+                      borderRadius: BorderRadius.circular(
+                        visualRect.shortestSide / 2,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 final class PlayInputUnavailable extends StatelessWidget {

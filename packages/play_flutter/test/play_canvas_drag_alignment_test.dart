@@ -104,12 +104,18 @@ void main() {
         );
 
         final surfaceRect = tester.getRect(find.byType(PlaySurface));
-        final expectedStage = _fitStage(surfaceRect);
+        final composition = PlayViewportComposition.fromConstraints(
+          BoxConstraints.tight(surfaceRect.size),
+        );
+        final expectedStage = _fitStage(composition.stageRect);
         final canvasPaint = find.descendant(
           of: find.byType(PlayCanvas),
           matching: find.byType(CustomPaint),
         );
-        final handle = find.bySemanticsLabel('Move tile');
+        final handle = find.byKey(
+          const ValueKey<String>('play-drag-object'),
+        );
+        final semanticHandle = find.bySemanticsLabel('Move tile');
         final targetHint = find.descendant(
           of: find.byType(PlayDragInput),
           matching: find.byWidgetPredicate(
@@ -123,11 +129,14 @@ void main() {
 
         expect(canvasPaint, findsOneWidget);
         expect(handle, findsOneWidget);
+        expect(semanticHandle, findsOneWidget);
         expect(targetHint, findsOneWidget);
         _expectRectClose(tester.getRect(canvasPaint), expectedStage);
         final expectedHandle = _mapRect(expectedStage, _dragOrigin & _dragSize);
         final expectedTarget = _mapRect(expectedStage, _target);
         _expectRectClose(tester.getRect(handle), expectedHandle);
+        expect(tester.getRect(semanticHandle).width, greaterThanOrEqualTo(48));
+        expect(tester.getRect(semanticHandle).height, greaterThanOrEqualTo(48));
         _expectRectClose(tester.getRect(targetHint), expectedTarget);
 
         await tester.drag(
