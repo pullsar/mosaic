@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mosaic_app/guest_engagement.dart';
@@ -30,6 +32,8 @@ Widget _app({
   bool directManipulationActive = false,
   Size? size,
   EdgeInsets safeInsets = EdgeInsets.zero,
+  String? activeSearchLabel,
+  VoidCallback? onClearSearch,
 }) => MaterialApp(
   home: Builder(
     builder: (context) => MediaQuery(
@@ -41,16 +45,77 @@ Widget _app({
       ),
       child: Directionality(
         textDirection: direction,
-        child: GuestHome(
-          engagement: controller,
-          directManipulationActive: directManipulationActive,
-          onSearch: () {},
+        child: _guestHome(
+          controller: controller,
           child: child,
+          directManipulationActive: directManipulationActive,
+          activeSearchLabel: activeSearchLabel,
+          onClearSearch: onClearSearch,
         ),
       ),
     ),
   ),
 );
+
+Widget _guestHome({
+  required GuestEngagementController controller,
+  required Widget child,
+  required bool directManipulationActive,
+  String? activeSearchLabel,
+  VoidCallback? onClearSearch,
+}) {
+  if (activeSearchLabel == null) {
+    return GuestHome(
+      engagement: controller,
+      directManipulationActive: directManipulationActive,
+      onSearch: () {},
+      child: child,
+    );
+  }
+  return Function.apply(
+        GuestHome.new,
+        const <Object?>[],
+        <Symbol, dynamic>{
+          #engagement: controller,
+          #directManipulationActive: directManipulationActive,
+          #onSearch: () {},
+          #activeSearchLabel: activeSearchLabel,
+          #onClearSearch: onClearSearch,
+          #child: child,
+        },
+      )
+      as Widget;
+}
+
+final class _BlockingGuestStore implements GuestEngagementStore {
+  GuestEngagementState? state;
+  Completer<void>? _writeGate;
+  bool blockedWriteStarted = false;
+
+  void blockNextWrite() {
+    _writeGate = Completer<void>();
+    blockedWriteStarted = false;
+  }
+
+  void releaseWrite() {
+    final gate = _writeGate;
+    if (gate != null && !gate.isCompleted) gate.complete();
+  }
+
+  @override
+  Future<GuestEngagementState?> readGuestEngagement() async => state;
+
+  @override
+  Future<void> writeGuestEngagement(GuestEngagementState next) async {
+    final gate = _writeGate;
+    if (gate != null) {
+      blockedWriteStarted = true;
+      await gate.future;
+      _writeGate = null;
+    }
+    state = next;
+  }
+}
 
 typedef _ShellViewportCase = ({
   String name,
@@ -233,6 +298,64 @@ void main() {
     );
   }
 
+  for (final viewportCase in _shellViewportCases) {
+    testWidgets(
+      '${viewportCase.name} active search belongs to shared chrome at 200% RTL',
+      (tester) async {
+        tester.view
+          ..physicalSize = viewportCase.size
+          ..devicePixelRatio = 1;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+        final controller = await _controller();
+        addTearDown(controller.dispose);
+        var clearCount = 0;
+        final composition = PlayViewportComposition.fromConstraints(
+          BoxConstraints.tight(viewportCase.size),
+          safeInsets: viewportCase.safeInsets,
+          textScaler: const TextScaler.linear(2),
+        );
+
+        await tester.pumpWidget(
+          _app(
+            controller: controller,
+            child: const ColoredBox(color: Colors.black),
+            size: viewportCase.size,
+            safeInsets: viewportCase.safeInsets,
+            direction: TextDirection.rtl,
+            textScale: 2,
+            activeSearchLabel: 'Travel',
+            onClearSearch: () => clearCount += 1,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(find.text('For You'), findsNothing);
+        expect(find.text('Travel'), findsOneWidget);
+        final chip = find.byKey(const ValueKey<String>('search-scope'));
+        expect(chip, findsOneWidget);
+        final clear = find.bySemanticsLabel('Clear search');
+        expect(clear, findsOneWidget);
+        if (chip.evaluate().isEmpty || clear.evaluate().isEmpty) return;
+        final chipRect = tester.getRect(chip);
+        final searchRect = tester.getRect(
+          find.byKey(const ValueKey<String>('open-search')),
+        );
+        _expectContained(composition.chromeRect, chipRect);
+        expect(chipRect.overlaps(searchRect), isFalse);
+        expect(chipRect.overlaps(composition.promptRect), isFalse);
+        expect(chipRect.overlaps(composition.inputRect), isFalse);
+
+        await tester.tap(clear);
+        await tester.pump();
+        expect(clearCount, 1);
+      },
+    );
+  }
+
   testWidgets('feed is visible before any registration request', (
     tester,
   ) async {
@@ -282,6 +405,66 @@ void main() {
     expect(find.text('Your guest feed stays right here.'), findsOneWidget);
     expect(find.text('Back to exploring'), findsOneWidget);
     expect(find.text('Account created'), findsNothing);
+  });
+
+  testWidgets('early access persists reset before truthful navigation', (
+    tester,
+  ) async {
+    final store = _BlockingGuestStore();
+    var clock = DateTime.utc(2026, 8, 31, 12);
+    final controller = GuestEngagementController(
+      store: store,
+      clock: () => clock,
+    );
+    addTearDown(controller.dispose);
+    await controller.initialize();
+    for (var index = 0; index < 8; index += 1) {
+      await controller.recordVisible(
+        playId: 'before_$index',
+        revisionId: 'rev_before_$index',
+      );
+    }
+    store.blockNextWrite();
+
+    await tester.pumpWidget(
+      _app(controller: controller, child: const Text('Eligible Play')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Get early access'));
+    await tester.pump();
+
+    expect(store.blockedWriteStarted, isTrue);
+    expect(find.text('Accounts are opening soon'), findsNothing);
+    if (!store.blockedWriteStarted) return;
+    store.releaseWrite();
+    await tester.pumpAndSettle();
+    expect(find.text('Accounts are opening soon'), findsOneWidget);
+    expect(store.state?.seenIdentities, isEmpty);
+    expect(
+      store.state?.toJson()['hasMeaningfulInteraction'],
+      isFalse,
+    );
+
+    final restarted = GuestEngagementController(
+      store: store,
+      clock: () => clock,
+    );
+    addTearDown(restarted.dispose);
+    await restarted.initialize();
+    await tester.pumpWidget(
+      _app(controller: restarted, child: const Text('Restarted Play')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Your Mixli is getting good'), findsNothing);
+
+    clock = clock.add(const Duration(days: 7));
+    for (var index = 0; index < 8; index += 1) {
+      await restarted.recordVisible(
+        playId: 'later_$index',
+        revisionId: 'rev_later_$index',
+      );
+    }
+    expect(restarted.shouldPrompt, isTrue);
   });
 
   testWidgets('signup waits until direct manipulation settles', (tester) async {
