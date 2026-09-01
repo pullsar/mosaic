@@ -450,26 +450,8 @@ final class _MosaicAppState extends State<MosaicApp> {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      darkTheme: ThemeData(
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: MosaicVisualTokens.surface,
-        colorScheme: const ColorScheme.dark(
-          primary: MosaicVisualTokens.foreground,
-          onPrimary: MosaicVisualTokens.surface,
-          surface: MosaicVisualTokens.surface,
-          onSurface: MosaicVisualTokens.foreground,
-        ),
-      ),
-      theme: ThemeData(
-        brightness: Brightness.light,
-        scaffoldBackgroundColor: const Color(0xFFFAFAF8),
-        colorScheme: const ColorScheme.light(
-          primary: Color(0xFF171717),
-          onPrimary: Color(0xFFFFFFFF),
-          surface: Color(0xFFFAFAF8),
-          onSurface: Color(0xFF171717),
-        ),
-      ),
+      darkTheme: mixliTheme(Brightness.dark),
+      theme: mixliTheme(Brightness.light),
       routes: {
         MosaicSettingsRoute.privacy: (_) =>
             const _ReservedSettingsPage('Privacy'),
@@ -507,6 +489,52 @@ final class _MosaicAppState extends State<MosaicApp> {
       ),
     );
   }
+}
+
+ThemeData mixliTheme(Brightness brightness) {
+  final dark = brightness == Brightness.dark;
+  final base = ThemeData(
+    brightness: brightness,
+    fontFamily: 'Inter',
+    scaffoldBackgroundColor: dark
+        ? MosaicVisualTokens.surface
+        : const Color(0xFFFAFAF8),
+    colorScheme: dark
+        ? const ColorScheme.dark(
+            primary: MosaicVisualTokens.foreground,
+            onPrimary: MosaicVisualTokens.surface,
+            surface: MosaicVisualTokens.surface,
+            onSurface: MosaicVisualTokens.foreground,
+          )
+        : const ColorScheme.light(
+            primary: Color(0xFF171717),
+            onPrimary: Color(0xFFFFFFFF),
+            surface: Color(0xFFFAFAF8),
+            onSurface: Color(0xFF171717),
+          ),
+  );
+  final text = base.textTheme;
+  return base.copyWith(
+    textTheme: text.copyWith(
+      displayLarge: text.displayLarge?.copyWith(fontWeight: FontWeight.w600),
+      displayMedium: text.displayMedium?.copyWith(fontWeight: FontWeight.w600),
+      displaySmall: text.displaySmall?.copyWith(fontWeight: FontWeight.w600),
+      headlineLarge: text.headlineLarge?.copyWith(fontWeight: FontWeight.w600),
+      headlineMedium: text.headlineMedium?.copyWith(
+        fontWeight: FontWeight.w600,
+      ),
+      headlineSmall: text.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
+      titleLarge: text.titleLarge?.copyWith(fontWeight: FontWeight.w500),
+      titleMedium: text.titleMedium?.copyWith(fontWeight: FontWeight.w500),
+      titleSmall: text.titleSmall?.copyWith(fontWeight: FontWeight.w500),
+      labelLarge: text.labelLarge?.copyWith(fontWeight: FontWeight.w500),
+      labelMedium: text.labelMedium?.copyWith(fontWeight: FontWeight.w500),
+      labelSmall: text.labelSmall?.copyWith(fontWeight: FontWeight.w500),
+      bodyLarge: text.bodyLarge?.copyWith(fontWeight: FontWeight.w400),
+      bodyMedium: text.bodyMedium?.copyWith(fontWeight: FontWeight.w400),
+      bodySmall: text.bodySmall?.copyWith(fontWeight: FontWeight.w400),
+    ),
+  );
 }
 
 final class _ConsumerSearchScope {

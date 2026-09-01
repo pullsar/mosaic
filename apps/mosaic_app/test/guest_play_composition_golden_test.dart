@@ -335,8 +335,8 @@ Future<_ScenarioHandle> _pumpScenario(
   await tester.pumpWidget(
     MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: _goldenTheme(Brightness.light),
-      darkTheme: _goldenTheme(Brightness.dark),
+      theme: mixliTheme(Brightness.light),
+      darkTheme: mixliTheme(Brightness.dark),
       themeMode: scenario.brightness == Brightness.dark
           ? ThemeMode.dark
           : ThemeMode.light,
@@ -489,27 +489,6 @@ void _expectContained(Rect outer, Rect inner) {
   expect(inner.right, lessThanOrEqualTo(outer.right));
   expect(inner.bottom, lessThanOrEqualTo(outer.bottom));
 }
-
-ThemeData _goldenTheme(Brightness brightness) => ThemeData(
-  brightness: brightness,
-  fontFamily: 'Inter',
-  scaffoldBackgroundColor: brightness == Brightness.dark
-      ? MosaicVisualTokens.surface
-      : const Color(0xFFFAFAF8),
-  colorScheme: brightness == Brightness.dark
-      ? const ColorScheme.dark(
-          primary: MosaicVisualTokens.foreground,
-          onPrimary: MosaicVisualTokens.surface,
-          surface: MosaicVisualTokens.surface,
-          onSurface: MosaicVisualTokens.foreground,
-        )
-      : const ColorScheme.light(
-          primary: Color(0xFF171717),
-          onPrimary: Color(0xFFFFFFFF),
-          surface: Color(0xFFFAFAF8),
-          onSurface: Color(0xFF171717),
-        ),
-);
 
 _Fixture _playFixture(String name) {
   final raw =
