@@ -387,6 +387,48 @@ void main() {
     expect(find.text('Your Mixli is getting good'), findsNothing);
   });
 
+  testWidgets('Not now stays visible until prompt reset is durable', (
+    tester,
+  ) async {
+    final store = _BlockingGuestStore();
+    final controller = GuestEngagementController(
+      store: store,
+      clock: () => DateTime.utc(2026, 8, 31, 12),
+    );
+    addTearDown(controller.dispose);
+    await controller.initialize();
+    for (var index = 0; index < 8; index += 1) {
+      await controller.recordVisible(
+        playId: 'before_$index',
+        revisionId: 'rev_before_$index',
+      );
+    }
+    store.blockNextWrite();
+
+    await tester.pumpWidget(
+      _app(controller: controller, child: const Text('Eligible Play')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Not now'));
+    await tester.pump();
+
+    expect(store.blockedWriteStarted, isTrue);
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+    expect(find.text('Your Mixli is getting good'), findsOneWidget);
+    expect(find.text('Not now'), findsOneWidget);
+    if (!store.blockedWriteStarted) return;
+    store.releaseWrite();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Your Mixli is getting good'), findsNothing);
+    expect(store.state?.seenIdentities, isEmpty);
+    expect(
+      store.state?.toJson()['hasMeaningfulInteraction'],
+      isFalse,
+    );
+  });
+
   testWidgets('join opens truthful early-access page', (tester) async {
     final controller = await _controller(eligible: true);
     addTearDown(controller.dispose);
