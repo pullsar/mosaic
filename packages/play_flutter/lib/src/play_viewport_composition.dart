@@ -217,10 +217,7 @@ PlayViewportComposition _compactLandscape({
       PlayViewportComposition._compactChromeHeight +
       PlayViewportComposition._compactUtilityDockHeight +
       navigationHeight;
-  final bandFactor = math.min(
-    1.0,
-    safeRect.height * 0.6 / desiredFixedHeight,
-  );
+  final bandFactor = math.min(1.0, safeRect.height * 0.6 / desiredFixedHeight);
   final chromeHeight =
       PlayViewportComposition._compactChromeHeight * bandFactor;
   final utilityHeight =

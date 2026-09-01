@@ -96,9 +96,7 @@ void main() {
         expect(stageAspect, greaterThanOrEqualTo(_minimumStageAspectRatio));
         expect(
           stageAspect,
-          lessThanOrEqualTo(
-            _maximumStageAspectRatio + precisionErrorTolerance,
-          ),
+          lessThanOrEqualTo(_maximumStageAspectRatio + precisionErrorTolerance),
         );
       });
     }
@@ -152,11 +150,8 @@ void main() {
     });
 
     group('rejects invalid geometry', () {
-      final invalidCases = <({
-        String name,
-        BoxConstraints constraints,
-        EdgeInsets safeInsets,
-      })>[
+      final invalidCases =
+          <({String name, BoxConstraints constraints, EdgeInsets safeInsets})>[
         (
           name: 'unbounded width',
           constraints: const BoxConstraints(
@@ -167,22 +162,34 @@ void main() {
         ),
         (
           name: 'negative inset',
-          constraints: const BoxConstraints.tightFor(width: 320, height: 640),
+          constraints: const BoxConstraints.tightFor(
+            width: 320,
+            height: 640,
+          ),
           safeInsets: const EdgeInsets.only(left: -1),
         ),
         (
           name: 'non-finite inset',
-          constraints: const BoxConstraints.tightFor(width: 320, height: 640),
+          constraints: const BoxConstraints.tightFor(
+            width: 320,
+            height: 640,
+          ),
           safeInsets: const EdgeInsets.only(top: double.infinity),
         ),
         (
           name: 'horizontal insets exceed the viewport',
-          constraints: const BoxConstraints.tightFor(width: 320, height: 640),
+          constraints: const BoxConstraints.tightFor(
+            width: 320,
+            height: 640,
+          ),
           safeInsets: const EdgeInsets.symmetric(horizontal: 161),
         ),
         (
           name: 'vertical insets exceed the viewport',
-          constraints: const BoxConstraints.tightFor(width: 320, height: 640),
+          constraints: const BoxConstraints.tightFor(
+            width: 320,
+            height: 640,
+          ),
           safeInsets: const EdgeInsets.symmetric(vertical: 321),
         ),
       ];
@@ -206,10 +213,7 @@ void main() {
         safeInsets: const EdgeInsets.fromLTRB(44, 0, 44, 21),
       );
 
-      expect(
-        composition.utilityPlacement,
-        PlayUtilityPlacement.horizontalDock,
-      );
+      expect(composition.utilityPlacement, PlayUtilityPlacement.horizontalDock);
       expect(
         composition.stageRect.width,
         greaterThanOrEqualTo(_minimumCompactLandscapeStage.width),
@@ -252,9 +256,7 @@ void main() {
         expect(stageAspect, greaterThanOrEqualTo(_minimumStageAspectRatio));
         expect(
           stageAspect,
-          lessThanOrEqualTo(
-            _maximumStageAspectRatio + precisionErrorTolerance,
-          ),
+          lessThanOrEqualTo(_maximumStageAspectRatio + precisionErrorTolerance),
         );
       }
     });
@@ -357,8 +359,7 @@ void _expectPairwiseNonOverlapping(List<Rect> regions) {
       expect(
         regions[leftIndex].overlaps(regions[rightIndex]),
         isFalse,
-        reason:
-            '${regions[leftIndex]} must not overlap ${regions[rightIndex]}',
+        reason: '${regions[leftIndex]} must not overlap ${regions[rightIndex]}',
       );
     }
   }
