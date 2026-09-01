@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:play_flutter/play_flutter.dart';
 
@@ -8,6 +9,18 @@ const _spec = PlayDragInputSpec(
   targets: <PlayDragTarget>[
     PlayDragTarget(
       id: 'target',
+      rect: PlayNormalizedRect(x: 0.7, y: 0.4, width: 0.2, height: 0.2),
+    ),
+  ],
+);
+
+const _accessibleMatchSpec = PlayDragInputSpec(
+  origin: Offset(0.48, 0.35),
+  size: Size(0.04, 0.2),
+  handleLabel: 'Move match',
+  targets: <PlayDragTarget>[
+    PlayDragTarget(
+      id: 'solution',
       rect: PlayNormalizedRect(x: 0.7, y: 0.4, width: 0.2, height: 0.2),
     ),
   ],
@@ -71,6 +84,70 @@ void main() {
     await gesture.up();
     await tester.pump();
 
+    expect(locks, isEmpty);
+  });
+
+  testWidgets('thin authored match keeps a 48 by 48 semantic target', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox.square(
+          dimension: 300,
+          child: PlayDragInput(
+            spec: _accessibleMatchSpec,
+            onTarget: (_) {},
+          ),
+        ),
+      ),
+    );
+
+    final semanticTarget = tester.getRect(
+      find.bySemanticsLabel('Move match'),
+    );
+    final object = find.byKey(const ValueKey<String>('play-drag-object'));
+
+    expect(semanticTarget.width, greaterThanOrEqualTo(48));
+    expect(semanticTarget.height, greaterThanOrEqualTo(48));
+    expect(object, findsOneWidget);
+    expect(
+      tester.getRect(object).width / tester.getRect(object).height,
+      closeTo(
+        _accessibleMatchSpec.size.width / _accessibleMatchSpec.size.height,
+        0.001,
+      ),
+    );
+    expect(find.byIcon(Icons.drag_indicator), findsNothing);
+  });
+
+  testWidgets('semantic activation resolves without acquiring the feed lock', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    addTearDown(semantics.dispose);
+    final targets = <String>[];
+    final locks = <bool>[];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox.square(
+          dimension: 300,
+          child: PlayDragInput(
+            spec: _accessibleMatchSpec,
+            onTarget: targets.add,
+            onManipulationChanged: locks.add,
+          ),
+        ),
+      ),
+    );
+
+    final node = tester.getSemantics(find.bySemanticsLabel('Move match'));
+    expect(node.getSemanticsData().hasAction(SemanticsAction.tap), isTrue);
+
+    tester.semantics.tap(find.semantics.byLabel('Move match'));
+    await tester.pump();
+
+    expect(targets, ['solution']);
     expect(locks, isEmpty);
   });
 }
