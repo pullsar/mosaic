@@ -229,7 +229,7 @@ const _scenarios = <_Scenario>[
 ];
 
 void main() {
-  setUpAll(_loadInterWhenPresent);
+  setUpAll(_loadGoldenFonts);
 
   tearDown(() {
     TestWidgetsFlutterBinding.instance.platformDispatcher.clearAllTestValues();
@@ -275,13 +275,44 @@ void main() {
   }
 }
 
+Future<void> _loadGoldenFonts() async {
+  await _loadInterWhenPresent();
+  final materialIcons = _materialIconsFromFlutterCache();
+  await _loadFont('MaterialIcons', materialIcons);
+}
+
 Future<void> _loadInterWhenPresent() async {
   final font = File('assets/fonts/Inter-VariableFont_opsz,wght.ttf');
   if (!font.existsSync()) return;
+  await _loadFont('Inter', font);
+}
+
+Future<void> _loadFont(String family, File font) async {
   final bytes = await font.readAsBytes();
-  final loader = FontLoader('Inter')
+  final loader = FontLoader(family)
     ..addFont(Future<ByteData>.value(ByteData.sublistView(bytes)));
   await loader.load();
+}
+
+File _materialIconsFromFlutterCache() {
+  var directory = File(Platform.resolvedExecutable).parent;
+  final checked = <String>[];
+  while (true) {
+    final candidate = File(
+      '${directory.path}${Platform.pathSeparator}artifacts'
+      '${Platform.pathSeparator}material_fonts'
+      '${Platform.pathSeparator}MaterialIcons-Regular.otf',
+    );
+    checked.add(candidate.path);
+    if (candidate.existsSync()) return candidate;
+    final parent = directory.parent;
+    if (parent.path == directory.path) break;
+    directory = parent;
+  }
+  throw StateError(
+    'MaterialIcons-Regular.otf was not found from Flutter cache ancestry '
+    'for ${Platform.resolvedExecutable}. Checked: ${checked.join(', ')}',
+  );
 }
 
 Future<_ScenarioHandle> _pumpScenario(
@@ -331,6 +362,10 @@ Future<_ScenarioHandle> _pumpScenario(
     compatibilityChecker: const PlayCompatibilityChecker(),
     capabilities: PlayCapabilityEnvelope.m1(),
   );
+  final playSurface = PlaySurface(
+    play: fixture.play,
+    mediaBuilder: harness.media.call,
+  );
 
   await tester.pumpWidget(
     MaterialApp(
@@ -364,10 +399,15 @@ Future<_ScenarioHandle> _pumpScenario(
               controller: harness.actions,
               onAdvance: (_) async => true,
               onShare: (_) {},
-              child: PlaySurface(
-                play: fixture.play,
-                mediaBuilder: harness.media.call,
-              ),
+              // These fixtures are authored in English. Shell direction and
+              // authored content direction remain independent until locale is
+              // carried by the published Play schema.
+              child: scenario.direction == TextDirection.rtl
+                  ? Directionality(
+                      textDirection: TextDirection.ltr,
+                      child: playSurface,
+                    )
+                  : playSurface,
             ),
           ),
         ),
@@ -409,6 +449,7 @@ Future<_ScenarioHandle> _pumpScenario(
     expect(find.text('For You'), findsNothing);
   }
   if (scenario.pendingCanvas) {
+    expect(find.text('Loading play'), findsOneWidget);
     expect(
       find.bySemanticsLabel('Loading interactive graphic'),
       findsOneWidget,

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -327,6 +328,73 @@ void main() {
     expect(
       find.bySemanticsLabel('Matchstick equation: 6 plus 4 equals 4'),
       findsOneWidget,
+    );
+  });
+
+  testWidgets('loading canvas shows a calm static visible status', (
+    tester,
+  ) async {
+    final resolution = Completer<PlayCanvasAsset?>();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox.square(
+          dimension: 320,
+          child: ResolvedPlayCanvas(
+            assetId: 'pending_canvas',
+            resolver: CallbackPlayCanvasAssetResolver(
+              (_) => resolution.future,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    try {
+      expect(find.text('Loading play'), findsOneWidget);
+      expect(
+        find.bySemanticsLabel('Loading interactive graphic'),
+        findsOneWidget,
+      );
+      expect(find.byIcon(Icons.hourglass_empty_rounded), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      final label = tester.widget<Text>(find.text('Loading play'));
+      expect(label.style?.fontWeight, FontWeight.w500);
+      expect(
+        label.style?.color,
+        Theme.of(tester.element(find.text('Loading play')))
+            .colorScheme
+            .onSurfaceVariant,
+      );
+    } finally {
+      if (!resolution.isCompleted) resolution.complete(null);
+      await tester.pump();
+    }
+  });
+
+  testWidgets('unavailable canvas shows a static visible status', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: SizedBox.square(dimension: 320, child: PlayCanvasUnavailable()),
+      ),
+    );
+
+    expect(find.text('Play unavailable'), findsOneWidget);
+    expect(
+      find.bySemanticsLabel('Interactive graphic unavailable'),
+      findsOneWidget,
+    );
+    expect(find.byIcon(Icons.grid_off_outlined), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    final label = tester.widget<Text>(find.text('Play unavailable'));
+    expect(label.style?.fontWeight, FontWeight.w500);
+    expect(
+      label.style?.color,
+      Theme.of(tester.element(find.text('Play unavailable')))
+          .colorScheme
+          .onSurfaceVariant,
     );
   });
 
