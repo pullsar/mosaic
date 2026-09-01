@@ -287,10 +287,8 @@ void main() {
 
     for (final palette in [masqueradingPalette, collidingPalette]) {
       expect(
-        () => PlayCanvasAsset.fromJson({
-          ..._toneDocument(),
-          'palette': palette,
-        }),
+        () =>
+            PlayCanvasAsset.fromJson({..._toneDocument(), 'palette': palette}),
         throwsFormatException,
       );
     }
