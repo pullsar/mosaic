@@ -560,7 +560,15 @@ PlayCanvasElement _canvasElementFromJson(Map<String, Object?> json) {
 
 Map<String, Object?> _jsonMap(Object? raw, String field) {
   if (raw is! Map) throw FormatException('$field must be an object.');
-  return raw.map((key, value) => MapEntry(key.toString(), value));
+  final normalized = <String, Object?>{};
+  for (final entry in raw.entries) {
+    final key = entry.key;
+    if (key is! String) {
+      throw FormatException('$field keys must be strings.');
+    }
+    normalized[key] = entry.value;
+  }
+  return normalized;
 }
 
 Color _canvasColor(Object? raw, String field) {

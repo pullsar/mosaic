@@ -226,11 +226,26 @@ export function normalizeCanvasAssetDocument(input: unknown): CanvasAssetDocumen
 
 function normalizePalette(value: unknown): CanvasPalette {
   const palette = record(value, 'canvas asset palette');
+  const roles = [
+    'background',
+    'foreground',
+    'accent',
+    'muted',
+    'surface',
+  ] as const;
   exactKeys(
     palette,
-    ['background', 'foreground', 'accent', 'muted', 'surface'],
+    roles,
     'canvas asset palette',
   );
+  if (
+    Object.keys(palette).length !== roles.length ||
+    roles.some((role) => !Object.hasOwn(palette, role))
+  ) {
+    throw new TypeError(
+      'canvas asset palette must define exactly background, foreground, accent, muted, and surface',
+    );
+  }
   const normalized: CanvasPalette = Object.freeze({
     background: canonicalColor(palette.background, 'palette.background'),
     foreground: canonicalColor(palette.foreground, 'palette.foreground'),
