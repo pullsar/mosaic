@@ -311,7 +311,11 @@ final class _ResolvedPlayCanvasState extends State<ResolvedPlayCanvas> {
     future: _resolution,
     builder: (context, snapshot) {
       if (snapshot.connectionState != ConnectionState.done) {
-        return const _CanvasState(label: 'Loading interactive graphic');
+        return const _CanvasState(
+          semanticLabel: 'Loading interactive graphic',
+          visibleLabel: 'Loading play',
+          icon: Icons.hourglass_empty_rounded,
+        );
       }
       final asset = snapshot.data;
       if (snapshot.hasError || asset == null) {
@@ -491,35 +495,60 @@ final class PlayCanvasUnavailable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => const _CanvasState(
-    label: 'Interactive graphic unavailable',
+    semanticLabel: 'Interactive graphic unavailable',
+    visibleLabel: 'Play unavailable',
     icon: Icons.grid_off_outlined,
   );
 }
 
 final class _CanvasState extends StatelessWidget {
-  const _CanvasState({required this.label, this.icon});
+  const _CanvasState({
+    required this.semanticLabel,
+    required this.visibleLabel,
+    required this.icon,
+  });
 
-  final String label;
-  final IconData? icon;
+  final String semanticLabel;
+  final String visibleLabel;
+  final IconData icon;
 
   @override
-  Widget build(BuildContext context) => ColoredBox(
-    color: Theme.of(context).colorScheme.surfaceContainerHighest,
-    child: Semantics(
-      image: true,
-      label: label,
-      child: Center(
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final statusColor = theme.colorScheme.onSurfaceVariant;
+    return ColoredBox(
+      color: theme.colorScheme.surfaceContainerHighest,
+      child: Semantics(
+        image: true,
+        label: semanticLabel,
         child: ExcludeSemantics(
-          child: icon == null
-              ? const SizedBox.square(
-                  dimension: 22,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : Icon(icon),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Center(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Icon(icon, size: 22, color: statusColor),
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: Text(
+                      visibleLabel,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: statusColor,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 PlayCanvasElement _canvasElementFromJson(Map<String, Object?> json) {
