@@ -78,10 +78,7 @@ PlayDocument _composedCanvasPlay({
           {'type': 'text', 'role': 'prompt', 'value': 'Place the match.'},
         ],
       },
-      'input': {
-        'type': 'single_choice',
-        'options': choices,
-      },
+      'input': {'type': 'single_choice', 'options': choices},
       'validation': {'type': 'equals', 'value': choices.first['id']},
       'transition': {'correct': 'reveal', 'incorrect': 'reveal'},
     },

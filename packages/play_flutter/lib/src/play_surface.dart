@@ -463,35 +463,45 @@ final class _InputOverlay extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
           child: LayoutBuilder(
-            builder: (context, constraints) => SingleChildScrollView(
-              key: const ValueKey<String>('play-choice-scroll'),
-              primary: false,
-              scrollDirection: Axis.horizontal,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minWidth: constraints.maxWidth),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    for (
-                      var index = 0;
-                      index < input.options.length;
-                      index += 1
-                    )
-                      Padding(
-                        padding: EdgeInsetsDirectional.only(
-                          end: index + 1 == input.options.length ? 0 : 8,
+            builder: (context, constraints) {
+              final axis = constraints.maxHeight > constraints.maxWidth
+                  ? Axis.vertical
+                  : Axis.horizontal;
+              return SingleChildScrollView(
+                key: const ValueKey<String>('play-choice-scroll'),
+                primary: false,
+                scrollDirection: axis,
+                child: ConstrainedBox(
+                  constraints: axis == Axis.vertical
+                      ? BoxConstraints(minHeight: constraints.maxHeight)
+                      : BoxConstraints(minWidth: constraints.maxWidth),
+                  child: Flex(
+                    direction: axis,
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      for (
+                        var index = 0;
+                        index < input.options.length;
+                        index += 1
+                      )
+                        Padding(
+                          padding: index + 1 == input.options.length
+                              ? EdgeInsets.zero
+                              : axis == Axis.vertical
+                              ? const EdgeInsets.only(bottom: 8)
+                              : const EdgeInsetsDirectional.only(end: 8),
+                          child: _ControlButton(
+                            label: input.options[index].label,
+                            onPressed: () =>
+                                onAction(ChoiceAction(input.options[index].id)),
+                          ),
                         ),
-                        child: _ControlButton(
-                          label: input.options[index].label,
-                          onPressed: () =>
-                              onAction(ChoiceAction(input.options[index].id)),
-                        ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ),
+              );
+            },
           ),
         ),
       );
