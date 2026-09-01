@@ -12,6 +12,18 @@ const _maximumReveal =
     'One careful move keeps the original pieces visible while the '
     'corrected equation appears here with enough detail to explain why the '
     'solution works without replacing the puzzle or hiding context';
+const _defaultChoices = <Map<String, String>>[
+  {'id': 'place', 'label': 'Place it'},
+  {'id': 'lift', 'label': 'Lift left'},
+  {'id': 'shift', 'label': 'Shift top'},
+  {'id': 'turn', 'label': 'Turn it'},
+  {'id': 'reset', 'label': 'Reset'},
+];
+const _energyChoices = <Map<String, String>>[
+  {'id': 'electric', 'label': 'Electric'},
+  {'id': 'soft', 'label': 'Soft'},
+  {'id': 'afterglow', 'label': 'Afterglow'},
+];
 
 typedef _ViewportCase = ({String name, Size size, EdgeInsets safeInsets});
 
@@ -45,6 +57,7 @@ const _viewportCases = <_ViewportCase>[
 
 PlayDocument _composedCanvasPlay({
   String revealDetail = 'One move restores the equation.',
+  List<Map<String, String>> choices = _defaultChoices,
 }) => PlayDocument.fromJson({
   'schemaVersion': 1,
   'id': 'composed_canvas',
@@ -67,15 +80,9 @@ PlayDocument _composedCanvasPlay({
       },
       'input': {
         'type': 'single_choice',
-        'options': [
-          {'id': 'place', 'label': 'Place it'},
-          {'id': 'lift', 'label': 'Lift left'},
-          {'id': 'shift', 'label': 'Shift top'},
-          {'id': 'turn', 'label': 'Turn it'},
-          {'id': 'reset', 'label': 'Reset'},
-        ],
+        'options': choices,
       },
-      'validation': {'type': 'equals', 'value': 'place'},
+      'validation': {'type': 'equals', 'value': choices.first['id']},
       'transition': {'correct': 'reveal', 'incorrect': 'reveal'},
     },
     'reveal': {
@@ -154,6 +161,31 @@ void main() {
       },
     );
   }
+
+  testWidgets('compact landscape presents every short choice at first glance', (
+    tester,
+  ) async {
+    final composition = await _pumpComposedSurface(
+      tester,
+      viewportCase: _viewportCases[2],
+      play: _composedCanvasPlay(choices: _energyChoices),
+    );
+    final choiceScroll = find.byKey(
+      const ValueKey<String>('play-choice-scroll'),
+    );
+
+    expect(
+      tester.widget<SingleChildScrollView>(choiceScroll).scrollDirection,
+      Axis.vertical,
+    );
+    for (final label in <String>['Electric', 'Soft', 'Afterglow']) {
+      _expectContained(
+        composition.inputRect,
+        tester.getRect(find.widgetWithText(FilledButton, label)),
+      );
+    }
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('200% text stays inside the allocated composition', (
     tester,
