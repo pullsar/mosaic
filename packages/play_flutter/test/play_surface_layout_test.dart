@@ -235,10 +235,7 @@ void main() {
           const ValueKey<String>('play-text-scroll'),
         );
         _expectContained(promptRect, tester.getRect(textScroll));
-        _expectContained(
-          promptRect,
-          tester.getRect(find.text('Balanced.')),
-        );
+        _expectContained(promptRect, tester.getRect(find.text('Balanced.')));
         final textPosition = tester.state<ScrollableState>(
           find.descendant(of: textScroll, matching: find.byType(Scrollable)),
         );

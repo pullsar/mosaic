@@ -376,9 +376,7 @@ void main() {
     final inputRect = tester.getRect(
       find.byKey(const ValueKey<String>('play-input')),
     );
-    final textScroll = find.byKey(
-      const ValueKey<String>('play-text-scroll'),
-    );
+    final textScroll = find.byKey(const ValueKey<String>('play-text-scroll'));
     final textScrollRect = tester.getRect(textScroll);
 
     expect(identical(canvasElementBefore, canvasElementAfter), isTrue);
