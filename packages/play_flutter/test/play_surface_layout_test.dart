@@ -24,6 +24,11 @@ const _energyChoices = <Map<String, String>>[
   {'id': 'soft', 'label': 'Soft'},
   {'id': 'afterglow', 'label': 'Afterglow'},
 ];
+const _wrappedChoices = <Map<String, String>>[
+  {'id': 'electric', 'label': 'Electric all the way'},
+  {'id': 'soft', 'label': 'Soft and slow tonight'},
+  {'id': 'afterglow', 'label': 'Stay for the warm afterglow'},
+];
 
 typedef _ViewportCase = ({String name, Size size, EdgeInsets safeInsets});
 
@@ -170,7 +175,6 @@ void main() {
     final choiceScroll = find.byKey(
       const ValueKey<String>('play-choice-scroll'),
     );
-
     expect(
       tester.widget<SingleChildScrollView>(choiceScroll).scrollDirection,
       Axis.horizontal,
@@ -184,6 +188,73 @@ void main() {
         composition.inputRect,
         tester.getRect(find.widgetWithText(FilledButton, label)),
       );
+    }
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final textDirection in TextDirection.values) {
+    testWidgets('compact landscape keeps wrapped choices reachable at 200% '
+        '${textDirection.name}', (tester) async {
+      final composition = await _pumpComposedSurface(
+        tester,
+        viewportCase: _viewportCases[2],
+        textScaler: const TextScaler.linear(2),
+        textDirection: textDirection,
+        play: _composedCanvasPlay(choices: _wrappedChoices),
+      );
+      final choiceScroll = find.byKey(
+        const ValueKey<String>('play-choice-scroll'),
+      );
+      final choicePosition = tester.state<ScrollableState>(
+        find.descendant(of: choiceScroll, matching: find.byType(Scrollable)),
+      );
+
+      expect(choicePosition.position.maxScrollExtent, greaterThan(0));
+      for (final label in <String>[
+        'Electric all the way',
+        'Soft and slow tonight',
+        'Stay for the warm afterglow',
+      ]) {
+        final button = find.widgetWithText(FilledButton, label);
+        await tester.ensureVisible(button);
+        await tester.pumpAndSettle();
+        _expectContained(composition.inputRect, tester.getRect(button));
+        final text = tester.widget<Text>(find.text(label));
+        expect(text.maxLines, 2);
+        expect(text.overflow, TextOverflow.ellipsis);
+      }
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('compact landscape keeps five choices reachable', (tester) async {
+    final composition = await _pumpComposedSurface(
+      tester,
+      viewportCase: _viewportCases[2],
+    );
+    final choiceScroll = find.byKey(
+      const ValueKey<String>('play-choice-scroll'),
+    );
+    final choicePosition = tester.state<ScrollableState>(
+      find.descendant(of: choiceScroll, matching: find.byType(Scrollable)),
+    );
+
+    expect(
+      tester.widget<SingleChildScrollView>(choiceScroll).scrollDirection,
+      Axis.horizontal,
+    );
+    expect(choicePosition.position.maxScrollExtent, greaterThan(0));
+    for (final label in <String>[
+      'Place it',
+      'Lift left',
+      'Shift top',
+      'Turn it',
+      'Reset',
+    ]) {
+      final button = find.widgetWithText(FilledButton, label);
+      await tester.ensureVisible(button);
+      await tester.pumpAndSettle();
+      _expectContained(composition.inputRect, tester.getRect(button));
     }
     expect(tester.takeException(), isNull);
   });
@@ -229,11 +300,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final gesture = await tester.startGesture(
-      tester.getCenter(find.widgetWithText(FilledButton, 'Electric')),
+    await tester.drag(
+      find.widgetWithText(FilledButton, 'Electric'),
+      const Offset(0, -500),
     );
-    await gesture.moveBy(const Offset(0, -300));
-    await gesture.up();
     await tester.pumpAndSettle();
 
     expect(pageController.page, closeTo(1, 0.001));
