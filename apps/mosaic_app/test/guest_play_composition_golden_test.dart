@@ -59,7 +59,6 @@ final class _GoldenHarness {
   _GoldenHarness({
     required PlayDocument play,
     required PlayCanvasAssetResolver canvasResolver,
-    this.releasePendingCanvas,
   }) {
     runtime = AppEventRuntime.disabled();
     actions = ConsumerActionController(
@@ -91,15 +90,41 @@ final class _GoldenHarness {
   late final ConsumerActionController actions;
   late final GuestEngagementController engagement;
   late final PlayMediaLayerBuilder media;
-  final VoidCallback? releasePendingCanvas;
   var _eventId = 0;
 
   Future<void> close() async {
     actions.dispose();
     engagement.dispose();
-    releasePendingCanvas?.call();
     await mediaCoordinator.releaseAll();
     await runtime.close();
+  }
+}
+
+final class _ScenarioHandle {
+  _ScenarioHandle({
+    required this.harness,
+    required this.pendingCanvas,
+  });
+
+  final _GoldenHarness harness;
+  final _PendingCanvasResolver? pendingCanvas;
+  bool _closed = false;
+
+  Future<void> close(WidgetTester tester) async {
+    if (_closed) return;
+    _closed = true;
+    try {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    } finally {
+      pendingCanvas?.release();
+      try {
+        await harness.close();
+      } finally {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      }
+    }
   }
 }
 
@@ -238,13 +263,17 @@ void main() {
 
   for (final scenario in _scenarios) {
     testWidgets(scenario.name, (tester) async {
-      await _pumpScenario(tester, scenario);
-      _expectCompositionGeometry(tester, scenario);
+      final handle = await _pumpScenario(tester, scenario);
+      try {
+        _expectCompositionGeometry(tester, scenario);
 
-      await expectLater(
-        find.byKey(_goldenBoundary),
-        matchesGoldenFile('goldens/${scenario.golden}'),
-      );
+        await expectLater(
+          find.byKey(_goldenBoundary),
+          matchesGoldenFile('goldens/${scenario.golden}'),
+        );
+      } finally {
+        await handle.close(tester);
+      }
     });
   }
 }
@@ -258,14 +287,13 @@ Future<void> _loadInterWhenPresent() async {
   await loader.load();
 }
 
-Future<void> _pumpScenario(WidgetTester tester, _Scenario scenario) async {
+Future<_ScenarioHandle> _pumpScenario(
+  WidgetTester tester,
+  _Scenario scenario,
+) async {
   tester.view
     ..physicalSize = scenario.size
     ..devicePixelRatio = 1;
-  addTearDown(() {
-    tester.view.resetPhysicalSize();
-    tester.view.resetDevicePixelRatio();
-  });
 
   final fixture = _playFixture(scenario.playFixture);
   final canvases = <String, PlayCanvasAsset>{};
@@ -280,9 +308,12 @@ Future<void> _pumpScenario(WidgetTester tester, _Scenario scenario) async {
   final harness = _GoldenHarness(
     play: fixture.play,
     canvasResolver: canvasResolver,
-    releasePendingCanvas: pendingCanvas?.release,
   );
-  addTearDown(harness.close);
+  final handle = _ScenarioHandle(
+    harness: harness,
+    pendingCanvas: pendingCanvas,
+  );
+  addTearDown(() => handle.close(tester));
   await harness.engagement.initialize();
   if (scenario.eligiblePrompt) {
     for (var index = 0; index < 8; index += 1) {
@@ -383,6 +414,7 @@ Future<void> _pumpScenario(WidgetTester tester, _Scenario scenario) async {
       findsOneWidget,
     );
   }
+  return handle;
 }
 
 void _expectCompositionGeometry(WidgetTester tester, _Scenario scenario) {
