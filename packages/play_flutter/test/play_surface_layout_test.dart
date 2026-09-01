@@ -173,7 +173,11 @@ void main() {
 
     expect(
       tester.widget<SingleChildScrollView>(choiceScroll).scrollDirection,
-      Axis.vertical,
+      Axis.horizontal,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('play-choice-vertical-flow')),
+      findsOneWidget,
     );
     for (final label in <String>['Electric', 'Soft', 'Afterglow']) {
       _expectContained(
@@ -182,6 +186,57 @@ void main() {
       );
     }
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('compact landscape choices leave vertical feed swipe available', (
+    tester,
+  ) async {
+    const viewport = Size(844, 390);
+    const insets = EdgeInsets.fromLTRB(44, 0, 44, 21);
+    final canvas = _compositionCanvas();
+    final pageController = PageController();
+    addTearDown(pageController.dispose);
+    tester.view
+      ..physicalSize = viewport
+      ..devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(size: viewport, padding: insets),
+          child: Scaffold(
+            body: PageView(
+              controller: pageController,
+              scrollDirection: Axis.vertical,
+              children: [
+                PlaySurface(
+                  play: _composedCanvasPlay(choices: _energyChoices),
+                  mediaBuilder: (context, layer) => PlayCanvas(asset: canvas),
+                ),
+                const ColoredBox(
+                  key: ValueKey<String>('next-play-after-choices'),
+                  color: Colors.black,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.widgetWithText(FilledButton, 'Electric')),
+    );
+    await gesture.moveBy(const Offset(0, -300));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(pageController.page, closeTo(1, 0.001));
   });
 
   testWidgets('200% text stays inside the allocated composition', (
