@@ -639,11 +639,8 @@ bool _normalizedRectsEquivalent(
     left.width == right.width &&
     left.height == right.height;
 
-String _dragTargetSemanticValue(
-  PlayDragTarget target,
-  int index,
-  int count,
-) => '${_dragTargetLabel(target)}, target ${index + 1} of $count';
+String _dragTargetSemanticValue(PlayDragTarget target, int index, int count) =>
+    '${_dragTargetLabel(target)}, target ${index + 1} of $count';
 
 String _dragTargetLabel(PlayDragTarget target) {
   final authored = target.label?.trim();

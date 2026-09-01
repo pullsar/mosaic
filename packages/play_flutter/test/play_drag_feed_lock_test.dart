@@ -31,63 +31,49 @@ const _accessibleMatchSpec = PlayDragInputSpec(
 PlayDragInputSpec _multipleTargetSpec({
   String firstLabel = 'Left opening',
   String secondLabel = 'Right opening',
-}) =>
-    PlayDragInputSpec.fromDefinition(
-      PlayInputDefinition(
-        type: PlayInputType.drag,
-        properties: {
-          'dragOrigin': {'x': 0.48, 'y': 0.35},
-          'dragSize': {'width': 0.04, 'height': 0.2},
-          'handleLabel': 'Move match',
-          'targets': [
-            {
-              'id': 'decoy',
-              'label': firstLabel,
-              'x': 0.1,
-              'y': 0.1,
-              'width': 0.2,
-              'height': 0.2,
-            },
-            {
-              'id': 'solution',
-              'label': secondLabel,
-              'x': 0.7,
-              'y': 0.4,
-              'width': 0.2,
-              'height': 0.2,
-            },
-          ],
+}) => PlayDragInputSpec.fromDefinition(
+  PlayInputDefinition(
+    type: PlayInputType.drag,
+    properties: {
+      'dragOrigin': {'x': 0.48, 'y': 0.35},
+      'dragSize': {'width': 0.04, 'height': 0.2},
+      'handleLabel': 'Move match',
+      'targets': [
+        {
+          'id': 'decoy',
+          'label': firstLabel,
+          'x': 0.1,
+          'y': 0.1,
+          'width': 0.2,
+          'height': 0.2,
         },
-      ),
-    )!;
+        {
+          'id': 'solution',
+          'label': secondLabel,
+          'x': 0.7,
+          'y': 0.4,
+          'width': 0.2,
+          'height': 0.2,
+        },
+      ],
+    },
+  ),
+)!;
 
-PlayDragInputSpec _unlabeledTargetSpec() =>
-    PlayDragInputSpec.fromDefinition(
-      PlayInputDefinition(
-        type: PlayInputType.drag,
-        properties: {
-          'dragOrigin': {'x': 0.45, 'y': 0.4},
-          'dragSize': {'width': 0.1, 'height': 0.1},
-          'handleLabel': 'Move tile',
-          'targets': [
-            {
-              'id': 'solution',
-              'x': 0.1,
-              'y': 0.1,
-              'width': 0.2,
-              'height': 0.2,
-            },
-            {
-              'id': 'wrong_answer',
-              'x': 0.7,
-              'y': 0.7,
-              'width': 0.2,
-              'height': 0.2,
-            },
-          ],
-        },
-      ),
-    )!;
+PlayDragInputSpec _unlabeledTargetSpec() => PlayDragInputSpec.fromDefinition(
+  PlayInputDefinition(
+    type: PlayInputType.drag,
+    properties: {
+      'dragOrigin': {'x': 0.45, 'y': 0.4},
+      'dragSize': {'width': 0.1, 'height': 0.1},
+      'handleLabel': 'Move tile',
+      'targets': [
+        {'id': 'solution', 'x': 0.1, 'y': 0.1, 'width': 0.2, 'height': 0.2},
+        {'id': 'wrong_answer', 'x': 0.7, 'y': 0.7, 'width': 0.2, 'height': 0.2},
+      ],
+    },
+  ),
+)!;
 
 PlayDocument _multipleTargetPlay() => PlayDocument.fromJson({
   'schemaVersion': 1,
@@ -410,14 +396,8 @@ void main() {
         final initialData = tester.getSemantics(handle).getSemanticsData();
         expect(initialData.label, 'Move match');
         expect(initialData.value, 'Left opening, target 1 of 2');
-        expect(
-          initialData.increasedValue,
-          'Right opening, target 2 of 2',
-        );
-        expect(
-          initialData.decreasedValue,
-          'Left opening, target 1 of 2',
-        );
+        expect(initialData.increasedValue, 'Right opening, target 2 of 2');
+        expect(initialData.decreasedValue, 'Left opening, target 1 of 2');
         expect(initialData.label, isNot(contains('decoy')));
         expect(initialData.label, isNot(contains('solution')));
         expect(initialData.value, isNot(contains('decoy')));
@@ -584,10 +564,7 @@ void main() {
       expect(boxDecoration.gradient, isNull);
       expect(boxDecoration.boxShadow, isNull);
       expect(
-        find.ancestor(
-          of: indicator,
-          matching: find.byType(ExcludeSemantics),
-        ),
+        find.ancestor(of: indicator, matching: find.byType(ExcludeSemantics)),
         findsOneWidget,
       );
       expect(
