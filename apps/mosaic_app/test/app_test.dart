@@ -194,11 +194,6 @@ void main() {
   testWidgets(
     'real RTL app keeps English authored Play LTR while shell remains RTL',
     (tester) async {
-      tester.binding.platformDispatcher.localeTestValue = const Locale(
-        'ar',
-        'XB',
-      );
-      addTearDown(tester.binding.platformDispatcher.clearLocaleTestValue);
       final state = _SeededAppState(
         ConsumerFeedCache(
           requestId: 'request_app_rtl',
@@ -217,7 +212,12 @@ void main() {
       );
 
       await tester.pumpWidget(
-        ProviderScope(child: MosaicApp(eventRuntime: runtime)),
+        ProviderScope(
+          child: MosaicApp(
+            eventRuntime: runtime,
+            locale: const Locale('ar', 'XB'),
+          ),
+        ),
       );
       await tester.pumpAndSettle();
 
