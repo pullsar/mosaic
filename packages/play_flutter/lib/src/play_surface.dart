@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:play_engine/play_engine.dart';
 import 'package:play_schema/play_schema.dart';
 
+import 'play_canvas_renderer.dart';
 import 'play_input_primitives.dart';
 import 'play_media_layer_renderer.dart';
 import 'visual_tokens.dart';
@@ -61,8 +62,12 @@ final class _PlaySurfaceState extends State<PlaySurface> {
   @override
   Widget build(BuildContext context) {
     final state = _session.state;
-    final media = state.presentation.where((layer) => layer.role == 'media');
+    final media = state.presentation
+        .where((layer) => layer.role == 'media')
+        .toList(growable: false);
     final text = state.presentation.where((layer) => layer.type == 'text');
+    final isDragInput = state.input.type == PlayInputType.drag;
+    final usesCanvasStage = media.any((layer) => layer.type == 'canvas');
     final input = _InputOverlay(
       input: state.input,
       validation: state.validation,
@@ -78,7 +83,9 @@ final class _PlaySurfaceState extends State<PlaySurface> {
         children: [
           for (final layer in media) _buildMedia(context, layer),
           SafeArea(child: _TextOverlay(layers: text.toList(growable: false))),
-          if (state.input.type == PlayInputType.drag)
+          if (isDragInput && usesCanvasStage)
+            PlayCanvasStage(child: input)
+          else if (isDragInput)
             input
           else
             SafeArea(child: input),
@@ -265,13 +272,11 @@ final class _InputOverlay extends StatelessWidget {
       if (spec == null) {
         return const PlayInputUnavailable(type: 'drag');
       }
-      return Positioned.fill(
-        child: PlayDragInput(
-          key: ValueKey<String>('drag:$inputEpoch'),
-          spec: spec,
-          onTarget: (targetId) => onAction(DragAction(targetId)),
-          onManipulationChanged: onDirectManipulationChanged,
-        ),
+      return PlayDragInput(
+        key: ValueKey<String>('drag:$inputEpoch'),
+        spec: spec,
+        onTarget: (targetId) => onAction(DragAction(targetId)),
+        onManipulationChanged: onDirectManipulationChanged,
       );
     }
 

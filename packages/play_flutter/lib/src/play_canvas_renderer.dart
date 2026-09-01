@@ -322,47 +322,55 @@ final class _ResolvedPlayCanvasState extends State<ResolvedPlayCanvas> {
   );
 }
 
-final class PlayCanvas extends StatelessWidget {
-  const PlayCanvas({required this.asset, super.key});
+final class PlayCanvasStage extends StatelessWidget {
+  const PlayCanvasStage({required this.child, super.key});
 
   static const double _stageAspectRatio = 4 / 5;
   static const double _maximumStageWidth = 720;
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final availableWidth = constraints.hasBoundedWidth
+          ? constraints.maxWidth
+          : _maximumStageWidth;
+      final availableHeight = constraints.hasBoundedHeight
+          ? constraints.maxHeight
+          : double.infinity;
+      final stageWidth = math.min(
+        _maximumStageWidth,
+        math.min(availableWidth, availableHeight * _stageAspectRatio),
+      );
+      if (!stageWidth.isFinite || stageWidth <= 0) {
+        return const SizedBox.shrink();
+      }
+      return Center(
+        child: SizedBox(
+          width: stageWidth,
+          height: stageWidth / _stageAspectRatio,
+          child: child,
+        ),
+      );
+    },
+  );
+}
+
+final class PlayCanvas extends StatelessWidget {
+  const PlayCanvas({required this.asset, super.key});
 
   final PlayCanvasAsset asset;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final content = LayoutBuilder(
-      builder: (context, constraints) {
-        final availableWidth = constraints.hasBoundedWidth
-            ? constraints.maxWidth
-            : _maximumStageWidth;
-        final availableHeight = constraints.hasBoundedHeight
-            ? constraints.maxHeight
-            : double.infinity;
-        final stageWidth = math.min(
-          _maximumStageWidth,
-          math.min(availableWidth, availableHeight * _stageAspectRatio),
-        );
-        if (!stageWidth.isFinite || stageWidth <= 0) {
-          return const SizedBox.shrink();
-        }
-        return Center(
-          child: SizedBox(
-            width: stageWidth,
-            height: stageWidth / _stageAspectRatio,
-            child: CustomPaint(
-              painter: _PlayCanvasPainter(
-                asset: asset,
-                colorScheme: colorScheme,
-              ),
-              isComplex: false,
-              willChange: false,
-            ),
-          ),
-        );
-      },
+    final content = PlayCanvasStage(
+      child: CustomPaint(
+        painter: _PlayCanvasPainter(asset: asset, colorScheme: colorScheme),
+        isComplex: false,
+        willChange: false,
+      ),
     );
     final label = asset.semanticLabel;
     return RepaintBoundary(

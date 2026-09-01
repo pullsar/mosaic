@@ -194,9 +194,15 @@ void main() {
       findsOneWidget,
     );
 
+    final canvasStage = tester.getSize(
+      find.descendant(
+        of: find.byType(PlayCanvas),
+        matching: find.byType(CustomPaint),
+      ),
+    );
     await tester.drag(
       find.bySemanticsLabel('Move match'),
-      const Offset(-56, -24),
+      Offset(-0.14 * canvasStage.width, -0.06 * canvasStage.height),
     );
     await tester.pumpAndSettle();
 
