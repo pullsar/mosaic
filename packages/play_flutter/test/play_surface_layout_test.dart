@@ -174,14 +174,26 @@ void main() {
     final promptRect = tester.getRect(find.byKey(_promptKey));
     final textScroll = find.byKey(const ValueKey<String>('play-text-scroll'));
     _expectContained(promptRect, tester.getRect(textScroll));
-    _expectContained(promptRect, tester.getRect(find.text('Place the match.')));
+    final promptTextRect = tester.getRect(find.text('Place the match.'));
+    final visiblePromptText = promptRect.intersect(promptTextRect);
+    expect(visiblePromptText.isEmpty, isFalse);
+    _expectContained(promptRect, visiblePromptText);
     expect(
       tester.widget<SingleChildScrollView>(textScroll).clipBehavior,
       Clip.hardEdge,
     );
     final moreControl = find.byKey(const ValueKey<String>('play-text-more'));
-    if (moreControl.evaluate().isNotEmpty) {
+    final textPosition = tester.state<ScrollableState>(
+      find.descendant(of: textScroll, matching: find.byType(Scrollable)),
+    );
+    if (textPosition.position.maxScrollExtent > 0) {
+      expect(moreControl, findsOneWidget);
       _expectContained(promptRect, tester.getRect(moreControl));
+      final moreButton = tester.widget<IconButton>(moreControl);
+      expect(moreButton.tooltip, isNotEmpty);
+      expect(moreButton.onPressed, isNotNull);
+    } else {
+      expect(moreControl, findsNothing);
     }
     _expectContained(
       tester.getRect(find.byKey(_inputKey)),
