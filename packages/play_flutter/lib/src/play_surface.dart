@@ -362,7 +362,7 @@ final class _TextGroup extends StatelessWidget {
   TextStyle? _textStyle(BuildContext context, PresentationLayer layer) {
     final isDetail = layer.role == 'reveal_detail';
     return (isDetail
-            ? Theme.of(context).textTheme.bodyLarge
+            ? Theme.of(context).textTheme.bodyMedium
             : Theme.of(context).textTheme.headlineSmall)
         ?.copyWith(
           color: isDetail

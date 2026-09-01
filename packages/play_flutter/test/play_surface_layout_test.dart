@@ -425,6 +425,7 @@ Future<PlayViewportComposition> _pumpComposedSurface(
       ),
     ),
   );
+  await tester.pumpAndSettle();
 
   return composition;
 }
