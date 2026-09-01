@@ -28,21 +28,66 @@ const _accessibleMatchSpec = PlayDragInputSpec(
   ],
 );
 
-const _multipleTargetSpec = PlayDragInputSpec(
-  origin: Offset(0.48, 0.35),
-  size: Size(0.04, 0.2),
-  handleLabel: 'Move match',
-  targets: <PlayDragTarget>[
-    PlayDragTarget(
-      id: 'decoy',
-      rect: PlayNormalizedRect(x: 0.1, y: 0.1, width: 0.2, height: 0.2),
-    ),
-    PlayDragTarget(
-      id: 'solution',
-      rect: PlayNormalizedRect(x: 0.7, y: 0.4, width: 0.2, height: 0.2),
-    ),
-  ],
-);
+PlayDragInputSpec _multipleTargetSpec({
+  String firstLabel = 'Left opening',
+  String secondLabel = 'Right opening',
+}) =>
+    PlayDragInputSpec.fromDefinition(
+      PlayInputDefinition(
+        type: PlayInputType.drag,
+        properties: {
+          'dragOrigin': {'x': 0.48, 'y': 0.35},
+          'dragSize': {'width': 0.04, 'height': 0.2},
+          'handleLabel': 'Move match',
+          'targets': [
+            {
+              'id': 'decoy',
+              'label': firstLabel,
+              'x': 0.1,
+              'y': 0.1,
+              'width': 0.2,
+              'height': 0.2,
+            },
+            {
+              'id': 'solution',
+              'label': secondLabel,
+              'x': 0.7,
+              'y': 0.4,
+              'width': 0.2,
+              'height': 0.2,
+            },
+          ],
+        },
+      ),
+    )!;
+
+PlayDragInputSpec _unlabeledTargetSpec() =>
+    PlayDragInputSpec.fromDefinition(
+      PlayInputDefinition(
+        type: PlayInputType.drag,
+        properties: {
+          'dragOrigin': {'x': 0.45, 'y': 0.4},
+          'dragSize': {'width': 0.1, 'height': 0.1},
+          'handleLabel': 'Move tile',
+          'targets': [
+            {
+              'id': 'solution',
+              'x': 0.1,
+              'y': 0.1,
+              'width': 0.2,
+              'height': 0.2,
+            },
+            {
+              'id': 'wrong_answer',
+              'x': 0.7,
+              'y': 0.7,
+              'width': 0.2,
+              'height': 0.2,
+            },
+          ],
+        },
+      ),
+    )!;
 
 PlayDocument _multipleTargetPlay() => PlayDocument.fromJson({
   'schemaVersion': 1,
@@ -69,8 +114,22 @@ PlayDocument _multipleTargetPlay() => PlayDocument.fromJson({
         'dragSize': {'width': 0.04, 'height': 0.2},
         'handleLabel': 'Move match',
         'targets': [
-          {'id': 'decoy', 'x': 0.1, 'y': 0.1, 'width': 0.2, 'height': 0.2},
-          {'id': 'solution', 'x': 0.7, 'y': 0.4, 'width': 0.2, 'height': 0.2},
+          {
+            'id': 'decoy',
+            'label': 'Left opening',
+            'x': 0.1,
+            'y': 0.1,
+            'width': 0.2,
+            'height': 0.2,
+          },
+          {
+            'id': 'solution',
+            'label': 'Right opening',
+            'x': 0.7,
+            'y': 0.4,
+            'width': 0.2,
+            'height': 0.2,
+          },
         ],
       },
       'validation': {'type': 'target_region', 'value': 'solution'},
@@ -338,7 +397,7 @@ void main() {
               child: SizedBox.square(
                 dimension: 300,
                 child: PlayDragInput(
-                  spec: _multipleTargetSpec,
+                  spec: _multipleTargetSpec(),
                   onTarget: targets.add,
                   onManipulationChanged: locks.add,
                 ),
@@ -350,9 +409,20 @@ void main() {
         final handle = find.bySemanticsLabel('Move match');
         final initialData = tester.getSemantics(handle).getSemanticsData();
         expect(initialData.label, 'Move match');
-        expect(initialData.value, 'Target 1 of 2');
+        expect(initialData.value, 'Left opening, target 1 of 2');
+        expect(
+          initialData.increasedValue,
+          'Right opening, target 2 of 2',
+        );
+        expect(
+          initialData.decreasedValue,
+          'Left opening, target 1 of 2',
+        );
         expect(initialData.label, isNot(contains('decoy')));
         expect(initialData.label, isNot(contains('solution')));
+        expect(initialData.value, isNot(contains('decoy')));
+        expect(initialData.value, isNot(contains('solution')));
+        expect(initialData.value, isNot(contains('correct')));
         expect(initialData.hasAction(SemanticsAction.tap), isTrue);
         expect(initialData.hasAction(SemanticsAction.increase), isTrue);
         expect(initialData.hasAction(SemanticsAction.decrease), isTrue);
@@ -366,7 +436,7 @@ void main() {
         await tester.pump();
         expect(
           tester.getSemantics(handle).getSemanticsData().value,
-          'Target 2 of 2',
+          'Right opening, target 2 of 2',
         );
         tester.semantics.tap(find.semantics.byLabel('Move match'));
         await tester.pump();
@@ -378,6 +448,94 @@ void main() {
       }
     },
   );
+
+  testWidgets('legacy targets get deterministic geometry-derived labels', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    try {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Center(
+            child: SizedBox.square(
+              dimension: 300,
+              child: PlayDragInput(
+                spec: _unlabeledTargetSpec(),
+                onTarget: (_) {},
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final handle = find.bySemanticsLabel('Move tile');
+      final initialValue = tester.getSemantics(handle).getSemanticsData().value;
+      expect(initialValue, 'Upper left area, target 1 of 2');
+      expect(initialValue, isNot(contains('solution')));
+      expect(initialValue, isNot(contains('wrong_answer')));
+      expect(initialValue, isNot(contains('correct')));
+
+      tester.semantics.increase(find.semantics.byLabel('Move tile'));
+      await tester.pump();
+      expect(
+        tester.getSemantics(handle).getSemanticsData().value,
+        'Lower right area, target 2 of 2',
+      );
+    } finally {
+      semantics.dispose();
+    }
+  });
+
+  testWidgets('structural drag equivalence includes authored target labels', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    try {
+      Widget surface(PlayDragInputSpec spec) => MaterialApp(
+        home: Center(
+          child: SizedBox.square(
+            dimension: 300,
+            child: PlayDragInput(spec: spec, onTarget: (_) {}),
+          ),
+        ),
+      );
+
+      await tester.pumpWidget(surface(_multipleTargetSpec()));
+      tester.semantics.increase(find.semantics.byLabel('Move match'));
+      await tester.pump();
+      expect(
+        tester
+            .getSemantics(find.bySemanticsLabel('Move match'))
+            .getSemanticsData()
+            .value,
+        'Right opening, target 2 of 2',
+      );
+
+      await tester.pumpWidget(surface(_multipleTargetSpec()));
+      await tester.pump();
+      expect(
+        tester
+            .getSemantics(find.bySemanticsLabel('Move match'))
+            .getSemanticsData()
+            .value,
+        'Right opening, target 2 of 2',
+      );
+
+      await tester.pumpWidget(
+        surface(_multipleTargetSpec(firstLabel: 'Near opening')),
+      );
+      await tester.pump();
+      expect(
+        tester
+            .getSemantics(find.bySemanticsLabel('Move match'))
+            .getSemanticsData()
+            .value,
+        'Near opening, target 1 of 2',
+      );
+    } finally {
+      semantics.dispose();
+    }
+  });
 
   testWidgets('keyboard arrows choose a drag target and Enter submits it', (
     tester,
@@ -393,7 +551,7 @@ void main() {
             child: SizedBox.square(
               dimension: 300,
               child: PlayDragInput(
-                spec: _multipleTargetSpec,
+                spec: _multipleTargetSpec(),
                 onTarget: targets.add,
                 onManipulationChanged: locks.add,
               ),
@@ -402,16 +560,64 @@ void main() {
         ),
       );
 
+      const indicatorKey = ValueKey<String>('play-drag-selected-target');
+      final indicator = find.byKey(indicatorKey);
+      final surfaceRect = tester.getRect(find.byType(PlayDragInput));
+      expect(indicator, findsNothing);
+
       await tester.sendKeyEvent(LogicalKeyboardKey.tab);
       await tester.pump();
+      expect(indicator, findsOneWidget);
+      final firstIndicatorRect = tester.getRect(indicator);
+      expect(
+        firstIndicatorRect.center.dx,
+        closeTo(surfaceRect.left + surfaceRect.width * 0.2, 0.001),
+      );
+      expect(
+        firstIndicatorRect.center.dy,
+        closeTo(surfaceRect.top + surfaceRect.height * 0.2, 0.001),
+      );
+      final outline = tester.widget<DecoratedBox>(indicator).decoration;
+      expect(outline, isA<BoxDecoration>());
+      final boxDecoration = outline as BoxDecoration;
+      expect(boxDecoration.border, isNotNull);
+      expect(boxDecoration.gradient, isNull);
+      expect(boxDecoration.boxShadow, isNull);
+      expect(
+        find.ancestor(
+          of: indicator,
+          matching: find.byType(ExcludeSemantics),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: indicator, matching: find.byType(BackdropFilter)),
+        findsNothing,
+      );
+
+      final pointer = await tester.startGesture(firstIndicatorRect.center);
+      await pointer.moveBy(const Offset(0, 24));
+      await pointer.up();
+      await tester.pump();
+      expect(locks, isEmpty);
+
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
       await tester.pump();
+      final secondIndicatorRect = tester.getRect(indicator);
+      expect(
+        secondIndicatorRect.center.dx,
+        closeTo(surfaceRect.left + surfaceRect.width * 0.8, 0.001),
+      );
+      expect(
+        secondIndicatorRect.center.dy,
+        closeTo(surfaceRect.top + surfaceRect.height * 0.5, 0.001),
+      );
       expect(
         tester
             .getSemantics(find.bySemanticsLabel('Move match'))
             .getSemanticsData()
             .value,
-        'Target 2 of 2',
+        'Right opening, target 2 of 2',
       );
 
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
@@ -444,7 +650,7 @@ void main() {
       final handle = find.bySemanticsLabel('Move match');
       expect(
         tester.getSemantics(handle).getSemanticsData().value,
-        'Target 1 of 2',
+        'Left opening, target 1 of 2',
       );
       tester.semantics.tap(find.semantics.byLabel('Move match'));
       await tester.pumpAndSettle();
@@ -460,7 +666,7 @@ void main() {
             .getSemantics(find.bySemanticsLabel('Move match'))
             .getSemanticsData()
             .value,
-        'Target 2 of 2',
+        'Right opening, target 2 of 2',
       );
       tester.semantics.tap(find.semantics.byLabel('Move match'));
       await tester.pumpAndSettle();
