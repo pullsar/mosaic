@@ -112,9 +112,7 @@ void main() {
           of: find.byType(PlayCanvas),
           matching: find.byType(CustomPaint),
         );
-        final handle = find.byKey(
-          const ValueKey<String>('play-drag-object'),
-        );
+        final handle = find.byKey(const ValueKey<String>('play-drag-object'));
         final semanticHandle = find.bySemanticsLabel('Move tile');
         final targetHint = find.descendant(
           of: find.byType(PlayDragInput),

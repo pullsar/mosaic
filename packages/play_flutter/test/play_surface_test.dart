@@ -37,11 +37,7 @@ PlayDocument _continuousRevealPlay() => PlayDocument.fromJson({
     'solve': {
       'presentation': {
         'layers': [
-          {
-            'type': 'canvas',
-            'role': 'media',
-            'assetId': 'continuous_canvas',
-          },
+          {'type': 'canvas', 'role': 'media', 'assetId': 'continuous_canvas'},
           {'type': 'text', 'role': 'prompt', 'value': 'Move one match.'},
         ],
       },
@@ -58,11 +54,7 @@ PlayDocument _continuousRevealPlay() => PlayDocument.fromJson({
     'reveal': {
       'presentation': {
         'layers': [
-          {
-            'type': 'canvas',
-            'role': 'media',
-            'assetId': 'continuous_canvas',
-          },
+          {'type': 'canvas', 'role': 'media', 'assetId': 'continuous_canvas'},
           {'type': 'text', 'role': 'reveal_title', 'value': '8 − 4 = 4'},
           {
             'type': 'text',
@@ -94,16 +86,8 @@ PlayDocument _duplicateMediaRevealPlay() => PlayDocument.fromJson({
     'look': {
       'presentation': {
         'layers': [
-          {
-            'type': 'canvas',
-            'role': 'media',
-            'assetId': 'continuous_canvas',
-          },
-          {
-            'type': 'canvas',
-            'role': 'media',
-            'assetId': 'continuous_canvas',
-          },
+          {'type': 'canvas', 'role': 'media', 'assetId': 'continuous_canvas'},
+          {'type': 'canvas', 'role': 'media', 'assetId': 'continuous_canvas'},
           {'type': 'text', 'role': 'prompt', 'value': 'Look closer.'},
         ],
       },
@@ -120,21 +104,9 @@ PlayDocument _duplicateMediaRevealPlay() => PlayDocument.fromJson({
     'reveal': {
       'presentation': {
         'layers': [
-          {
-            'type': 'image',
-            'role': 'media',
-            'assetId': 'inserted_image',
-          },
-          {
-            'type': 'canvas',
-            'role': 'media',
-            'assetId': 'continuous_canvas',
-          },
-          {
-            'type': 'canvas',
-            'role': 'media',
-            'assetId': 'continuous_canvas',
-          },
+          {'type': 'image', 'role': 'media', 'assetId': 'inserted_image'},
+          {'type': 'canvas', 'role': 'media', 'assetId': 'continuous_canvas'},
+          {'type': 'canvas', 'role': 'media', 'assetId': 'continuous_canvas'},
           {'type': 'text', 'role': 'reveal_title', 'value': 'Two layers.'},
         ],
       },

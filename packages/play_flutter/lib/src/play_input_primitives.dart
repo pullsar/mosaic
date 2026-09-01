@@ -401,12 +401,8 @@ final class _PlayDragInputState extends State<PlayDragInput> {
     );
     setState(() {
       _position = Offset(
-        targetPosition.dx
-            .clamp(0.0, 1 - widget.spec.size.width)
-            .toDouble(),
-        targetPosition.dy
-            .clamp(0.0, 1 - widget.spec.size.height)
-            .toDouble(),
+        targetPosition.dx.clamp(0.0, 1 - widget.spec.size.width).toDouble(),
+        targetPosition.dy.clamp(0.0, 1 - widget.spec.size.height).toDouble(),
       );
     });
     widget.onTarget(target.id);

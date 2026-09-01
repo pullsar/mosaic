@@ -159,7 +159,8 @@ final class _PlaySurfaceState extends State<PlaySurface> {
       result.add(
         _MediaSlot(
           layer: layer,
-          key: 'play-media:${widget.play.id}:${widget.play.revisionId}:'
+          key:
+              'play-media:${widget.play.id}:${widget.play.revisionId}:'
               '$identity:$occurrence',
         ),
       );
@@ -191,9 +192,7 @@ final class _TextOverlay extends StatelessWidget {
     final reduceMotion =
         MediaQuery.maybeOf(context)?.disableAnimations ?? false;
     final contentKey = ValueKey<String>(
-      visibleLayers
-          .map((layer) => '${layer.role}:${layer.value}')
-          .join('|'),
+      visibleLayers.map((layer) => '${layer.role}:${layer.value}').join('|'),
     );
     final content = _BoundedTextViewport(
       key: contentKey,
@@ -477,9 +476,8 @@ final class _InputOverlay extends StatelessWidget {
                         ),
                         child: _ControlButton(
                           label: input.options[index].label,
-                          onPressed: () => onAction(
-                            ChoiceAction(input.options[index].id),
-                          ),
+                          onPressed: () =>
+                              onAction(ChoiceAction(input.options[index].id)),
                         ),
                       ),
                   ],

@@ -68,20 +68,8 @@ PlayDocument _multipleTargetPlay() => PlayDocument.fromJson({
         'dragSize': {'width': 0.04, 'height': 0.2},
         'handleLabel': 'Move match',
         'targets': [
-          {
-            'id': 'decoy',
-            'x': 0.1,
-            'y': 0.1,
-            'width': 0.2,
-            'height': 0.2,
-          },
-          {
-            'id': 'solution',
-            'x': 0.7,
-            'y': 0.4,
-            'width': 0.2,
-            'height': 0.2,
-          },
+          {'id': 'decoy', 'x': 0.1, 'y': 0.1, 'width': 0.2, 'height': 0.2},
+          {'id': 'solution', 'x': 0.7, 'y': 0.4, 'width': 0.2, 'height': 0.2},
         ],
       },
       'validation': {'type': 'target_region', 'value': 'solution'},
@@ -179,17 +167,12 @@ void main() {
       MaterialApp(
         home: SizedBox.square(
           dimension: 300,
-          child: PlayDragInput(
-            spec: _accessibleMatchSpec,
-            onTarget: (_) {},
-          ),
+          child: PlayDragInput(spec: _accessibleMatchSpec, onTarget: (_) {}),
         ),
       ),
     );
 
-    final semanticTarget = tester.getRect(
-      find.bySemanticsLabel('Move match'),
-    );
+    final semanticTarget = tester.getRect(find.bySemanticsLabel('Move match'));
     final object = find.byKey(const ValueKey<String>('play-drag-object'));
 
     expect(semanticTarget.width, greaterThanOrEqualTo(48));

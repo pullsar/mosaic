@@ -13,11 +13,7 @@ const _maximumReveal =
     'corrected equation appears here with enough detail to explain why the '
     'solution works without replacing the puzzle or hiding context';
 
-typedef _ViewportCase = ({
-  String name,
-  Size size,
-  EdgeInsets safeInsets,
-});
+typedef _ViewportCase = ({String name, Size size, EdgeInsets safeInsets});
 
 const _viewportCases = <_ViewportCase>[
   (
@@ -65,11 +61,7 @@ PlayDocument _composedCanvasPlay({
     'solve': {
       'presentation': {
         'layers': [
-          {
-            'type': 'canvas',
-            'role': 'media',
-            'assetId': 'composition_canvas',
-          },
+          {'type': 'canvas', 'role': 'media', 'assetId': 'composition_canvas'},
           {'type': 'text', 'role': 'prompt', 'value': 'Place the match.'},
         ],
       },
@@ -89,17 +81,9 @@ PlayDocument _composedCanvasPlay({
     'reveal': {
       'presentation': {
         'layers': [
-          {
-            'type': 'canvas',
-            'role': 'media',
-            'assetId': 'composition_canvas',
-          },
+          {'type': 'canvas', 'role': 'media', 'assetId': 'composition_canvas'},
           {'type': 'text', 'role': 'reveal_title', 'value': 'Balanced.'},
-          {
-            'type': 'text',
-            'role': 'reveal_detail',
-            'value': revealDetail,
-          },
+          {'type': 'text', 'role': 'reveal_detail', 'value': revealDetail},
         ],
       },
       'input': {'type': 'tap', 'label': 'Done'},
@@ -188,10 +172,7 @@ void main() {
 
         _expectContained(inputRect, tester.getRect(choiceScroll));
         final choicePosition = tester.state<ScrollableState>(
-          find.descendant(
-            of: choiceScroll,
-            matching: find.byType(Scrollable),
-          ),
+          find.descendant(of: choiceScroll, matching: find.byType(Scrollable)),
         );
         expect(choicePosition.position.maxScrollExtent, greaterThan(0));
         for (final label in <String>[
@@ -219,16 +200,11 @@ void main() {
         );
         _expectContained(promptRect, tester.getRect(textScroll));
         final textPosition = tester.state<ScrollableState>(
-          find.descendant(
-            of: textScroll,
-            matching: find.byType(Scrollable),
-          ),
+          find.descendant(of: textScroll, matching: find.byType(Scrollable)),
         );
         expect(textPosition.position.maxScrollExtent, greaterThan(0));
         final beforeScroll = textPosition.position.pixels;
-        await tester.tap(
-          find.byKey(const ValueKey<String>('play-text-more')),
-        );
+        await tester.tap(find.byKey(const ValueKey<String>('play-text-more')));
         await tester.pumpAndSettle();
         expect(textPosition.position.pixels, greaterThan(beforeScroll));
         expect(find.text(_maximumReveal), findsOneWidget);
@@ -281,9 +257,7 @@ void main() {
         ),
       ),
     );
-    await tester.ensureVisible(
-      find.widgetWithText(FilledButton, 'Place it'),
-    );
+    await tester.ensureVisible(find.widgetWithText(FilledButton, 'Place it'));
     await tester.tap(find.widgetWithText(FilledButton, 'Place it'));
     await tester.pumpAndSettle();
 
