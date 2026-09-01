@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:play_flutter/play_flutter.dart';
 import 'package:play_schema/play_schema.dart';
@@ -99,6 +100,35 @@ PlayCanvasAsset _dragCanvas() => PlayCanvasAsset(
   ],
 );
 
+Widget _scopedDragSurface({
+  required PlayViewportComposition composition,
+  required PlayDocument play,
+  required PlayCanvasAsset canvas,
+  required ValueChanged<bool> onManipulationChanged,
+}) => MaterialApp(
+  home: MediaQuery(
+    data: MediaQueryData(
+      size: composition.viewportRect.size,
+      padding: EdgeInsets.fromLTRB(
+        composition.safeRect.left,
+        composition.safeRect.top,
+        composition.viewportRect.right - composition.safeRect.right,
+        composition.viewportRect.bottom - composition.safeRect.bottom,
+      ),
+    ),
+    child: PlayViewportScope(
+      composition: composition,
+      child: Scaffold(
+        body: PlaySurface(
+          play: play,
+          mediaBuilder: (context, layer) => PlayCanvas(asset: canvas),
+          onDirectManipulationChanged: onManipulationChanged,
+        ),
+      ),
+    ),
+  ),
+);
+
 void main() {
   testWidgets('drag handle locks feed paging on raw pointer down', (
     tester,
@@ -159,6 +189,74 @@ void main() {
 
     expect(locks, isEmpty);
   });
+
+  testWidgets(
+    'equivalent viewport reconstruction preserves active pointer ownership',
+    (tester) async {
+      const viewport = Size(390, 844);
+      const safeInsets = EdgeInsets.only(top: 47, bottom: 34);
+      final play = _multipleTargetPlay();
+      final canvas = _dragCanvas();
+      final locks = <bool>[];
+      tester.view
+        ..physicalSize = viewport
+        ..devicePixelRatio = 1;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      PlayViewportComposition equivalentComposition() =>
+          PlayViewportComposition.fromConstraints(
+            const BoxConstraints.tightFor(width: 390, height: 844),
+            safeInsets: safeInsets,
+          );
+      final initialComposition = equivalentComposition();
+
+      await tester.pumpWidget(
+        _scopedDragSurface(
+          composition: initialComposition,
+          play: play,
+          canvas: canvas,
+          onManipulationChanged: locks.add,
+        ),
+      );
+      final handle = find.byKey(const ValueKey<String>('play-drag-object'));
+      final originRect = tester.getRect(handle);
+      final gesture = await tester.startGesture(tester.getCenter(handle));
+      await gesture.moveBy(const Offset(24, 0));
+      await tester.pump();
+      final firstMovedRect = tester.getRect(handle);
+
+      expect(firstMovedRect.left, greaterThan(originRect.left));
+      expect(locks, [true]);
+
+      final rebuiltComposition = equivalentComposition();
+      expect(identical(rebuiltComposition, initialComposition), isFalse);
+      expect(rebuiltComposition.stageRect, initialComposition.stageRect);
+      await tester.pumpWidget(
+        _scopedDragSurface(
+          composition: rebuiltComposition,
+          play: play,
+          canvas: canvas,
+          onManipulationChanged: locks.add,
+        ),
+      );
+      await tester.pump();
+
+      expect(tester.getRect(handle), firstMovedRect);
+      expect(locks, [true]);
+
+      await gesture.moveBy(const Offset(24, 0));
+      await tester.pump();
+      expect(tester.getRect(handle).left, greaterThan(firstMovedRect.left));
+      expect(locks, [true]);
+
+      await gesture.up();
+      await tester.pump();
+      expect(locks, [true, false]);
+    },
+  );
 
   testWidgets('thin authored match keeps a 48 by 48 semantic target', (
     tester,
@@ -227,7 +325,7 @@ void main() {
   });
 
   testWidgets(
-    'semantic activation uses the validated target when it is second',
+    'multi-target semantics lets the user choose without acquiring feed lock',
     (tester) async {
       final semantics = tester.ensureSemantics();
       try {
@@ -241,7 +339,6 @@ void main() {
                 dimension: 300,
                 child: PlayDragInput(
                   spec: _multipleTargetSpec,
-                  semanticTargetId: 'solution',
                   onTarget: targets.add,
                   onManipulationChanged: locks.add,
                 ),
@@ -250,10 +347,31 @@ void main() {
           ),
         );
 
+        final handle = find.bySemanticsLabel('Move match');
+        final initialData = tester.getSemantics(handle).getSemanticsData();
+        expect(initialData.label, 'Move match');
+        expect(initialData.value, 'Target 1 of 2');
+        expect(initialData.label, isNot(contains('decoy')));
+        expect(initialData.label, isNot(contains('solution')));
+        expect(initialData.hasAction(SemanticsAction.tap), isTrue);
+        expect(initialData.hasAction(SemanticsAction.increase), isTrue);
+        expect(initialData.hasAction(SemanticsAction.decrease), isTrue);
+
+        tester.semantics.tap(find.semantics.byLabel('Move match'));
+        await tester.pump();
+        expect(targets, ['decoy']);
+        expect(locks, isEmpty);
+
+        tester.semantics.increase(find.semantics.byLabel('Move match'));
+        await tester.pump();
+        expect(
+          tester.getSemantics(handle).getSemanticsData().value,
+          'Target 2 of 2',
+        );
         tester.semantics.tap(find.semantics.byLabel('Move match'));
         await tester.pump();
 
-        expect(targets, ['solution']);
+        expect(targets, ['decoy', 'solution']);
         expect(locks, isEmpty);
       } finally {
         semantics.dispose();
@@ -261,7 +379,51 @@ void main() {
     },
   );
 
-  testWidgets('PlaySurface semantic drag submits its validated target', (
+  testWidgets('keyboard arrows choose a drag target and Enter submits it', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    try {
+      final targets = <String>[];
+      final locks = <bool>[];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Center(
+            child: SizedBox.square(
+              dimension: 300,
+              child: PlayDragInput(
+                spec: _multipleTargetSpec,
+                onTarget: targets.add,
+                onManipulationChanged: locks.add,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pump();
+      expect(
+        tester
+            .getSemantics(find.bySemanticsLabel('Move match'))
+            .getSemanticsData()
+            .value,
+        'Target 2 of 2',
+      );
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      expect(targets, ['solution']);
+      expect(locks, isEmpty);
+    } finally {
+      semantics.dispose();
+    }
+  });
+
+  testWidgets('PlaySurface requires accessible multi-target selection', (
     tester,
   ) async {
     final semantics = tester.ensureSemantics();
@@ -279,6 +441,27 @@ void main() {
         ),
       );
 
+      final handle = find.bySemanticsLabel('Move match');
+      expect(
+        tester.getSemantics(handle).getSemanticsData().value,
+        'Target 1 of 2',
+      );
+      tester.semantics.tap(find.semantics.byLabel('Move match'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Solved target.'), findsNothing);
+      expect(find.byType(PlayDragInput), findsOneWidget);
+      expect(locks, isEmpty);
+
+      tester.semantics.increase(find.semantics.byLabel('Move match'));
+      await tester.pump();
+      expect(
+        tester
+            .getSemantics(find.bySemanticsLabel('Move match'))
+            .getSemanticsData()
+            .value,
+        'Target 2 of 2',
+      );
       tester.semantics.tap(find.semantics.byLabel('Move match'));
       await tester.pumpAndSettle();
 
