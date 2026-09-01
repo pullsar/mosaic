@@ -180,6 +180,11 @@ final class _GuestChrome extends StatelessWidget {
                 ),
                 onDeleted: onClearSearch,
                 deleteButtonTooltipMessage: 'Clear search',
+                deleteIcon: Semantics(
+                  label: 'Clear search',
+                  excludeSemantics: true,
+                  child: const Icon(Icons.cancel_outlined),
+                ),
                 materialTapTargetSize: MaterialTapTargetSize.padded,
                 visualDensity: VisualDensity.compact,
               ),
