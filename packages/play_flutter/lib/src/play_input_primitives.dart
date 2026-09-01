@@ -490,6 +490,7 @@ final class _PlayDragInputState extends State<PlayDragInput> {
   Widget _selectedTargetIndicator(Size bounds, ColorScheme colorScheme) {
     final target = widget.spec.targets[_selectedTargetIndex];
     return Positioned(
+      key: const ValueKey<String>('play-drag-selected-target-slot'),
       left: target.rect.x * bounds.width,
       top: target.rect.y * bounds.height,
       width: target.rect.width * bounds.width,
@@ -536,6 +537,7 @@ final class _PlayDragInputState extends State<PlayDragInput> {
     final decreasedTargetIndex = math.max(_selectedTargetIndex - 1, 0);
 
     return Positioned.fromRect(
+      key: const ValueKey<String>('play-drag-handle-slot'),
       rect: hitRect,
       child: Focus(
         onKeyEvent: _handleKeyEvent,
