@@ -32,7 +32,7 @@ interface ChoiceSpec {
   reveal: string;
 }
 
-const canvasAssets = [
+const legacyCanvasAssets = [
   {
     schemaVersion: 1,
     id: 'mixli_canvas_matchsticks',
@@ -180,7 +180,78 @@ const canvasAssets = [
   },
 ] as const;
 
-const choiceSpecs: readonly ChoiceSpec[] = [
+const releaseCanvasAssets = [
+  {
+    ...legacyCanvasAssets[0],
+    id: 'mixli_canvas_matchsticks_v2',
+    palette: {
+      background: '#F6E8D5',
+      foreground: '#2A1C16',
+      accent: '#8A2F1B',
+      muted: '#715A4E',
+      surface: '#D7B58C',
+    },
+  },
+  {
+    ...legacyCanvasAssets[1],
+    id: 'mixli_canvas_city_night_v2',
+    palette: {
+      background: '#101827',
+      foreground: '#F7F2E8',
+      accent: '#F4B942',
+      muted: '#748199',
+      surface: '#25334A',
+    },
+  },
+  {
+    ...legacyCanvasAssets[2],
+    id: 'mixli_canvas_pattern_v2',
+    palette: {
+      background: '#EFF2EC',
+      foreground: '#17261F',
+      accent: '#166A55',
+      muted: '#6C7C73',
+      surface: '#C9D8CF',
+    },
+  },
+  {
+    ...legacyCanvasAssets[3],
+    id: 'mixli_canvas_orbit_v2',
+    palette: {
+      background: '#14152E',
+      foreground: '#F4F5FF',
+      accent: '#44D6E8',
+      muted: '#7779A0',
+      surface: '#292B58',
+    },
+  },
+  {
+    ...legacyCanvasAssets[4],
+    id: 'mixli_canvas_color_energy_v2',
+    palette: {
+      background: '#FFF3E8',
+      foreground: '#241923',
+      accent: '#B32655',
+      muted: '#806A75',
+      surface: '#F2C4A5',
+    },
+  },
+  {
+    ...legacyCanvasAssets[5],
+    id: 'mixli_canvas_quick_logic_v2',
+    palette: {
+      background: '#F3F1EC',
+      foreground: '#20211F',
+      accent: '#315C55',
+      muted: '#77766F',
+      surface: '#D9D5CB',
+    },
+  },
+] as const;
+
+const canvasAssets = [...legacyCanvasAssets, ...releaseCanvasAssets] as const;
+
+const legacyChoiceSpecs: readonly ChoiceSpec[] = [
   {
     id: 'mixli_starter_city_instinct',
     format: 'choose',
@@ -255,6 +326,81 @@ const choiceSpecs: readonly ChoiceSpec[] = [
   },
 ];
 
+const releaseChoiceSpecs: readonly ChoiceSpec[] = [
+  {
+    id: 'mixli_starter_city_instinct',
+    format: 'choose',
+    classification: 'preference',
+    topics: ['travel', 'city-breaks'],
+    assetId: 'mixli_canvas_city_night_v2',
+    prompt: 'Which warm night?',
+    options: [
+      {id: 'lisbon', label: 'Lisbon'},
+      {id: 'marrakech', label: 'Marrakech'},
+    ],
+    reveal: 'That’s your kind of night.',
+  },
+  {
+    id: 'mixli_starter_finish_pattern',
+    format: 'guess',
+    classification: 'challenge',
+    topics: ['patterns', 'design'],
+    assetId: 'mixli_canvas_pattern_v2',
+    prompt: 'What comes next?',
+    options: [
+      {id: 'circle', label: 'Circle'},
+      {id: 'diamond', label: 'Diamond'},
+      {id: 'square', label: 'Square'},
+    ],
+    answer: 'diamond',
+    reveal: 'Diamond. Shape and scale alternate.',
+  },
+  {
+    id: 'mixli_starter_find_orbit',
+    format: 'guess',
+    classification: 'challenge',
+    topics: ['space', 'science'],
+    assetId: 'mixli_canvas_orbit_v2',
+    prompt: 'Which path holds?',
+    options: [
+      {id: 'a', label: 'A'},
+      {id: 'b', label: 'B'},
+      {id: 'c', label: 'C'},
+    ],
+    answer: 'b',
+    reveal: 'B. Sideways speed bends the fall.',
+  },
+  {
+    id: 'mixli_starter_color_energy',
+    format: 'choose',
+    classification: 'preference',
+    topics: ['design', 'culture'],
+    assetId: 'mixli_canvas_color_energy_v2',
+    prompt: 'Pick tonight’s energy.',
+    options: [
+      {id: 'electric', label: 'Electric'},
+      {id: 'soft', label: 'Soft'},
+      {id: 'afterglow', label: 'Afterglow'},
+    ],
+    reveal: 'That palette fits your pulse.',
+  },
+  {
+    id: 'mixli_starter_quick_logic',
+    format: 'guess',
+    classification: 'challenge',
+    topics: ['logic', 'numbers'],
+    assetId: 'mixli_canvas_quick_logic_v2',
+    prompt: 'Complete the sequence.',
+    options: [
+      {id: '26', label: '26'},
+      {id: '28', label: '28'},
+      {id: '30', label: '30'},
+    ],
+    answer: '30',
+    reveal: '30. The gaps rise by two.',
+  },
+];
+
 const moveOneMatch: StarterPlay = {
   id: 'mixli_starter_move_one_match',
   revisionId: 'rev_1',
@@ -303,15 +449,78 @@ const moveOneMatch: StarterPlay = {
   },
 };
 
-const starterPlays: readonly StarterPlay[] = [
+const legacyStarterPlays: readonly StarterPlay[] = [
   moveOneMatch,
-  ...choiceSpecs.map((spec) => ({
+  ...legacyChoiceSpecs.map((spec) => ({
     id: spec.id,
     revisionId: 'rev_1',
     topics: spec.topics,
-    document: choiceDocument(spec),
+    document: choiceDocument(spec, 'rev_1'),
   })),
 ];
+
+const moveOneMatchV2: StarterPlay = {
+  id: 'mixli_starter_move_one_match',
+  revisionId: 'rev_2',
+  topics: ['puzzles', 'logic'],
+  document: {
+    schemaVersion: 1,
+    id: 'mixli_starter_move_one_match',
+    revisionId: 'rev_2',
+    format: 'solve',
+    classification: 'challenge',
+    topics: ['puzzles', 'logic'],
+    learningTopics: [],
+    estimatedDurationSec: 20,
+    assets: ['mixli_canvas_matchsticks_v2'],
+    sources: [],
+    entryState: 'solve',
+    states: {
+      solve: {
+        presentation: {
+          layers: [
+            {type: 'canvas', role: 'media', assetId: 'mixli_canvas_matchsticks_v2'},
+            {type: 'text', role: 'prompt', value: 'Move one match.'},
+          ],
+        },
+        input: {
+          type: 'drag',
+          dragOrigin: {x: 0.335, y: 0.35},
+          dragSize: {width: 0.03, height: 0.14},
+          targets: [
+            {id: 'solution_a', x: 0.185, y: 0.29, width: 0.05, height: 0.14},
+          ],
+          handleLabel: 'Move match',
+        },
+        validation: {type: 'target_region', value: 'solution_a'},
+        transition: {correct: 'reveal', incorrect: 'solve'},
+      },
+      reveal: {
+        presentation: {
+          layers: [
+            {type: 'canvas', role: 'media', assetId: 'mixli_canvas_matchsticks_v2'},
+            {type: 'text', role: 'reveal_title', value: '8 − 4 = 4. One stroke changes sides.'},
+          ],
+        },
+        input: {type: 'tap', label: 'Done'},
+        validation: {type: 'none'},
+        transition: {default: '$end'},
+      },
+    },
+  },
+};
+
+const starterPlays: readonly StarterPlay[] = [
+  moveOneMatchV2,
+  ...releaseChoiceSpecs.map((spec) => ({
+    id: spec.id,
+    revisionId: 'rev_2',
+    topics: spec.topics,
+    document: choiceDocument(spec, 'rev_2'),
+  })),
+];
+
+const allStarterPlays = [...legacyStarterPlays, ...starterPlays] as const;
 
 export async function applyProductionCatalog(
   pool: Pool,
@@ -322,8 +531,17 @@ export async function applyProductionCatalog(
   const client = await pool.connect();
   try {
     await client.query('begin');
+    for (const [curatedOrder, play] of legacyStarterPlays.entries()) {
+      await applyStarterPlay(client, play, curatedOrder + 1, 'suspended');
+    }
+    await client.query(
+      `update feed_catalog_entries
+          set state = 'suspended', updated_at = now()
+        where play_id like $1`,
+      [`${productionStarterPrefix}%`],
+    );
     for (const [curatedOrder, play] of starterPlays.entries()) {
-      await applyStarterPlay(client, play, curatedOrder + 1);
+      await applyStarterPlay(client, play, curatedOrder + 1, 'eligible');
     }
     await client.query('commit');
   } catch (error) {
@@ -348,8 +566,11 @@ export async function verifyProductionCatalog(
       where play_id like $1`,
     [`${productionStarterPrefix}%`],
   );
-  const expectedCatalog = new Set(
-    starterPlays.map((play) => `${play.id}\u0000${play.revisionId}`),
+  const expectedCatalog = new Map(
+    allStarterPlays.map((play) => [
+      `${play.id}\u0000${play.revisionId}`,
+      play.revisionId === 'rev_2' ? 'eligible' : 'suspended',
+    ]),
   );
   const actualCatalog = new Set(
     catalog.rows
@@ -358,8 +579,11 @@ export async function verifyProductionCatalog(
   );
   if (
     catalog.rows.length !== expectedCatalog.size ||
-    actualCatalog.size !== expectedCatalog.size ||
-    [...expectedCatalog].some((identity) => !actualCatalog.has(identity))
+    actualCatalog.size !== starterPlays.length ||
+    catalog.rows.some(
+      (row) =>
+        expectedCatalog.get(`${row.play_id}\u0000${row.revision_id}`) !== row.state,
+    )
   ) {
     throw new Error('Starter Play catalog does not match the exact release set');
   }
@@ -396,11 +620,11 @@ export async function verifyProductionCatalog(
     `select revision.play_id, revision.revision_id, revision.document
        from play_revisions revision
        join feed_catalog_entries catalog using (play_id, revision_id)
-      where catalog.play_id = any($1::text[]) and catalog.state = 'eligible'`,
-    [starterPlays.map((play) => play.id)],
+      where catalog.play_id = any($1::text[])`,
+    [allStarterPlays.map((play) => play.id)],
   );
   const expectedDocuments = new Map(
-    starterPlays.map((play) => [
+    allStarterPlays.map((play) => [
       `${play.id}\u0000${play.revisionId}`,
       canonicalJson(play.document),
     ]),
@@ -411,7 +635,7 @@ export async function verifyProductionCatalog(
       throw new Error(`Starter Play ${row.play_id} differs from release content`);
     }
   }
-  if (documents.rows.length !== starterPlays.length) {
+  if (documents.rows.length !== allStarterPlays.length) {
     throw new Error('Starter Play revisions are incomplete');
   }
 
@@ -424,10 +648,10 @@ export async function verifyProductionCatalog(
     `select play_id, revision_id, topic_id, role
        from play_revision_topics
       where play_id = any($1::text[])`,
-    [starterPlays.map((play) => play.id)],
+    [allStarterPlays.map((play) => play.id)],
   );
   const expectedTopicLinks = new Set(
-    starterPlays.flatMap((play) =>
+    allStarterPlays.flatMap((play) =>
       play.topics.map(
         (topic) => `${play.id}\u0000${play.revisionId}\u0000${topic}\u0000interest`,
       ),
@@ -448,7 +672,10 @@ export async function verifyProductionCatalog(
   return {eligiblePlays, canvasAssets: canvasAssetCount};
 }
 
-function choiceDocument(spec: ChoiceSpec): Record<string, unknown> {
+function choiceDocument(
+  spec: ChoiceSpec,
+  revisionId: 'rev_1' | 'rev_2',
+): Record<string, unknown> {
   const transition =
     spec.answer === undefined
       ? Object.fromEntries(spec.options.map((option) => [option.id, 'reveal']))
@@ -456,7 +683,7 @@ function choiceDocument(spec: ChoiceSpec): Record<string, unknown> {
   return {
     schemaVersion: 1,
     id: spec.id,
-    revisionId: 'rev_1',
+    revisionId,
     format: spec.format,
     classification: spec.classification,
     topics: [...spec.topics],
@@ -482,7 +709,12 @@ function choiceDocument(spec: ChoiceSpec): Record<string, unknown> {
       },
       reveal: {
         presentation: {
-          layers: [{type: 'text', role: 'reveal_title', value: spec.reveal}],
+          layers: [
+            ...(revisionId === 'rev_2'
+              ? [{type: 'canvas', role: 'media', assetId: spec.assetId}]
+              : []),
+            {type: 'text', role: 'reveal_title', value: spec.reveal},
+          ],
         },
         input: {type: 'tap', label: 'Done'},
         validation: {type: 'none'},
@@ -496,6 +728,7 @@ async function applyStarterPlay(
   client: PoolClient,
   play: StarterPlay,
   curatedOrder: number,
+  state: 'eligible' | 'suspended',
 ): Promise<void> {
   await client.query('insert into plays (id) values ($1) on conflict (id) do nothing', [
     play.id,
@@ -538,13 +771,13 @@ async function applyStarterPlay(
   await client.query(
     `insert into feed_catalog_entries (
        play_id, revision_id, state, quality_prior, curated_order
-     ) values ($1, $2, 'eligible', 0.85, $3)
-     on conflict (play_id, revision_id) do update set
-       state = 'eligible',
+     ) values ($1, $2, $3, 0.85, $4)
+      on conflict (play_id, revision_id) do update set
+       state = excluded.state,
        quality_prior = 0.85,
        curated_order = excluded.curated_order,
        updated_at = now()`,
-    [play.id, play.revisionId, curatedOrder],
+    [play.id, play.revisionId, state, curatedOrder],
   );
 }
 

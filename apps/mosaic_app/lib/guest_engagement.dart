@@ -7,16 +7,19 @@ final class GuestEngagementState {
   const GuestEngagementState({
     this.seenIdentities = const <String>[],
     this.dismissedAt,
+    this.hasMeaningfulInteraction = false,
   });
 
-  static const int maxSeenIdentities = 5;
+  static const int maxSeenIdentities = 8;
 
   final List<String> seenIdentities;
   final DateTime? dismissedAt;
+  final bool hasMeaningfulInteraction;
 
   Map<String, Object?> toJson() => <String, Object?>{
     'seenIdentities': seenIdentities,
     'dismissedAt': dismissedAt?.toUtc().toIso8601String(),
+    'hasMeaningfulInteraction': hasMeaningfulInteraction,
   };
 
   factory GuestEngagementState.fromJson(Map<String, Object?> json) {
@@ -47,6 +50,11 @@ final class GuestEngagementState {
       }
     }
 
+    final rawMeaningfulInteraction = json['hasMeaningfulInteraction'];
+    if (rawMeaningfulInteraction != null && rawMeaningfulInteraction is! bool) {
+      throw const FormatException('hasMeaningfulInteraction must be a boolean');
+    }
+
     return GuestEngagementState(
       seenIdentities: identities
           .skip(
@@ -56,6 +64,7 @@ final class GuestEngagementState {
           )
           .toList(growable: false),
       dismissedAt: dismissedAt,
+      hasMeaningfulInteraction: rawMeaningfulInteraction as bool? ?? false,
     );
   }
 }
@@ -87,7 +96,8 @@ final class GuestEngagementController extends ChangeNotifier {
        _clock = clock ?? DateTime.now,
        _onError = onError;
 
-  static const int promptThreshold = 5;
+  static const int interactionPromptThreshold = 5;
+  static const int viewOnlyPromptThreshold = 8;
   static const Duration promptCooldown = Duration(days: 7);
 
   final GuestEngagementStore _store;
@@ -104,9 +114,15 @@ final class GuestEngagementController extends ChangeNotifier {
   GuestEngagementState get state => _state;
 
   bool get shouldPrompt {
-    if (!_initialized || _state.seenIdentities.length < promptThreshold) {
+    if (!_initialized) {
       return false;
     }
+    final viewCount = _state.seenIdentities.length;
+    final eligible =
+        viewCount >= viewOnlyPromptThreshold ||
+        (viewCount >= interactionPromptThreshold &&
+            _state.hasMeaningfulInteraction);
+    if (!eligible) return false;
     final dismissedAt = _state.dismissedAt;
     return dismissedAt == null ||
         !_clock().toUtc().isBefore(dismissedAt.add(promptCooldown));
@@ -129,6 +145,7 @@ final class GuestEngagementController extends ChangeNotifier {
     _state = GuestEngagementState(
       seenIdentities: _bounded(identities),
       dismissedAt: stored?.dismissedAt,
+      hasMeaningfulInteraction: stored?.hasMeaningfulInteraction ?? false,
     );
     _initialized = true;
     if (identities.isNotEmpty &&
@@ -164,22 +181,40 @@ final class GuestEngagementController extends ChangeNotifier {
     _state = GuestEngagementState(
       seenIdentities: _bounded(identities),
       dismissedAt: _state.dismissedAt,
+      hasMeaningfulInteraction: _state.hasMeaningfulInteraction,
     );
     if (!_disposed) notifyListeners();
     await _persist();
   }
 
-  Future<void> dismissPrompt() async {
+  Future<void> recordMeaningfulInteraction() async {
     if (!_initialized) {
       await initialize();
     }
+    if (_state.hasMeaningfulInteraction) return;
     _state = GuestEngagementState(
       seenIdentities: _state.seenIdentities,
-      dismissedAt: _clock().toUtc(),
+      dismissedAt: _state.dismissedAt,
+      hasMeaningfulInteraction: true,
     );
     if (!_disposed) notifyListeners();
     await _persist();
   }
+
+  Future<void> recordPromptDisposition() async {
+    if (!_initialized) {
+      await initialize();
+    }
+    _state = GuestEngagementState(
+      seenIdentities: const <String>[],
+      dismissedAt: _clock().toUtc(),
+      hasMeaningfulInteraction: false,
+    );
+    if (!_disposed) notifyListeners();
+    await _persist();
+  }
+
+  Future<void> dismissPrompt() => recordPromptDisposition();
 
   List<String> _bounded(LinkedHashSet<String> identities) => identities
       .skip(

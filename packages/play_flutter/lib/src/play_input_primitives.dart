@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:play_schema/play_schema.dart';
 
 final class PlayPianoInputSpec {
@@ -90,56 +92,69 @@ final class _PlayPianoInputState extends State<PlayPianoInput> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Semantics(
-      container: true,
-      label: 'Piano keyboard',
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            height: 6,
-            child: Center(
-              child: Wrap(
-                spacing: 4,
-                children: List<Widget>.generate(
-                  widget.sequenceLength,
-                  (index) => DecoratedBox(
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: index < _sequence.length
-                          ? colorScheme.primary
-                          : colorScheme.outlineVariant,
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final colorScheme = Theme.of(context).colorScheme;
+      final availableHeight = constraints.hasBoundedHeight
+          ? constraints.maxHeight
+          : 118.0;
+      final showProgress = availableHeight >= 70;
+      final reservedHeight = showProgress ? 14.0 : 0.0;
+      final keyboardHeight = math
+          .min(104.0, math.max(48.0, availableHeight - reservedHeight))
+          .toDouble();
+
+      return Semantics(
+        container: true,
+        label: 'Piano keyboard',
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (showProgress) ...[
+              SizedBox(
+                height: 6,
+                child: Center(
+                  child: Wrap(
+                    spacing: 4,
+                    children: List<Widget>.generate(
+                      widget.sequenceLength,
+                      (index) => DecoratedBox(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: index < _sequence.length
+                              ? colorScheme.primary
+                              : colorScheme.outlineVariant,
+                        ),
+                        child: const SizedBox.square(dimension: 5),
+                      ),
                     ),
-                    child: const SizedBox.square(dimension: 5),
                   ),
                 ),
               ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 104,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  for (final note in widget.keys)
-                    _PianoKey(
-                      note: note,
-                      selected: note == _lastKey,
-                      onPressed: _locked ? null : () => _press(note),
-                    ),
-                ],
+              const SizedBox(height: 8),
+            ],
+            SizedBox(
+              height: keyboardHeight,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (final note in widget.keys)
+                      _PianoKey(
+                        note: note,
+                        selected: note == _lastKey,
+                        onPressed: _locked ? null : () => _press(note),
+                      ),
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
+          ],
+        ),
+      );
+    },
+  );
 }
 
 final class _PianoKey extends StatelessWidget {
@@ -185,7 +200,7 @@ final class _PianoKey extends StatelessWidget {
               bottom: Radius.circular(8),
             ),
             child: SizedBox(
-              width: 46,
+              width: 48,
               child: Align(
                 alignment: Alignment.bottomCenter,
                 child: Padding(
@@ -227,10 +242,11 @@ final class PlayNormalizedRect {
 }
 
 final class PlayDragTarget {
-  const PlayDragTarget({required this.id, required this.rect});
+  const PlayDragTarget({required this.id, required this.rect, this.label});
 
   final String id;
   final PlayNormalizedRect rect;
+  final String? label;
 }
 
 final class PlayDragInputSpec {
@@ -297,14 +313,17 @@ final class _PlayDragInputState extends State<PlayDragInput> {
   late Offset _position = widget.spec.origin;
   int? _activePointer;
   bool _dragging = false;
+  int _selectedTargetIndex = 0;
+  bool _focused = false;
 
   @override
   void didUpdateWidget(covariant PlayDragInput oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.spec, widget.spec)) {
+    if (!_dragSpecsEquivalent(oldWidget.spec, widget.spec)) {
       _endInterruptedManipulation(oldWidget.onManipulationChanged);
       _position = widget.spec.origin;
       _activePointer = null;
+      _selectedTargetIndex = 0;
     }
   }
 
@@ -384,6 +403,49 @@ final class _PlayDragInputState extends State<PlayDragInput> {
     setState(() => _position = widget.spec.origin);
   }
 
+  void _activateWithoutDrag() {
+    final target = widget.spec.targets[_selectedTargetIndex];
+    final targetPosition = Offset(
+      target.rect.x + (target.rect.width - widget.spec.size.width) / 2,
+      target.rect.y + (target.rect.height - widget.spec.size.height) / 2,
+    );
+    setState(() {
+      _position = Offset(
+        targetPosition.dx.clamp(0.0, 1 - widget.spec.size.width).toDouble(),
+        targetPosition.dy.clamp(0.0, 1 - widget.spec.size.height).toDouble(),
+      );
+    });
+    widget.onTarget(target.id);
+  }
+
+  void _selectTarget(int delta) {
+    final next = (_selectedTargetIndex + delta)
+        .clamp(0, widget.spec.targets.length - 1)
+        .toInt();
+    if (next == _selectedTargetIndex) return;
+    setState(() => _selectedTargetIndex = next);
+  }
+
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.arrowRight ||
+        key == LogicalKeyboardKey.arrowDown) {
+      _selectTarget(1);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.arrowLeft ||
+        key == LogicalKeyboardKey.arrowUp) {
+      _selectTarget(-1);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.space) {
+      _activateWithoutDrag();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
@@ -407,50 +469,203 @@ final class _PlayDragInputState extends State<PlayDragInput> {
                 width: target.rect.width * bounds.width,
                 height: target.rect.height * bounds.height,
                 child: IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      border: Border.all(color: colorScheme.outlineVariant),
-                      borderRadius: BorderRadius.circular(12),
+                  key: ValueKey<String>('play-drag-target:${target.id}'),
+                  child: ExcludeSemantics(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        border: Border.all(color: colorScheme.outlineVariant),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                   ),
                 ),
               ),
-          Positioned(
-            left: _position.dx * bounds.width,
-            top: _position.dy * bounds.height,
-            width: widget.spec.size.width * bounds.width,
-            height: widget.spec.size.height * bounds.height,
-            child: Semantics(
-              button: true,
-              label: widget.spec.handleLabel,
-              child: Listener(
-                behavior: HitTestBehavior.opaque,
-                onPointerDown: _pointerDown,
-                onPointerUp: _pointerEnded,
-                onPointerCancel: _pointerEnded,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onPanUpdate: (details) => _move(details, bounds),
-                  onPanEnd: (_) => _finish(),
-                  onPanCancel: _cancel,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: colorScheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Icon(
-                      Icons.drag_indicator,
-                      color: colorScheme.onPrimaryContainer,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
+          if (_focused) _selectedTargetIndicator(bounds, colorScheme),
+          _dragHandle(bounds, colorScheme),
         ],
       );
     },
   );
+
+  Widget _selectedTargetIndicator(Size bounds, ColorScheme colorScheme) {
+    final target = widget.spec.targets[_selectedTargetIndex];
+    return Positioned(
+      key: const ValueKey<String>('play-drag-selected-target-slot'),
+      left: target.rect.x * bounds.width,
+      top: target.rect.y * bounds.height,
+      width: target.rect.width * bounds.width,
+      height: target.rect.height * bounds.height,
+      child: IgnorePointer(
+        child: ExcludeSemantics(
+          child: DecoratedBox(
+            key: const ValueKey<String>('play-drag-selected-target'),
+            decoration: BoxDecoration(
+              border: Border.all(color: colorScheme.primary, width: 2),
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _dragHandle(Size bounds, ColorScheme colorScheme) {
+    final visualRect = Rect.fromLTWH(
+      _position.dx * bounds.width,
+      _position.dy * bounds.height,
+      widget.spec.size.width * bounds.width,
+      widget.spec.size.height * bounds.height,
+    );
+    final hitWidth = math.min(bounds.width, math.max(48.0, visualRect.width));
+    final hitHeight = math.min(
+      bounds.height,
+      math.max(48.0, visualRect.height),
+    );
+    final hitLeft = (visualRect.center.dx - hitWidth / 2)
+        .clamp(0.0, bounds.width - hitWidth)
+        .toDouble();
+    final hitTop = (visualRect.center.dy - hitHeight / 2)
+        .clamp(0.0, bounds.height - hitHeight)
+        .toDouble();
+    final hitRect = Rect.fromLTWH(hitLeft, hitTop, hitWidth, hitHeight);
+    final localVisualRect = visualRect.shift(-hitRect.topLeft);
+    final targetCount = widget.spec.targets.length;
+    final increasedTargetIndex = math.min(
+      _selectedTargetIndex + 1,
+      targetCount - 1,
+    );
+    final decreasedTargetIndex = math.max(_selectedTargetIndex - 1, 0);
+
+    return Positioned.fromRect(
+      key: const ValueKey<String>('play-drag-handle-slot'),
+      rect: hitRect,
+      child: Focus(
+        onKeyEvent: _handleKeyEvent,
+        onFocusChange: (focused) {
+          if (_focused == focused) return;
+          setState(() => _focused = focused);
+        },
+        child: Semantics(
+          button: true,
+          focusable: true,
+          label: widget.spec.handleLabel,
+          value: targetCount > 1
+              ? _dragTargetSemanticValue(
+                  widget.spec.targets[_selectedTargetIndex],
+                  _selectedTargetIndex,
+                  targetCount,
+                )
+              : null,
+          increasedValue: targetCount > 1
+              ? _dragTargetSemanticValue(
+                  widget.spec.targets[increasedTargetIndex],
+                  increasedTargetIndex,
+                  targetCount,
+                )
+              : null,
+          decreasedValue: targetCount > 1
+              ? _dragTargetSemanticValue(
+                  widget.spec.targets[decreasedTargetIndex],
+                  decreasedTargetIndex,
+                  targetCount,
+                )
+              : null,
+          onTap: _activateWithoutDrag,
+          onIncrease: targetCount > 1 ? () => _selectTarget(1) : null,
+          onDecrease: targetCount > 1 ? () => _selectTarget(-1) : null,
+          child: Listener(
+            behavior: HitTestBehavior.opaque,
+            onPointerDown: _pointerDown,
+            onPointerUp: _pointerEnded,
+            onPointerCancel: _pointerEnded,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onPanUpdate: (details) => _move(details, bounds),
+              onPanEnd: (_) => _finish(),
+              onPanCancel: _cancel,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned.fromRect(
+                    rect: localVisualRect,
+                    child: DecoratedBox(
+                      key: const ValueKey<String>('play-drag-object'),
+                      decoration: BoxDecoration(
+                        color: colorScheme.primaryContainer,
+                        border: Border.all(
+                          color: colorScheme.onPrimaryContainer,
+                          width: 1.5,
+                        ),
+                        borderRadius: BorderRadius.circular(
+                          visualRect.shortestSide / 2,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+bool _dragSpecsEquivalent(PlayDragInputSpec left, PlayDragInputSpec right) {
+  if (left.origin != right.origin ||
+      left.size != right.size ||
+      left.handleLabel != right.handleLabel ||
+      left.showTargetHints != right.showTargetHints ||
+      left.targets.length != right.targets.length) {
+    return false;
+  }
+  for (var index = 0; index < left.targets.length; index += 1) {
+    final leftTarget = left.targets[index];
+    final rightTarget = right.targets[index];
+    if (leftTarget.id != rightTarget.id ||
+        leftTarget.label != rightTarget.label ||
+        !_normalizedRectsEquivalent(leftTarget.rect, rightTarget.rect)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool _normalizedRectsEquivalent(
+  PlayNormalizedRect left,
+  PlayNormalizedRect right,
+) =>
+    left.x == right.x &&
+    left.y == right.y &&
+    left.width == right.width &&
+    left.height == right.height;
+
+String _dragTargetSemanticValue(PlayDragTarget target, int index, int count) =>
+    '${_dragTargetLabel(target)}, target ${index + 1} of $count';
+
+String _dragTargetLabel(PlayDragTarget target) {
+  final authored = target.label?.trim();
+  if (authored != null && authored.isNotEmpty) return authored;
+
+  final centerX = target.rect.x + target.rect.width / 2;
+  final centerY = target.rect.y + target.rect.height / 2;
+  final isLeft = centerX < 1 / 3;
+  final isRight = centerX > 2 / 3;
+
+  if (centerY < 1 / 3) {
+    if (isLeft) return 'Upper left area';
+    if (isRight) return 'Upper right area';
+    return 'Upper area';
+  }
+  if (centerY > 2 / 3) {
+    if (isLeft) return 'Lower left area';
+    if (isRight) return 'Lower right area';
+    return 'Lower area';
+  }
+  if (isLeft) return 'Left area';
+  if (isRight) return 'Right area';
+  return 'Center area';
 }
 
 final class PlayInputUnavailable extends StatelessWidget {
@@ -511,6 +726,10 @@ List<PlayDragTarget>? _readTargets(Object? raw) {
     if (idRaw is! String) return null;
     final id = idRaw.trim();
     if (id.isEmpty || !ids.add(id)) return null;
+    final labelRaw = item['label'];
+    final label = labelRaw is String && labelRaw.trim().isNotEmpty
+        ? labelRaw.trim()
+        : null;
     final x = _unit(item['x']);
     final y = _unit(item['y']);
     final width = _positiveUnit(item['width']);
@@ -520,6 +739,7 @@ List<PlayDragTarget>? _readTargets(Object? raw) {
     targets.add(
       PlayDragTarget(
         id: id,
+        label: label,
         rect: PlayNormalizedRect(x: x, y: y, width: width, height: height),
       ),
     );

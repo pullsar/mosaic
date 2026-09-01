@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -128,11 +129,71 @@ final class PlayCanvasLabel extends PlayCanvasElement {
 
 enum PlayCanvasTone { foreground, muted, accent, surface }
 
+@immutable
+final class PlayCanvasPalette {
+  const PlayCanvasPalette._({
+    required this.background,
+    required this.foreground,
+    required this.accent,
+    required this.muted,
+    required this.surface,
+  });
+
+  factory PlayCanvasPalette.fromJson(Map<String, Object?> json) {
+    const roles = <String>{
+      'background',
+      'foreground',
+      'accent',
+      'muted',
+      'surface',
+    };
+    if (json.length != roles.length || !roles.every(json.containsKey)) {
+      throw const FormatException(
+        'Canvas palette requires exactly background, foreground, accent, muted, and surface.',
+      );
+    }
+    final background = _canvasColor(json['background'], 'palette.background');
+    final foreground = _canvasColor(json['foreground'], 'palette.foreground');
+    final accent = _canvasColor(json['accent'], 'palette.accent');
+    final muted = _canvasColor(json['muted'], 'palette.muted');
+    final surface = _canvasColor(json['surface'], 'palette.surface');
+    if (background == foreground) {
+      throw const FormatException(
+        'Canvas palette background and foreground must differ.',
+      );
+    }
+    if (_canvasContrast(foreground, background) < 4.5) {
+      throw const FormatException(
+        'Canvas palette foreground/background contrast must be at least 4.5:1.',
+      );
+    }
+    if (_canvasContrast(accent, background) < 3) {
+      throw const FormatException(
+        'Canvas palette accent/background contrast must be at least 3:1.',
+      );
+    }
+    return PlayCanvasPalette._(
+      background: background,
+      foreground: foreground,
+      accent: accent,
+      muted: muted,
+      surface: surface,
+    );
+  }
+
+  final Color background;
+  final Color foreground;
+  final Color accent;
+  final Color muted;
+  final Color surface;
+}
+
 final class PlayCanvasAsset {
   PlayCanvasAsset({
     required String id,
     required List<PlayCanvasElement> elements,
     String? semanticLabel,
+    this.palette,
   }) : id = _requireCanvasText(id, 'id'),
        elements = List<PlayCanvasElement>.unmodifiable(elements),
        semanticLabel = semanticLabel == null
@@ -157,10 +218,14 @@ final class PlayCanvasAsset {
     if (semanticLabel != null && semanticLabel is! String) {
       throw const FormatException('semanticLabel must be a string.');
     }
+    final palette = json.containsKey('palette')
+        ? PlayCanvasPalette.fromJson(_jsonMap(json['palette'], 'palette'))
+        : null;
 
     return PlayCanvasAsset(
       id: id,
       semanticLabel: semanticLabel as String?,
+      palette: palette,
       elements: rawElements
           .map((raw) => _canvasElementFromJson(_jsonMap(raw, 'elements[]')))
           .toList(growable: false),
@@ -170,6 +235,7 @@ final class PlayCanvasAsset {
   final String id;
   final List<PlayCanvasElement> elements;
   final String? semanticLabel;
+  final PlayCanvasPalette? palette;
 }
 
 abstract interface class PlayCanvasAssetResolver {
@@ -245,13 +311,52 @@ final class _ResolvedPlayCanvasState extends State<ResolvedPlayCanvas> {
     future: _resolution,
     builder: (context, snapshot) {
       if (snapshot.connectionState != ConnectionState.done) {
-        return const _CanvasState(label: 'Loading interactive graphic');
+        return const _CanvasState(
+          semanticLabel: 'Loading interactive graphic',
+          visibleLabel: 'Loading play',
+          icon: Icons.hourglass_empty_rounded,
+        );
       }
       final asset = snapshot.data;
       if (snapshot.hasError || asset == null) {
         return const PlayCanvasUnavailable();
       }
       return PlayCanvas(asset: asset);
+    },
+  );
+}
+
+final class PlayCanvasStage extends StatelessWidget {
+  const PlayCanvasStage({required this.child, super.key});
+
+  static const double _stageAspectRatio = 4 / 5;
+  static const double _maximumStageWidth = 720;
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final availableWidth = constraints.hasBoundedWidth
+          ? constraints.maxWidth
+          : _maximumStageWidth;
+      final availableHeight = constraints.hasBoundedHeight
+          ? constraints.maxHeight
+          : double.infinity;
+      final stageWidth = math.min(
+        _maximumStageWidth,
+        math.min(availableWidth, availableHeight * _stageAspectRatio),
+      );
+      if (!stageWidth.isFinite || stageWidth <= 0) {
+        return const SizedBox.shrink();
+      }
+      return Center(
+        child: SizedBox(
+          width: stageWidth,
+          height: stageWidth / _stageAspectRatio,
+          child: child,
+        ),
+      );
     },
   );
 }
@@ -264,7 +369,7 @@ final class PlayCanvas extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final content = SizedBox.expand(
+    final content = PlayCanvasStage(
       child: CustomPaint(
         painter: _PlayCanvasPainter(asset: asset, colorScheme: colorScheme),
         isComplex: false,
@@ -289,6 +394,10 @@ final class _PlayCanvasPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     if (size.isEmpty) return;
+    final palette = asset.palette;
+    if (palette != null) {
+      canvas.drawRect(Offset.zero & size, Paint()..color = palette.background);
+    }
     final shortest = size.shortestSide;
     for (final element in asset.elements) {
       switch (element) {
@@ -357,12 +466,23 @@ final class _PlayCanvasPainter extends CustomPainter {
   Offset _point(Offset normalized, Size size) =>
       Offset(normalized.dx * size.width, normalized.dy * size.height);
 
-  Color _color(PlayCanvasTone tone) => switch (tone) {
-    PlayCanvasTone.foreground => colorScheme.onSurface,
-    PlayCanvasTone.muted => colorScheme.onSurfaceVariant,
-    PlayCanvasTone.accent => colorScheme.primary,
-    PlayCanvasTone.surface => colorScheme.surfaceContainerHighest,
-  };
+  Color _color(PlayCanvasTone tone) {
+    final palette = asset.palette;
+    if (palette != null) {
+      return switch (tone) {
+        PlayCanvasTone.foreground => palette.foreground,
+        PlayCanvasTone.muted => palette.muted,
+        PlayCanvasTone.accent => palette.accent,
+        PlayCanvasTone.surface => palette.surface,
+      };
+    }
+    return switch (tone) {
+      PlayCanvasTone.foreground => colorScheme.onSurface,
+      PlayCanvasTone.muted => colorScheme.onSurfaceVariant,
+      PlayCanvasTone.accent => colorScheme.primary,
+      PlayCanvasTone.surface => colorScheme.surfaceContainerHighest,
+    };
+  }
 
   @override
   bool shouldRepaint(covariant _PlayCanvasPainter oldDelegate) =>
@@ -375,35 +495,60 @@ final class PlayCanvasUnavailable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => const _CanvasState(
-    label: 'Interactive graphic unavailable',
+    semanticLabel: 'Interactive graphic unavailable',
+    visibleLabel: 'Play unavailable',
     icon: Icons.grid_off_outlined,
   );
 }
 
 final class _CanvasState extends StatelessWidget {
-  const _CanvasState({required this.label, this.icon});
+  const _CanvasState({
+    required this.semanticLabel,
+    required this.visibleLabel,
+    required this.icon,
+  });
 
-  final String label;
-  final IconData? icon;
+  final String semanticLabel;
+  final String visibleLabel;
+  final IconData icon;
 
   @override
-  Widget build(BuildContext context) => ColoredBox(
-    color: Theme.of(context).colorScheme.surfaceContainerHighest,
-    child: Semantics(
-      image: true,
-      label: label,
-      child: Center(
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final statusColor = theme.colorScheme.onSurfaceVariant;
+    return ColoredBox(
+      color: theme.colorScheme.surfaceContainerHighest,
+      child: Semantics(
+        image: true,
+        label: semanticLabel,
         child: ExcludeSemantics(
-          child: icon == null
-              ? const SizedBox.square(
-                  dimension: 22,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : Icon(icon),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Center(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Icon(icon, size: 22, color: statusColor),
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: Text(
+                      visibleLabel,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: statusColor,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 PlayCanvasElement _canvasElementFromJson(Map<String, Object?> json) {
@@ -452,7 +597,30 @@ PlayCanvasElement _canvasElementFromJson(Map<String, Object?> json) {
 
 Map<String, Object?> _jsonMap(Object? raw, String field) {
   if (raw is! Map) throw FormatException('$field must be an object.');
-  return raw.map((key, value) => MapEntry(key.toString(), value));
+  final normalized = <String, Object?>{};
+  for (final entry in raw.entries) {
+    final key = entry.key;
+    if (key is! String) {
+      throw FormatException('$field keys must be strings.');
+    }
+    normalized[key] = entry.value;
+  }
+  return normalized;
+}
+
+Color _canvasColor(Object? raw, String field) {
+  if (raw is! String || !RegExp(r'^#[0-9A-F]{6}$').hasMatch(raw)) {
+    throw FormatException('$field must be a canonical #RRGGBB color.');
+  }
+  return Color(0xFF000000 | int.parse(raw.substring(1), radix: 16));
+}
+
+double _canvasContrast(Color left, Color right) {
+  final leftLuminance = left.computeLuminance();
+  final rightLuminance = right.computeLuminance();
+  final lighter = math.max(leftLuminance, rightLuminance);
+  final darker = math.min(leftLuminance, rightLuminance);
+  return (lighter + 0.05) / (darker + 0.05);
 }
 
 double _number(Map<String, Object?> json, String key, {double? fallback}) {

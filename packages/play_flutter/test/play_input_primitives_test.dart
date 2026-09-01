@@ -68,6 +68,40 @@ void main() {
     expect(sequences, hasLength(1));
   });
 
+  testWidgets('piano keeps every key tappable in a compact 56px allocation', (
+    tester,
+  ) async {
+    final sequences = <List<String>>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 180,
+              height: 56,
+              child: PlayPianoInput(
+                keys: const ['C4', 'E4', 'G4'],
+                sequenceLength: 3,
+                onSequence: sequences.add,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    for (final note in const ['C4', 'E4', 'G4']) {
+      final key = find.bySemanticsLabel(note);
+      expect(tester.getRect(key).height, greaterThanOrEqualTo(48));
+      await tester.tap(key);
+    }
+
+    expect(sequences, [
+      ['C4', 'E4', 'G4'],
+    ]);
+    expect(tester.takeException(), isNull);
+  });
+
   test('drag spec rejects out-of-bounds authored targets', () {
     final input = PlayInputDefinition(
       type: PlayInputType.drag,

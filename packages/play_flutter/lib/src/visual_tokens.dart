@@ -8,6 +8,8 @@ abstract final class MosaicVisualTokens {
   static const double controlRadius = 22;
   static const double horizontalInset = 20;
   static const Duration fastFeedback = Duration(milliseconds: 140);
+  static const Duration revealTransition = Duration(milliseconds: 180);
+  static const Offset revealDisplacement = Offset(0, 0.04);
 }
 
 abstract final class MosaicTextBudget {
