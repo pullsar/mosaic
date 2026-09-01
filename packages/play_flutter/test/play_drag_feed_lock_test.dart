@@ -572,12 +572,6 @@ void main() {
         findsNothing,
       );
 
-      final pointer = await tester.startGesture(firstIndicatorRect.center);
-      await pointer.moveBy(const Offset(0, 24));
-      await pointer.up();
-      await tester.pump();
-      expect(locks, isEmpty);
-
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
       await tester.pump();
       final secondIndicatorRect = tester.getRect(indicator);
@@ -600,6 +594,13 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pump();
       expect(targets, ['solution']);
+
+      final pointer = await tester.startGesture(
+        secondIndicatorRect.topLeft + const Offset(4, 4),
+      );
+      await pointer.moveBy(const Offset(0, 24));
+      await pointer.up();
+      await tester.pump();
       expect(locks, isEmpty);
     } finally {
       semantics.dispose();
