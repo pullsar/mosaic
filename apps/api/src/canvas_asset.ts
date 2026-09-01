@@ -9,6 +9,14 @@ export const MAX_CANVAS_DOCUMENT_BYTES = 64 * 1024;
 export type CanvasTone = 'foreground' | 'muted' | 'accent' | 'surface';
 export type CanvasLineCap = 'round' | 'butt' | 'square';
 
+export interface CanvasPalette {
+  readonly background: string;
+  readonly foreground: string;
+  readonly accent: string;
+  readonly muted: string;
+  readonly surface: string;
+}
+
 export interface CanvasLineElement {
   type: 'line';
   x1: number;
@@ -62,6 +70,7 @@ export interface CanvasAssetDocument {
   id: string;
   elements: readonly CanvasElement[];
   semanticLabel?: string;
+  readonly palette?: CanvasPalette;
 }
 
 export interface CanvasAssetRecord {
@@ -171,7 +180,11 @@ export class PostgresCanvasAssetRepository implements CanvasAssetResolver {
 
 export function normalizeCanvasAssetDocument(input: unknown): CanvasAssetDocument {
   const root = record(input, 'canvas asset');
-  exactKeys(root, ['schemaVersion', 'id', 'elements', 'semanticLabel'], 'canvas asset');
+  exactKeys(
+    root,
+    ['schemaVersion', 'id', 'elements', 'semanticLabel', 'palette'],
+    'canvas asset',
+  );
   if (root.schemaVersion !== CANVAS_ASSET_SCHEMA_VERSION) {
     throw new TypeError(
       `canvas asset schemaVersion must be ${CANVAS_ASSET_SCHEMA_VERSION}`,
@@ -192,11 +205,15 @@ export function normalizeCanvasAssetDocument(input: unknown): CanvasAssetDocumen
   const semanticLabel = root.semanticLabel === undefined
     ? undefined
     : boundedText(root.semanticLabel, 'semanticLabel', 500);
+  const palette = root.palette === undefined
+    ? undefined
+    : normalizePalette(root.palette);
   const document: CanvasAssetDocument = Object.freeze({
     schemaVersion: 1,
     id,
     elements,
     ...(semanticLabel === undefined ? {} : {semanticLabel}),
+    ...(palette === undefined ? {} : {palette}),
   });
   const serialized = canonicalJson(document);
   if (Buffer.byteLength(serialized, 'utf8') > MAX_CANVAS_DOCUMENT_BYTES) {
@@ -205,6 +222,63 @@ export function normalizeCanvasAssetDocument(input: unknown): CanvasAssetDocumen
     );
   }
   return document;
+}
+
+function normalizePalette(value: unknown): CanvasPalette {
+  const palette = record(value, 'canvas asset palette');
+  exactKeys(
+    palette,
+    ['background', 'foreground', 'accent', 'muted', 'surface'],
+    'canvas asset palette',
+  );
+  const normalized: CanvasPalette = Object.freeze({
+    background: canonicalColor(palette.background, 'palette.background'),
+    foreground: canonicalColor(palette.foreground, 'palette.foreground'),
+    accent: canonicalColor(palette.accent, 'palette.accent'),
+    muted: canonicalColor(palette.muted, 'palette.muted'),
+    surface: canonicalColor(palette.surface, 'palette.surface'),
+  });
+  if (normalized.background === normalized.foreground) {
+    throw new RangeError('canvas asset palette background and foreground must differ');
+  }
+  if (contrastRatio(normalized.foreground, normalized.background) < 4.5) {
+    throw new RangeError(
+      'canvas asset palette foreground/background contrast must be at least 4.5:1',
+    );
+  }
+  if (contrastRatio(normalized.accent, normalized.background) < 3) {
+    throw new RangeError(
+      'canvas asset palette accent/background contrast must be at least 3:1',
+    );
+  }
+  return normalized;
+}
+
+function canonicalColor(value: unknown, name: string): string {
+  if (typeof value !== 'string' || !/^#[0-9A-F]{6}$/.test(value)) {
+    throw new TypeError(`${name} must be a canonical #RRGGBB color`);
+  }
+  return value;
+}
+
+function contrastRatio(left: string, right: string): number {
+  const leftLuminance = relativeLuminance(left);
+  const rightLuminance = relativeLuminance(right);
+  const lighter = Math.max(leftLuminance, rightLuminance);
+  const darker = Math.min(leftLuminance, rightLuminance);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+function relativeLuminance(color: string): number {
+  const channels = [1, 3, 5].map((offset) =>
+    Number.parseInt(color.slice(offset, offset + 2), 16) / 255,
+  );
+  const linear = channels.map((channel) =>
+    channel <= 0.04045
+      ? channel / 12.92
+      : ((channel + 0.055) / 1.055) ** 2.4,
+  );
+  return 0.2126 * linear[0]! + 0.7152 * linear[1]! + 0.0722 * linear[2]!;
 }
 
 function normalizeElement(value: unknown, index: number): CanvasElement {
