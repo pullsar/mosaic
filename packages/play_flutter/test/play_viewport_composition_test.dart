@@ -4,6 +4,7 @@ import 'package:play_flutter/play_flutter.dart';
 
 const _minimumStageAspectRatio = 3 / 4;
 const _maximumStageAspectRatio = 16 / 9;
+const _geometryTolerance = 1e-9;
 const _minimumUsableRailStage = Size(320, 240);
 const _minimumCompactLandscapeStage = Size(300, 168);
 
@@ -96,7 +97,7 @@ void main() {
         expect(stageAspect, greaterThanOrEqualTo(_minimumStageAspectRatio));
         expect(
           stageAspect,
-          lessThanOrEqualTo(_maximumStageAspectRatio + precisionErrorTolerance),
+          lessThanOrEqualTo(_maximumStageAspectRatio + _geometryTolerance),
         );
       });
     }
@@ -256,7 +257,7 @@ void main() {
         expect(stageAspect, greaterThanOrEqualTo(_minimumStageAspectRatio));
         expect(
           stageAspect,
-          lessThanOrEqualTo(_maximumStageAspectRatio + precisionErrorTolerance),
+          lessThanOrEqualTo(_maximumStageAspectRatio + _geometryTolerance),
         );
       }
     });
