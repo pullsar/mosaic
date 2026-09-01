@@ -384,10 +384,7 @@ final class _PlayCanvasPainter extends CustomPainter {
     if (size.isEmpty) return;
     final palette = asset.palette;
     if (palette != null) {
-      canvas.drawRect(
-        Offset.zero & size,
-        Paint()..color = palette.background,
-      );
+      canvas.drawRect(Offset.zero & size, Paint()..color = palette.background);
     }
     final shortest = size.shortestSide;
     for (final element in asset.elements) {

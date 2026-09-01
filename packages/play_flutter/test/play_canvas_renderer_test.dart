@@ -23,24 +23,12 @@ const _toneSamplePoints = <String, Offset>{
   'background': Offset(0.5, 0.5),
 };
 
-typedef _CanvasViewportCase = ({
-  String name,
-  Size viewport,
-});
+typedef _CanvasViewportCase = ({String name, Size viewport});
 
 const _canvasViewportCases = <_CanvasViewportCase>[
-  (
-    name: 'phone portrait',
-    viewport: Size(390, 844),
-  ),
-  (
-    name: 'phone landscape',
-    viewport: Size(844, 390),
-  ),
-  (
-    name: 'desktop landscape',
-    viewport: Size(1440, 900),
-  ),
+  (name: 'phone portrait', viewport: Size(390, 844)),
+  (name: 'phone landscape', viewport: Size(844, 390)),
+  (name: 'desktop landscape', viewport: Size(1440, 900)),
 ];
 
 PlayCanvasAsset _fixture(String name) {
@@ -128,9 +116,7 @@ Future<Map<String, Color>> _renderTonePixels(
   final capture = await tester.runAsync(() async {
     final image = await boundary.toImage(pixelRatio: 1);
     try {
-      final bytes = await image.toByteData(
-        format: ui.ImageByteFormat.rawRgba,
-      );
+      final bytes = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
       if (bytes == null) {
         throw StateError('Canvas image capture returned no pixel data.');
       }
@@ -144,10 +130,12 @@ Future<Map<String, Color>> _renderTonePixels(
   }
   final colors = <String, Color>{};
   for (final sample in _toneSamplePoints.entries) {
-    final globalPoint = paintRect.topLeft + Offset(
-      paintRect.width * sample.value.dx,
-      paintRect.height * sample.value.dy,
-    );
+    final globalPoint =
+        paintRect.topLeft +
+        Offset(
+          paintRect.width * sample.value.dx,
+          paintRect.height * sample.value.dy,
+        );
     final localPoint = globalPoint - boundaryRect.topLeft;
     final x = localPoint.dx.floor().clamp(0, capture.width - 1).toInt();
     final y = localPoint.dy.floor().clamp(0, capture.height - 1).toInt();
@@ -329,9 +317,7 @@ void main() {
       tester,
       asset: asset,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFFAA00AA),
-        ),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFAA00AA)),
       ),
     );
 
@@ -345,14 +331,13 @@ void main() {
   testWidgets('legacy canvas tones continue to fall back to the theme', (
     tester,
   ) async {
-    final scheme = ColorScheme.fromSeed(
-      seedColor: const Color(0xFFAA00AA),
-    ).copyWith(
-      onSurface: const Color(0xFFE0E0E0),
-      onSurfaceVariant: const Color(0xFF707080),
-      primary: const Color(0xFF00AAFF),
-      surfaceContainerHighest: const Color(0xFF303040),
-    );
+    final scheme = ColorScheme.fromSeed(seedColor: const Color(0xFFAA00AA))
+        .copyWith(
+          onSurface: const Color(0xFFE0E0E0),
+          onSurfaceVariant: const Color(0xFF707080),
+          primary: const Color(0xFF00AAFF),
+          surfaceContainerHighest: const Color(0xFF303040),
+        );
     final pixels = await _renderTonePixels(
       tester,
       asset: PlayCanvasAsset.fromJson(_toneDocument()),
@@ -391,32 +376,17 @@ void main() {
         final stageRect = tester.getRect(paintFinder);
         final viewportRect = Offset.zero & viewportCase.viewport;
 
-        expect(
-          stageRect.center.dx,
-          closeTo(viewportRect.center.dx, 0.001),
-        );
-        expect(
-          stageRect.center.dy,
-          closeTo(viewportRect.center.dy, 0.001),
-        );
-        expect(
-          stageRect.left,
-          greaterThanOrEqualTo(viewportRect.left),
-        );
-        expect(
-          stageRect.top,
-          greaterThanOrEqualTo(viewportRect.top),
-        );
+        expect(stageRect.center.dx, closeTo(viewportRect.center.dx, 0.001));
+        expect(stageRect.center.dy, closeTo(viewportRect.center.dy, 0.001));
+        expect(stageRect.left, greaterThanOrEqualTo(viewportRect.left));
+        expect(stageRect.top, greaterThanOrEqualTo(viewportRect.top));
         expect(stageRect.right, lessThanOrEqualTo(viewportRect.right));
         expect(stageRect.bottom, lessThanOrEqualTo(viewportRect.bottom));
         final maximumWidth = viewportCase.viewport.width < 720
             ? viewportCase.viewport.width
             : 720.0;
         expect(stageRect.width, lessThanOrEqualTo(maximumWidth));
-        expect(
-          stageRect.width / stageRect.height,
-          closeTo(4 / 5, 0.000001),
-        );
+        expect(stageRect.width / stageRect.height, closeTo(4 / 5, 0.000001));
         expect(
           (stageRect.width - maximumWidth).abs() < 0.001 ||
               (stageRect.height - viewportCase.viewport.height).abs() < 0.001,
