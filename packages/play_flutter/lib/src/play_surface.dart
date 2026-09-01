@@ -463,35 +463,62 @@ final class _InputOverlay extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
           child: LayoutBuilder(
-            builder: (context, constraints) => SingleChildScrollView(
-              key: const ValueKey<String>('play-choice-scroll'),
-              primary: false,
-              scrollDirection: Axis.horizontal,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minWidth: constraints.maxWidth),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    for (
-                      var index = 0;
-                      index < input.options.length;
-                      index += 1
+            builder: (context, constraints) {
+              final useVerticalFlow =
+                  constraints.maxHeight > constraints.maxWidth;
+              Widget buildButton(int index) {
+                final button = _ControlButton(
+                  label: input.options[index].label,
+                  compact: useVerticalFlow,
+                  onPressed: () =>
+                      onAction(ChoiceAction(input.options[index].id)),
+                );
+                return useVerticalFlow
+                    ? SizedBox(width: constraints.maxWidth, child: button)
+                    : button;
+              }
+
+              final buttons = <Widget>[
+                for (var index = 0; index < input.options.length; index += 1)
+                  buildButton(index),
+              ];
+              final content = useVerticalFlow
+                  ? Wrap(
+                      key: const ValueKey<String>('play-choice-vertical-flow'),
+                      direction: Axis.vertical,
+                      alignment: WrapAlignment.center,
+                      runAlignment: WrapAlignment.center,
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: buttons,
                     )
-                      Padding(
-                        padding: EdgeInsetsDirectional.only(
-                          end: index + 1 == input.options.length ? 0 : 8,
-                        ),
-                        child: _ControlButton(
-                          label: input.options[index].label,
-                          onPressed: () =>
-                              onAction(ChoiceAction(input.options[index].id)),
-                        ),
-                      ),
-                  ],
+                  : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        for (var index = 0; index < buttons.length; index += 1)
+                          Padding(
+                            padding: EdgeInsetsDirectional.only(
+                              end: index + 1 == buttons.length ? 0 : 8,
+                            ),
+                            child: buttons[index],
+                          ),
+                      ],
+                    );
+              final constrainedContent = ConstrainedBox(
+                constraints: BoxConstraints(
+                  minWidth: constraints.maxWidth,
+                  minHeight: useVerticalFlow ? constraints.maxHeight : 0,
                 ),
-              ),
-            ),
+                child: content,
+              );
+              return SingleChildScrollView(
+                key: const ValueKey<String>('play-choice-scroll'),
+                primary: false,
+                scrollDirection: Axis.horizontal,
+                child: constrainedContent,
+              );
+            },
           ),
         ),
       );
@@ -534,9 +561,14 @@ final class _InputOverlay extends StatelessWidget {
 }
 
 final class _ControlButton extends StatelessWidget {
-  const _ControlButton({required this.label, required this.onPressed});
+  const _ControlButton({
+    required this.label,
+    required this.onPressed,
+    this.compact = false,
+  });
   final String label;
   final VoidCallback onPressed;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) => Semantics(
@@ -548,10 +580,20 @@ final class _ControlButton extends StatelessWidget {
         foregroundColor: MosaicVisualTokens.foreground,
         backgroundColor: MosaicVisualTokens.controlSurface,
         minimumSize: const Size(48, 48),
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 12 : 18,
+          vertical: 10,
+        ),
         shape: const StadiumBorder(),
       ),
-      child: Text(label),
+      child: compact
+          ? Text(
+              label,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            )
+          : Text(label),
     ),
   );
 }

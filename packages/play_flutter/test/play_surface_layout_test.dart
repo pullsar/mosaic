@@ -12,6 +12,23 @@ const _maximumReveal =
     'One careful move keeps the original pieces visible while the '
     'corrected equation appears here with enough detail to explain why the '
     'solution works without replacing the puzzle or hiding context';
+const _defaultChoices = <Map<String, String>>[
+  {'id': 'place', 'label': 'Place it'},
+  {'id': 'lift', 'label': 'Lift left'},
+  {'id': 'shift', 'label': 'Shift top'},
+  {'id': 'turn', 'label': 'Turn it'},
+  {'id': 'reset', 'label': 'Reset'},
+];
+const _energyChoices = <Map<String, String>>[
+  {'id': 'electric', 'label': 'Electric'},
+  {'id': 'soft', 'label': 'Soft'},
+  {'id': 'afterglow', 'label': 'Afterglow'},
+];
+const _wrappedChoices = <Map<String, String>>[
+  {'id': 'electric', 'label': 'Electric all the way'},
+  {'id': 'soft', 'label': 'Soft and slow tonight'},
+  {'id': 'afterglow', 'label': 'Stay for the warm afterglow'},
+];
 
 typedef _ViewportCase = ({String name, Size size, EdgeInsets safeInsets});
 
@@ -45,6 +62,7 @@ const _viewportCases = <_ViewportCase>[
 
 PlayDocument _composedCanvasPlay({
   String revealDetail = 'One move restores the equation.',
+  List<Map<String, String>> choices = _defaultChoices,
 }) => PlayDocument.fromJson({
   'schemaVersion': 1,
   'id': 'composed_canvas',
@@ -65,17 +83,8 @@ PlayDocument _composedCanvasPlay({
           {'type': 'text', 'role': 'prompt', 'value': 'Place the match.'},
         ],
       },
-      'input': {
-        'type': 'single_choice',
-        'options': [
-          {'id': 'place', 'label': 'Place it'},
-          {'id': 'lift', 'label': 'Lift left'},
-          {'id': 'shift', 'label': 'Shift top'},
-          {'id': 'turn', 'label': 'Turn it'},
-          {'id': 'reset', 'label': 'Reset'},
-        ],
-      },
-      'validation': {'type': 'equals', 'value': 'place'},
+      'input': {'type': 'single_choice', 'options': choices},
+      'validation': {'type': 'equals', 'value': choices.first['id']},
       'transition': {'correct': 'reveal', 'incorrect': 'reveal'},
     },
     'reveal': {
@@ -154,6 +163,151 @@ void main() {
       },
     );
   }
+
+  testWidgets('compact landscape presents every short choice at first glance', (
+    tester,
+  ) async {
+    final composition = await _pumpComposedSurface(
+      tester,
+      viewportCase: _viewportCases[2],
+      play: _composedCanvasPlay(choices: _energyChoices),
+    );
+    final choiceScroll = find.byKey(
+      const ValueKey<String>('play-choice-scroll'),
+    );
+    expect(
+      tester.widget<SingleChildScrollView>(choiceScroll).scrollDirection,
+      Axis.horizontal,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('play-choice-vertical-flow')),
+      findsOneWidget,
+    );
+    for (final label in <String>['Electric', 'Soft', 'Afterglow']) {
+      _expectContained(
+        composition.inputRect,
+        tester.getRect(find.widgetWithText(FilledButton, label)),
+      );
+    }
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final textDirection in TextDirection.values) {
+    testWidgets('compact landscape keeps wrapped choices reachable at 200% '
+        '${textDirection.name}', (tester) async {
+      final composition = await _pumpComposedSurface(
+        tester,
+        viewportCase: _viewportCases[2],
+        textScaler: const TextScaler.linear(2),
+        textDirection: textDirection,
+        play: _composedCanvasPlay(choices: _wrappedChoices),
+      );
+      final choiceScroll = find.byKey(
+        const ValueKey<String>('play-choice-scroll'),
+      );
+      final choicePosition = tester.state<ScrollableState>(
+        find.descendant(of: choiceScroll, matching: find.byType(Scrollable)),
+      );
+
+      expect(choicePosition.position.maxScrollExtent, greaterThan(0));
+      for (final label in <String>[
+        'Electric all the way',
+        'Soft and slow tonight',
+        'Stay for the warm afterglow',
+      ]) {
+        final button = find.widgetWithText(FilledButton, label);
+        await tester.ensureVisible(button);
+        await tester.pumpAndSettle();
+        _expectContained(composition.inputRect, tester.getRect(button));
+        final text = tester.widget<Text>(find.text(label));
+        expect(text.maxLines, 2);
+        expect(text.overflow, TextOverflow.ellipsis);
+      }
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('compact landscape keeps five choices reachable', (tester) async {
+    final composition = await _pumpComposedSurface(
+      tester,
+      viewportCase: _viewportCases[2],
+    );
+    final choiceScroll = find.byKey(
+      const ValueKey<String>('play-choice-scroll'),
+    );
+    final choicePosition = tester.state<ScrollableState>(
+      find.descendant(of: choiceScroll, matching: find.byType(Scrollable)),
+    );
+
+    expect(
+      tester.widget<SingleChildScrollView>(choiceScroll).scrollDirection,
+      Axis.horizontal,
+    );
+    expect(choicePosition.position.maxScrollExtent, greaterThan(0));
+    for (final label in <String>[
+      'Place it',
+      'Lift left',
+      'Shift top',
+      'Turn it',
+      'Reset',
+    ]) {
+      final button = find.widgetWithText(FilledButton, label);
+      await tester.ensureVisible(button);
+      await tester.pumpAndSettle();
+      _expectContained(composition.inputRect, tester.getRect(button));
+    }
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('compact landscape choices leave vertical feed swipe available', (
+    tester,
+  ) async {
+    const viewport = Size(844, 390);
+    const insets = EdgeInsets.fromLTRB(44, 0, 44, 21);
+    final canvas = _compositionCanvas();
+    final pageController = PageController();
+    addTearDown(pageController.dispose);
+    tester.view
+      ..physicalSize = viewport
+      ..devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(size: viewport, padding: insets),
+          child: Scaffold(
+            body: PageView(
+              controller: pageController,
+              scrollDirection: Axis.vertical,
+              children: [
+                PlaySurface(
+                  play: _composedCanvasPlay(choices: _energyChoices),
+                  mediaBuilder: (context, layer) => PlayCanvas(asset: canvas),
+                ),
+                const ColoredBox(
+                  key: ValueKey<String>('next-play-after-choices'),
+                  color: Colors.black,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.drag(
+      find.widgetWithText(FilledButton, 'Electric'),
+      const Offset(0, -500),
+    );
+    await tester.pumpAndSettle();
+
+    expect(pageController.page, closeTo(1, 0.001));
+  });
 
   testWidgets('200% text stays inside the allocated composition', (
     tester,
