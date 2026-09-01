@@ -524,7 +524,6 @@ final class _InputOverlay extends StatelessWidget {
       return PlayDragInput(
         key: ValueKey<String>('drag:$inputEpoch'),
         spec: spec,
-        semanticTargetId: validation.value as String,
         onTarget: (targetId) => onAction(DragAction(targetId)),
         onManipulationChanged: onDirectManipulationChanged,
       );

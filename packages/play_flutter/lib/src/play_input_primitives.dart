@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:play_schema/play_schema.dart';
 
 final class PlayPianoInputSpec {
@@ -296,14 +297,12 @@ final class PlayDragInput extends StatefulWidget {
     required this.spec,
     required this.onTarget,
     this.onManipulationChanged,
-    this.semanticTargetId,
     super.key,
   });
 
   final PlayDragInputSpec spec;
   final ValueChanged<String> onTarget;
   final ValueChanged<bool>? onManipulationChanged;
-  final String? semanticTargetId;
 
   @override
   State<PlayDragInput> createState() => _PlayDragInputState();
@@ -313,14 +312,16 @@ final class _PlayDragInputState extends State<PlayDragInput> {
   late Offset _position = widget.spec.origin;
   int? _activePointer;
   bool _dragging = false;
+  int _selectedTargetIndex = 0;
 
   @override
   void didUpdateWidget(covariant PlayDragInput oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.spec, widget.spec)) {
+    if (!_dragSpecsEquivalent(oldWidget.spec, widget.spec)) {
       _endInterruptedManipulation(oldWidget.onManipulationChanged);
       _position = widget.spec.origin;
       _activePointer = null;
+      _selectedTargetIndex = 0;
     }
   }
 
@@ -401,13 +402,7 @@ final class _PlayDragInputState extends State<PlayDragInput> {
   }
 
   void _activateWithoutDrag() {
-    final semanticTargetId = widget.semanticTargetId;
-    final target = semanticTargetId == null
-        ? widget.spec.targets.first
-        : widget.spec.targets.firstWhere(
-            (candidate) => candidate.id == semanticTargetId,
-            orElse: () => widget.spec.targets.first,
-          );
+    final target = widget.spec.targets[_selectedTargetIndex];
     final targetPosition = Offset(
       target.rect.x + (target.rect.width - widget.spec.size.width) / 2,
       target.rect.y + (target.rect.height - widget.spec.size.height) / 2,
@@ -419,6 +414,34 @@ final class _PlayDragInputState extends State<PlayDragInput> {
       );
     });
     widget.onTarget(target.id);
+  }
+
+  void _selectTarget(int delta) {
+    final next = (_selectedTargetIndex + delta)
+        .clamp(0, widget.spec.targets.length - 1)
+        .toInt();
+    if (next == _selectedTargetIndex) return;
+    setState(() => _selectedTargetIndex = next);
+  }
+
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.arrowRight ||
+        key == LogicalKeyboardKey.arrowDown) {
+      _selectTarget(1);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.arrowLeft ||
+        key == LogicalKeyboardKey.arrowUp) {
+      _selectTarget(-1);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.space) {
+      _activateWithoutDrag();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
   }
 
   @override
@@ -484,40 +507,54 @@ final class _PlayDragInputState extends State<PlayDragInput> {
 
     return Positioned.fromRect(
       rect: hitRect,
-      child: Semantics(
-        button: true,
-        label: widget.spec.handleLabel,
-        onTap: _activateWithoutDrag,
-        child: Listener(
-          behavior: HitTestBehavior.opaque,
-          onPointerDown: _pointerDown,
-          onPointerUp: _pointerEnded,
-          onPointerCancel: _pointerEnded,
-          child: GestureDetector(
+      child: Focus(
+        onKeyEvent: _handleKeyEvent,
+        child: Semantics(
+          button: true,
+          focusable: true,
+          label: widget.spec.handleLabel,
+          value: widget.spec.targets.length > 1
+              ? 'Target ${_selectedTargetIndex + 1} of '
+                    '${widget.spec.targets.length}'
+              : null,
+          onTap: _activateWithoutDrag,
+          onIncrease: widget.spec.targets.length > 1
+              ? () => _selectTarget(1)
+              : null,
+          onDecrease: widget.spec.targets.length > 1
+              ? () => _selectTarget(-1)
+              : null,
+          child: Listener(
             behavior: HitTestBehavior.opaque,
-            onPanUpdate: (details) => _move(details, bounds),
-            onPanEnd: (_) => _finish(),
-            onPanCancel: _cancel,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Positioned.fromRect(
-                  rect: localVisualRect,
-                  child: DecoratedBox(
-                    key: const ValueKey<String>('play-drag-object'),
-                    decoration: BoxDecoration(
-                      color: colorScheme.primaryContainer,
-                      border: Border.all(
-                        color: colorScheme.onPrimaryContainer,
-                        width: 1.5,
-                      ),
-                      borderRadius: BorderRadius.circular(
-                        visualRect.shortestSide / 2,
+            onPointerDown: _pointerDown,
+            onPointerUp: _pointerEnded,
+            onPointerCancel: _pointerEnded,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onPanUpdate: (details) => _move(details, bounds),
+              onPanEnd: (_) => _finish(),
+              onPanCancel: _cancel,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned.fromRect(
+                    rect: localVisualRect,
+                    child: DecoratedBox(
+                      key: const ValueKey<String>('play-drag-object'),
+                      decoration: BoxDecoration(
+                        color: colorScheme.primaryContainer,
+                        border: Border.all(
+                          color: colorScheme.onPrimaryContainer,
+                          width: 1.5,
+                        ),
+                        borderRadius: BorderRadius.circular(
+                          visualRect.shortestSide / 2,
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -525,6 +562,34 @@ final class _PlayDragInputState extends State<PlayDragInput> {
     );
   }
 }
+
+bool _dragSpecsEquivalent(PlayDragInputSpec left, PlayDragInputSpec right) {
+  if (left.origin != right.origin ||
+      left.size != right.size ||
+      left.handleLabel != right.handleLabel ||
+      left.showTargetHints != right.showTargetHints ||
+      left.targets.length != right.targets.length) {
+    return false;
+  }
+  for (var index = 0; index < left.targets.length; index += 1) {
+    final leftTarget = left.targets[index];
+    final rightTarget = right.targets[index];
+    if (leftTarget.id != rightTarget.id ||
+        !_normalizedRectsEquivalent(leftTarget.rect, rightTarget.rect)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool _normalizedRectsEquivalent(
+  PlayNormalizedRect left,
+  PlayNormalizedRect right,
+) =>
+    left.x == right.x &&
+    left.y == right.y &&
+    left.width == right.width &&
+    left.height == right.height;
 
 final class PlayInputUnavailable extends StatelessWidget {
   const PlayInputUnavailable({required this.type, super.key});
