@@ -157,12 +157,19 @@ final class _GuestChrome extends StatelessWidget {
         ),
         Align(
           alignment: AlignmentDirectional.centerEnd,
-          child: IconButton(
-            key: const ValueKey<String>('open-search'),
-            tooltip: 'Search Mixli',
-            onPressed: onSearch,
-            icon: const Icon(Icons.search_rounded),
-            color: Colors.white,
+          child: Tooltip(
+            message: 'Search Mixli',
+            excludeFromSemantics: true,
+            child: Semantics(
+              label: 'Search Mixli',
+              button: true,
+              child: IconButton(
+                key: const ValueKey<String>('open-search'),
+                onPressed: onSearch,
+                icon: const Icon(Icons.search_rounded),
+                color: Colors.white,
+              ),
+            ),
           ),
         ),
       ],
