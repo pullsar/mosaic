@@ -77,6 +77,7 @@ final class _MosaicAppState extends State<MosaicApp> {
   late final FlutterLifecycleBridge _lifecycle;
   _ConsumerSearchScope? _searchScope;
   bool _directManipulationActive = false;
+  String? _conversionPromptDeferredFor;
   var _semanticResumeEpoch = 0;
 
   @override
@@ -220,6 +221,7 @@ final class _MosaicAppState extends State<MosaicApp> {
     required Telemetry telemetry,
     required bool active,
     required ValueChanged<bool> onDirectManipulationChanged,
+    VoidCallback? onMeaningfulInteraction,
   }) {
     final videoDiagnostics = PlayVideoDiagnosticObserver(
       telemetry: telemetry,
@@ -243,16 +245,37 @@ final class _MosaicAppState extends State<MosaicApp> {
       key: ValueKey<String>('play:$playId:$revisionId'),
       play: play,
       mediaBuilder: media.call,
-      onResolved: (resolution) => recordPlayResolutionTelemetry(
-        telemetry,
-        playId: playId,
-        outcome: resolution.outcome,
-        attempts: resolution.session.attempts,
-        completed: resolution.session.ended,
-        correct: resolution.wasCorrect,
-      ),
+      onResolved: (resolution) {
+        onMeaningfulInteraction?.call();
+        recordPlayResolutionTelemetry(
+          telemetry,
+          playId: playId,
+          outcome: resolution.outcome,
+          attempts: resolution.session.attempts,
+          completed: resolution.session.ended,
+          correct: resolution.wasCorrect,
+        );
+      },
       onDirectManipulationChanged: onDirectManipulationChanged,
     );
+  }
+
+  void _recordMeaningfulInteraction(String playId, String revisionId) {
+    final identity = '$playId\u0000$revisionId';
+    if (_conversionPromptDeferredFor != identity && mounted) {
+      setState(() => _conversionPromptDeferredFor = identity);
+    }
+    unawaited(_guestEngagement.recordMeaningfulInteraction());
+  }
+
+  void _releaseConversionPromptBlock(String playId, String revisionId) {
+    final deferredFor = _conversionPromptDeferredFor;
+    if (deferredFor == null ||
+        deferredFor == '$playId\u0000$revisionId' ||
+        !mounted) {
+      return;
+    }
+    setState(() => _conversionPromptDeferredFor = null);
   }
 
   Widget _buildFeedPlay(
@@ -274,6 +297,8 @@ final class _MosaicAppState extends State<MosaicApp> {
       telemetry: telemetry,
       active: active,
       onDirectManipulationChanged: onDirectManipulationChanged,
+      onMeaningfulInteraction: () =>
+          _recordMeaningfulInteraction(item.playId, item.revisionId),
     );
     return ConsumerActionControls(
       child: surface,
@@ -364,6 +389,7 @@ final class _MosaicAppState extends State<MosaicApp> {
     if (event == MosaicEventName.playVisible) {
       final playId = payload['playId'];
       if (playId is String && playId.trim().isNotEmpty) {
+        _releaseConversionPromptBlock(playId, playRevisionId);
         unawaited(
           _guestEngagement.recordVisible(
             playId: playId,
@@ -400,6 +426,7 @@ final class _MosaicAppState extends State<MosaicApp> {
   @override
   Widget build(BuildContext context) {
     final scope = _searchScope;
+    final conversionPromptBlocked = _conversionPromptDeferredFor != null;
     final feedKey = scope == null
         ? 'consumer-feed:default'
         : 'consumer-feed:${scope.intent.intent.wireName}:${scope.intent.topicId}';
@@ -445,7 +472,8 @@ final class _MosaicAppState extends State<MosaicApp> {
       home: Builder(
         builder: (homeContext) => GuestHome(
           engagement: _guestEngagement,
-          directManipulationActive: _directManipulationActive,
+          directManipulationActive:
+              _directManipulationActive || conversionPromptBlocked,
           onSearch: () => unawaited(_openSearch(homeContext)),
           child: Stack(
             fit: StackFit.expand,

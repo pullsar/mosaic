@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:play_flutter/play_flutter.dart';
 
 import 'guest_engagement.dart';
 
@@ -102,64 +103,143 @@ final class _GuestHomeState extends State<GuestHome> {
   Widget build(BuildContext context) => Scaffold(
     key: const ValueKey<String>('guest-home'),
     backgroundColor: Colors.black,
-    body: Stack(
-      fit: StackFit.expand,
-      children: <Widget>[
-        widget.child,
-        SafeArea(
-          minimum: const EdgeInsets.fromLTRB(16, 8, 8, 0),
-          child: Align(
-            alignment: AlignmentDirectional.topCenter,
-            child: SizedBox(
-              height: 48,
-              child: Stack(
-                alignment: Alignment.center,
-                children: <Widget>[
-                  const Align(
-                    alignment: AlignmentDirectional.centerStart,
-                    child: Text(
-                      'mixli',
-                      maxLines: 1,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 22,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -1,
-                      ),
-                    ),
-                  ),
-                  const Text(
-                    'For You',
-                    maxLines: 1,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  Align(
-                    alignment: AlignmentDirectional.centerEnd,
-                    child: Semantics(
-                      button: true,
-                      label: 'Search Mixli',
-                      excludeSemantics: true,
-                      child: IconButton(
-                        key: const ValueKey<String>('open-search'),
-                        tooltip: 'Search Mixli',
-                        onPressed: widget.onSearch,
-                        icon: const Icon(Icons.search_rounded),
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ],
+    body: LayoutBuilder(
+      builder: (context, constraints) {
+        final mediaQuery = MediaQuery.of(context);
+        final composition = PlayViewportComposition.fromConstraints(
+          constraints,
+          safeInsets: mediaQuery.padding,
+          textScaler: mediaQuery.textScaler,
+        );
+        return PlayViewportScope(
+          composition: composition,
+          child: Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              widget.child,
+              Positioned.fromRect(
+                rect: composition.chromeRect,
+                child: _GuestChrome(onSearch: widget.onSearch),
               ),
-            ),
+              Positioned.fromRect(
+                rect: composition.navigationRect,
+                child: const _GuestNavigation(),
+              ),
+            ],
+          ),
+        );
+      },
+    ),
+  );
+}
+
+final class _GuestChrome extends StatelessWidget {
+  const _GuestChrome({required this.onSearch});
+
+  final VoidCallback onSearch;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: Colors.transparent,
+    child: Stack(
+      alignment: Alignment.center,
+      children: <Widget>[
+        const Text(
+          'For You',
+          maxLines: 1,
+          overflow: TextOverflow.fade,
+          softWrap: false,
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        Align(
+          alignment: AlignmentDirectional.centerEnd,
+          child: IconButton(
+            key: const ValueKey<String>('open-search'),
+            tooltip: 'Search Mixli',
+            onPressed: onSearch,
+            icon: const Icon(Icons.search_rounded),
+            color: Colors.white,
           ),
         ),
       ],
     ),
   );
+}
+
+final class _GuestNavigation extends StatelessWidget {
+  const _GuestNavigation();
+
+  static const _items = <_GuestNavigationItem>[
+    _GuestNavigationItem('play', 'Play', Icons.play_circle_outline_rounded),
+    _GuestNavigationItem('saved', 'Saved', Icons.bookmark_border_rounded),
+    _GuestNavigationItem('create', 'Create', Icons.add_circle_outline_rounded),
+    _GuestNavigationItem('me', 'Me', Icons.person_outline_rounded),
+  ];
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: Colors.black.withValues(alpha: 0.88),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        for (final item in _items)
+          Expanded(
+            child: Semantics(
+              selected: item.id == 'play',
+              child: TextButton(
+                key: ValueKey<String>('guest-nav-${item.id}'),
+                onPressed: () {
+                  if (item.id == 'play') return;
+                  ScaffoldMessenger.of(context)
+                    ..hideCurrentSnackBar()
+                    ..showSnackBar(
+                      SnackBar(content: Text('${item.label} is coming soon.')),
+                    );
+                },
+                style: TextButton.styleFrom(
+                  foregroundColor: item.id == 'play'
+                      ? Colors.white
+                      : const Color(0xFFB9B9C0),
+                  minimumSize: const Size(48, 48),
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  shape: const RoundedRectangleBorder(),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: <Widget>[
+                    Icon(item.icon, size: 20),
+                    const SizedBox(height: 2),
+                    Text(
+                      item.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.fade,
+                      softWrap: false,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
+    ),
+  );
+}
+
+final class _GuestNavigationItem {
+  const _GuestNavigationItem(this.id, this.label, this.icon);
+
+  final String id;
+  final String label;
+  final IconData icon;
 }
 
 final class _GuestSignupSheet extends StatelessWidget {
@@ -213,7 +293,7 @@ final class _GuestSignupSheet extends StatelessWidget {
               backgroundColor: Colors.white,
               foregroundColor: Colors.black,
             ),
-            child: const Text('Join Mixli'),
+            child: const Text('Get early access'),
           ),
         ),
         const SizedBox(height: 8),

@@ -215,6 +215,7 @@ void main() {
       );
 
       expect(composition.utilityPlacement, PlayUtilityPlacement.horizontalDock);
+      expect(composition.chromeRect.height, greaterThanOrEqualTo(48));
       expect(
         composition.stageRect.width,
         greaterThanOrEqualTo(_minimumCompactLandscapeStage.width),

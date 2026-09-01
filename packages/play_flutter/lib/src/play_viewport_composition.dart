@@ -211,7 +211,7 @@ final class PlayViewportComposition {
   static const double _navigationHeight = 56;
   static const double _regionGap = 16;
   static const double _compactLandscapeHeight = 600;
-  static const double _compactChromeHeight = 40;
+  static const double _compactChromeHeight = 48;
   static const double _compactUtilityDockHeight = 48;
   static const Size _minimumRailStage = Size(320, 240);
 

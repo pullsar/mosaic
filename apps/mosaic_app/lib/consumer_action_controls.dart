@@ -1,10 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:play_flutter/play_flutter.dart';
 
 import 'consumer_action_controller.dart';
 import 'consumer_api_client.dart';
 import 'consumer_feed.dart';
+import 'consumer_local_state.dart';
 
 typedef ConsumerShareCallback = FutureOr<void> Function(ConsumerFeedItem item);
 
@@ -80,72 +82,83 @@ final class _ConsumerActionControlsState extends State<ConsumerActionControls> {
     if (!widget.active) return widget.child;
     final state = widget.controller.stateFor(widget.item.playId);
     final busy = widget.controller.isPlayBusy(widget.item.playId);
+    final composition = PlayViewportScope.maybeOf(context);
+    var actionAxis = Axis.horizontal;
+    if (composition?.utilityPlacement == PlayUtilityPlacement.trailingRail) {
+      actionAxis = Axis.vertical;
+    }
+    final actions = _buildActions(
+      context,
+      state: state,
+      busy: busy,
+      axis: actionAxis,
+    );
 
     return Stack(
       fit: StackFit.expand,
       children: <Widget>[
         widget.child,
-        SafeArea(
-          minimum: const EdgeInsets.fromLTRB(12, 12, 12, 10),
-          child: Align(
-            alignment: AlignmentDirectional.bottomCenter,
-            child: Material(
-              color: Theme.of(
-                context,
-              ).colorScheme.surface.withValues(alpha: 0.86),
-              borderRadius: BorderRadius.circular(28),
-              clipBehavior: Clip.antiAlias,
-              child: Semantics(
-                container: true,
-                label: 'Play actions',
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    IconButton(
-                      key: const ValueKey<String>('play-action-save'),
-                      tooltip: state?.saved == true ? 'Unsave' : 'Save',
-                      onPressed: busy ? null : _toggleSave,
-                      icon: Icon(
-                        state?.saved == true
-                            ? Icons.bookmark
-                            : Icons.bookmark_border,
-                      ),
-                    ),
-                    IconButton(
-                      key: const ValueKey<String>('play-action-more-like'),
-                      tooltip: 'More like this',
-                      onPressed: busy || state?.moreLikeThis == true
-                          ? null
-                          : _moreLikeThis,
-                      icon: Icon(
-                        state?.moreLikeThis == true
-                            ? Icons.thumb_up
-                            : Icons.thumb_up_outlined,
-                      ),
-                    ),
-                    if (widget.onShare != null)
-                      IconButton(
-                        key: const ValueKey<String>('play-action-share'),
-                        tooltip: 'Share',
-                        onPressed: _share,
-                        icon: const Icon(Icons.ios_share_outlined),
-                      ),
-                    PopupMenuButton<String>(
-                      key: const ValueKey<String>('play-action-more'),
-                      tooltip: 'More',
-                      icon: const Icon(Icons.more_horiz),
-                      onSelected: _handleMenuAction,
-                      itemBuilder: _menuItems,
-                    ),
-                  ],
-                ),
-              ),
+        if (composition != null)
+          Positioned.fromRect(
+            rect: composition.utilityRect,
+            child: Center(child: actions),
+          )
+        else
+          SafeArea(
+            minimum: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+            child: Align(
+              alignment: AlignmentDirectional.bottomCenter,
+              child: actions,
             ),
           ),
-        ),
       ],
     );
   }
+
+  Widget _buildActions(
+    BuildContext context, {
+    required ConsumerPlayActionState? state,
+    required bool busy,
+    required Axis axis,
+  }) => Material(
+    color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.86),
+    borderRadius: BorderRadius.circular(28),
+    clipBehavior: Clip.antiAlias,
+    child: Semantics(
+      container: true,
+      label: 'Play actions',
+      child: Flex(
+        direction: axis,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          IconButton(
+            key: const ValueKey<String>('play-action-save'),
+            tooltip: state?.saved == true ? 'Unsave' : 'Save',
+            onPressed: busy ? null : _toggleSave,
+            icon: Icon(
+              state?.saved == true
+                  ? Icons.bookmark
+                  : Icons.bookmark_border,
+            ),
+          ),
+          if (widget.onShare != null)
+            IconButton(
+              key: const ValueKey<String>('play-action-share'),
+              tooltip: 'Share',
+              onPressed: _share,
+              icon: const Icon(Icons.ios_share_outlined),
+            ),
+          PopupMenuButton<String>(
+            key: const ValueKey<String>('play-action-more'),
+            tooltip: 'More',
+            icon: const Icon(Icons.more_horiz),
+            onSelected: _handleMenuAction,
+            itemBuilder: _menuItems,
+          ),
+        ],
+      ),
+    ),
+  );
 
   Future<void> _toggleSave() async {
     await widget.controller.toggleSave(
@@ -171,6 +184,22 @@ final class _ConsumerActionControlsState extends State<ConsumerActionControls> {
   List<PopupMenuEntry<String>> _menuItems(BuildContext context) {
     final entries = <PopupMenuEntry<String>>[];
     final state = widget.controller.stateFor(widget.item.playId);
+    entries.add(
+      PopupMenuItem<String>(
+        value: 'more_like_this',
+        enabled: state?.moreLikeThis != true,
+        child: ListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          leading: Icon(
+            state?.moreLikeThis == true
+                ? Icons.thumb_up
+                : Icons.thumb_up_outlined,
+          ),
+          title: const Text('More like this'),
+        ),
+      ),
+    );
     if (state?.notInterested != true) {
       entries.add(
         const PopupMenuItem<String>(
@@ -233,6 +262,10 @@ final class _ConsumerActionControlsState extends State<ConsumerActionControls> {
   }
 
   Future<void> _handleMenuAction(String action) async {
+    if (action == 'more_like_this') {
+      await _moreLikeThis();
+      return;
+    }
     if (action == 'not_interested') {
       final applied = await widget.controller.notInterested(
         playId: widget.item.playId,
