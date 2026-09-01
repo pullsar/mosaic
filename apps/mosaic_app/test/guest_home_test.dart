@@ -72,18 +72,14 @@ Widget _guestHome({
       child: child,
     );
   }
-  return Function.apply(
-        GuestHome.new,
-        const <Object?>[],
-        <Symbol, dynamic>{
-          #engagement: controller,
-          #directManipulationActive: directManipulationActive,
-          #onSearch: () {},
-          #activeSearchLabel: activeSearchLabel,
-          #onClearSearch: onClearSearch,
-          #child: child,
-        },
-      )
+  return Function.apply(GuestHome.new, const <Object?>[], <Symbol, dynamic>{
+        #engagement: controller,
+        #directManipulationActive: directManipulationActive,
+        #onSearch: () {},
+        #activeSearchLabel: activeSearchLabel,
+        #onClearSearch: onClearSearch,
+        #child: child,
+      })
       as Widget;
 }
 
@@ -440,10 +436,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Accounts are opening soon'), findsOneWidget);
     expect(store.state?.seenIdentities, isEmpty);
-    expect(
-      store.state?.toJson()['hasMeaningfulInteraction'],
-      isFalse,
-    );
+    expect(store.state?.toJson()['hasMeaningfulInteraction'], isFalse);
 
     final restarted = GuestEngagementController(
       store: store,

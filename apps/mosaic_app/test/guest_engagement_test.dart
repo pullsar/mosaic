@@ -108,44 +108,44 @@ void main() {
     expect(controller.state.seenIdentities, hasLength(1));
   });
 
-  test('dismissal resets the baseline before five fresh interactions', () async {
-    final store = _MemoryGuestStore();
-    var clock = now;
-    final controller = GuestEngagementController(
-      store: store,
-      clock: () => clock,
-    );
-    addTearDown(controller.dispose);
-    await controller.initialize();
-    for (var index = 0; index < 8; index += 1) {
-      await controller.recordVisible(
-        playId: 'play_$index',
-        revisionId: 'rev_$index',
+  test(
+    'dismissal resets the baseline before five fresh interactions',
+    () async {
+      final store = _MemoryGuestStore();
+      var clock = now;
+      final controller = GuestEngagementController(
+        store: store,
+        clock: () => clock,
       );
-    }
+      addTearDown(controller.dispose);
+      await controller.initialize();
+      for (var index = 0; index < 8; index += 1) {
+        await controller.recordVisible(
+          playId: 'play_$index',
+          revisionId: 'rev_$index',
+        );
+      }
 
-    await controller.dismissPrompt();
-    expect(controller.shouldPrompt, isFalse);
-    expect(controller.state.seenIdentities, isEmpty);
-    expect(
-      controller.state.toJson()['hasMeaningfulInteraction'],
-      isFalse,
-    );
-    clock = now.add(const Duration(days: 6, hours: 23));
-    expect(controller.shouldPrompt, isFalse);
-    clock = now.add(const Duration(days: 7));
-    expect(controller.shouldPrompt, isFalse);
+      await controller.dismissPrompt();
+      expect(controller.shouldPrompt, isFalse);
+      expect(controller.state.seenIdentities, isEmpty);
+      expect(controller.state.toJson()['hasMeaningfulInteraction'], isFalse);
+      clock = now.add(const Duration(days: 6, hours: 23));
+      expect(controller.shouldPrompt, isFalse);
+      clock = now.add(const Duration(days: 7));
+      expect(controller.shouldPrompt, isFalse);
 
-    for (var index = 0; index < 5; index += 1) {
-      await controller.recordVisible(
-        playId: 'fresh_$index',
-        revisionId: 'rev_fresh_$index',
-      );
-    }
-    expect(controller.shouldPrompt, isFalse);
-    await controller.recordMeaningfulInteraction();
-    expect(controller.shouldPrompt, isTrue);
-  });
+      for (var index = 0; index < 5; index += 1) {
+        await controller.recordVisible(
+          playId: 'fresh_$index',
+          revisionId: 'rev_fresh_$index',
+        );
+      }
+      expect(controller.shouldPrompt, isFalse);
+      await controller.recordMeaningfulInteraction();
+      expect(controller.shouldPrompt, isTrue);
+    },
+  );
 
   test('dismissal requires eight fresh views without an interaction', () async {
     final store = _MemoryGuestStore();
@@ -221,10 +221,7 @@ void main() {
       'dismissedAt': null,
     });
     expect(legacyState.seenIdentities, <String>['legacy\u0000rev_1']);
-    expect(
-      legacyState.toJson()['hasMeaningfulInteraction'],
-      isFalse,
-    );
+    expect(legacyState.toJson()['hasMeaningfulInteraction'], isFalse);
     expect(
       () => GuestEngagementState.fromJson(<String, Object?>{
         'seenIdentities': <Object?>[1],
