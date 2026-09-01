@@ -101,10 +101,7 @@ final class _GoldenHarness {
 }
 
 final class _ScenarioHandle {
-  _ScenarioHandle({
-    required this.harness,
-    required this.pendingCanvas,
-  });
+  _ScenarioHandle({required this.harness, required this.pendingCanvas});
 
   final _GoldenHarness harness;
   final _PendingCanvasResolver? pendingCanvas;
