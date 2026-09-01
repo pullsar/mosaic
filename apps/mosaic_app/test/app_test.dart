@@ -183,9 +183,7 @@ void main() {
       findsNothing,
     );
 
-    await tester.tap(
-      find.byKey(const ValueKey<String>('play-action-share')),
-    );
+    await tester.tap(find.byKey(const ValueKey<String>('play-action-share')));
     await tester.pump();
     expect(find.text('Share links are opening soon'), findsOneWidget);
 
