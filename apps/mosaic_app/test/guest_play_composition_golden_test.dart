@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,7 +10,6 @@ import 'package:mosaic_app/app_event_runtime.dart';
 import 'package:mosaic_app/consumer_action_controller.dart';
 import 'package:mosaic_app/consumer_action_controls.dart';
 import 'package:mosaic_app/consumer_api_client.dart';
-import 'package:mosaic_app/consumer_feed.dart';
 import 'package:mosaic_app/guest_engagement.dart';
 import 'package:mosaic_app/guest_home.dart';
 import 'package:mosaic_app/main.dart';

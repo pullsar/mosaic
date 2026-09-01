@@ -314,13 +314,11 @@ PlayViewportComposition _compositionWithTextScaler(
   required EdgeInsets safeInsets,
   required TextScaler textScaler,
 }) {
-  final dynamic factory = PlayViewportComposition.fromConstraints;
-  final result = factory(
+  return PlayViewportComposition.fromConstraints(
     BoxConstraints.tight(viewport),
     safeInsets: safeInsets,
     textScaler: textScaler,
   );
-  return result as PlayViewportComposition;
 }
 
 void _expectRegionsInBounds(PlayViewportComposition composition) {

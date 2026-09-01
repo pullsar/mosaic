@@ -336,7 +336,7 @@ final class _BoundedTextViewportState extends State<_BoundedTextViewport> {
 }
 
 final class _TextGroup extends StatelessWidget {
-  const _TextGroup({required this.layers, super.key});
+  const _TextGroup({required this.layers});
 
   final List<PresentationLayer> layers;
 
