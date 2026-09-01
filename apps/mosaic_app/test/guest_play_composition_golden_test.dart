@@ -45,8 +45,7 @@ final class _GoldenAudioEngine implements AudioEngine {
 }
 
 final class _PendingCanvasResolver implements PlayCanvasAssetResolver {
-  final Completer<PlayCanvasAsset?> _pending =
-      Completer<PlayCanvasAsset?>();
+  final Completer<PlayCanvasAsset?> _pending = Completer<PlayCanvasAsset?>();
 
   @override
   Future<PlayCanvasAsset?> resolve(String assetId) => _pending.future;
@@ -475,17 +474,23 @@ ThemeData _goldenTheme(Brightness brightness) => ThemeData(
 );
 
 _Fixture _playFixture(String name) {
-  final raw = jsonDecode(
-    File('../../packages/play_schema/fixtures/$name').readAsStringSync(),
-  ) as Map<String, Object?>;
+  final raw =
+      jsonDecode(
+            File(
+              '../../packages/play_schema/fixtures/$name',
+            ).readAsStringSync(),
+          )
+          as Map<String, Object?>;
   return (json: raw, play: PlayDocument.fromJson(raw));
 }
 
 PlayCanvasAsset _canvasFixture(String name) {
-  final raw = jsonDecode(
-    File(
-      '../../packages/play_flutter/fixtures/canvas/$name',
-    ).readAsStringSync(),
-  ) as Map<String, Object?>;
+  final raw =
+      jsonDecode(
+            File(
+              '../../packages/play_flutter/fixtures/canvas/$name',
+            ).readAsStringSync(),
+          )
+          as Map<String, Object?>;
   return PlayCanvasAsset.fromJson(raw);
 }
