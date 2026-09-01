@@ -505,10 +505,8 @@ final class MixliAuthoredPlayDirection extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) => Directionality(
-    textDirection: TextDirection.ltr,
-    child: child,
-  );
+  Widget build(BuildContext context) =>
+      Directionality(textDirection: TextDirection.ltr, child: child);
 }
 
 ThemeData mixliTheme(Brightness brightness) {
