@@ -87,6 +87,7 @@ final class _BlockingGuestStore implements GuestEngagementStore {
   GuestEngagementState? state;
   Completer<void>? _writeGate;
   bool blockedWriteStarted = false;
+  int writes = 0;
 
   void blockNextWrite() {
     _writeGate = Completer<void>();
@@ -110,6 +111,7 @@ final class _BlockingGuestStore implements GuestEngagementStore {
       _writeGate = null;
     }
     state = next;
+    writes += 1;
   }
 }
 
@@ -404,11 +406,13 @@ void main() {
       );
     }
     store.blockNextWrite();
+    final writesBeforeDismissal = store.writes;
 
     await tester.pumpWidget(
       _app(controller: controller, child: const Text('Eligible Play')),
     );
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Not now'));
     await tester.tap(find.text('Not now'));
     await tester.pump();
 
@@ -422,8 +426,48 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Your Mixli is getting good'), findsNothing);
+    expect(store.writes, writesBeforeDismissal + 1);
     expect(store.state?.seenIdentities, isEmpty);
     expect(store.state?.toJson()['hasMeaningfulInteraction'], isFalse);
+  });
+
+  testWidgets('system Back waits for one durable prompt reset', (tester) async {
+    final store = _BlockingGuestStore();
+    final controller = GuestEngagementController(
+      store: store,
+      clock: () => DateTime.utc(2026, 8, 31, 12),
+    );
+    addTearDown(controller.dispose);
+    await controller.initialize();
+    for (var index = 0; index < 8; index += 1) {
+      await controller.recordVisible(
+        playId: 'before_back_$index',
+        revisionId: 'rev_before_back_$index',
+      );
+    }
+    store.blockNextWrite();
+    final writesBeforeBack = store.writes;
+
+    await tester.pumpWidget(
+      _app(controller: controller, child: const Text('Eligible Play')),
+    );
+    await tester.pumpAndSettle();
+    final popFuture = tester.binding.handlePopRoute();
+    await tester.pump();
+
+    expect(store.blockedWriteStarted, isTrue);
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+    expect(find.text('Your Mixli is getting good'), findsOneWidget);
+    expect(store.writes, writesBeforeBack);
+    if (!store.blockedWriteStarted) return;
+    store.releaseWrite();
+    await popFuture;
+    await tester.pumpAndSettle();
+
+    expect(find.text('Your Mixli is getting good'), findsNothing);
+    expect(store.writes, writesBeforeBack + 1);
+    expect(store.state?.seenIdentities, isEmpty);
   });
 
   testWidgets('join opens truthful early-access page', (tester) async {
