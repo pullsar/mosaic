@@ -306,6 +306,15 @@ final class _MosaicAppState extends State<MosaicApp> {
       feedRequestId: feedRequestId,
       controller: _actionController,
       onAdvance: _feedController.advance,
+      onShare: (_) {
+        final messenger = ScaffoldMessenger.maybeOf(context);
+        if (messenger == null) return;
+        messenger
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            const SnackBar(content: Text('Share links are opening soon')),
+          );
+      },
       active: active,
     );
   }

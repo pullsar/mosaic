@@ -85,26 +85,22 @@ final class _GuestHomeState extends State<GuestHome> {
       context: context,
       useSafeArea: true,
       isScrollControlled: true,
+      isDismissible: false,
+      enableDrag: false,
       backgroundColor: const Color(0xFF101012),
       barrierColor: Colors.black.withValues(alpha: 0.62),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
-      builder: (sheetContext) => _GuestSignupSheet(
-        onJoin: () => Navigator.of(sheetContext).pop(_GuestPromptResult.join),
-        onDismiss: () =>
-            Navigator.of(sheetContext).pop(_GuestPromptResult.dismiss),
+      builder: (_) => _GuestSignupSheet(
+        onDisposition: widget.engagement.recordPromptDisposition,
       ),
     );
     if (!mounted) return;
     if (result == _GuestPromptResult.join) {
-      await widget.engagement.recordPromptDisposition();
-      if (!mounted) return;
       await Navigator.of(context).push<void>(
         MaterialPageRoute<void>(builder: (_) => const _EarlyAccessPage()),
       );
-    } else {
-      await widget.engagement.recordPromptDisposition();
     }
   }
 
@@ -296,72 +292,101 @@ final class _GuestNavigationItem {
   final IconData icon;
 }
 
-final class _GuestSignupSheet extends StatelessWidget {
-  const _GuestSignupSheet({required this.onJoin, required this.onDismiss});
+final class _GuestSignupSheet extends StatefulWidget {
+  const _GuestSignupSheet({required this.onDisposition});
 
-  final VoidCallback onJoin;
-  final VoidCallback onDismiss;
+  final Future<void> Function() onDisposition;
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: EdgeInsets.fromLTRB(
-      24,
-      12,
-      24,
-      20 + MediaQuery.viewInsetsOf(context).bottom,
-    ),
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        Center(
-          child: Container(
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: Colors.white24,
-              borderRadius: BorderRadius.circular(99),
+  State<_GuestSignupSheet> createState() => _GuestSignupSheetState();
+}
+
+final class _GuestSignupSheetState extends State<_GuestSignupSheet> {
+  bool _submitting = false;
+
+  Future<void> _submit(_GuestPromptResult result) async {
+    if (_submitting) return;
+    setState(() => _submitting = true);
+    try {
+      await widget.onDisposition();
+    } on Object {
+      if (mounted) setState(() => _submitting = false);
+      rethrow;
+    }
+    if (!mounted) return;
+    Navigator.of(context).pop(result);
+  }
+
+  @override
+  Widget build(BuildContext context) => PopScope<_GuestPromptResult>(
+    canPop: false,
+    onPopInvokedWithResult: (didPop, _) {
+      if (!didPop) unawaited(_submit(_GuestPromptResult.dismiss));
+    },
+    child: Padding(
+      padding: EdgeInsets.fromLTRB(
+        24,
+        12,
+        24,
+        20 + MediaQuery.viewInsetsOf(context).bottom,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(99),
+              ),
             ),
           ),
-        ),
-        const SizedBox(height: 24),
-        Text(
-          'Your Mixli is getting good',
-          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-            color: Colors.white,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.5,
-          ),
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'Keep this feed and your progress.',
-          style: TextStyle(color: Color(0xFFB9B9C0), fontSize: 16),
-        ),
-        const SizedBox(height: 24),
-        SizedBox(
-          height: 52,
-          child: FilledButton(
-            onPressed: onJoin,
-            style: FilledButton.styleFrom(
-              backgroundColor: Colors.white,
-              foregroundColor: Colors.black,
-            ),
-            child: const Text('Get early access'),
-          ),
-        ),
-        const SizedBox(height: 8),
-        SizedBox(
-          height: 48,
-          child: TextButton(
-            onPressed: onDismiss,
-            child: const Text(
-              'Not now',
-              style: TextStyle(color: Color(0xFFD7D7DC)),
+          const SizedBox(height: 24),
+          Text(
+            'Your Mixli is getting good',
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.5,
             ),
           ),
-        ),
-      ],
+          const SizedBox(height: 8),
+          const Text(
+            'Keep this feed and your progress.',
+            style: TextStyle(color: Color(0xFFB9B9C0), fontSize: 16),
+          ),
+          const SizedBox(height: 24),
+          SizedBox(
+            height: 52,
+            child: FilledButton(
+              onPressed: _submitting
+                  ? null
+                  : () => _submit(_GuestPromptResult.join),
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: Colors.black,
+              ),
+              child: const Text('Get early access'),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 48,
+            child: TextButton(
+              onPressed: _submitting
+                  ? null
+                  : () => _submit(_GuestPromptResult.dismiss),
+              child: const Text(
+                'Not now',
+                style: TextStyle(color: Color(0xFFD7D7DC)),
+              ),
+            ),
+          ),
+        ],
+      ),
     ),
   );
 }
