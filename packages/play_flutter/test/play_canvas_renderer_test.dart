@@ -26,24 +26,20 @@ const _toneSamplePoints = <String, Offset>{
 typedef _CanvasViewportCase = ({
   String name,
   Size viewport,
-  Size expectedStage,
 });
 
 const _canvasViewportCases = <_CanvasViewportCase>[
   (
     name: 'phone portrait',
     viewport: Size(390, 844),
-    expectedStage: Size(390, 487.5),
   ),
   (
     name: 'phone landscape',
     viewport: Size(844, 390),
-    expectedStage: Size(312, 390),
   ),
   (
     name: 'desktop landscape',
     viewport: Size(1440, 900),
-    expectedStage: Size(720, 900),
   ),
 ];
 
@@ -129,8 +125,23 @@ Future<Map<String, Color>> _renderTonePixels(
   final boundary = tester.renderObject<RenderRepaintBoundary>(
     find.byKey(boundaryKey),
   );
-  final image = await boundary.toImage(pixelRatio: 1);
-  final bytes = (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!;
+  final capture = await tester.runAsync(() async {
+    final image = await boundary.toImage(pixelRatio: 1);
+    try {
+      final bytes = await image.toByteData(
+        format: ui.ImageByteFormat.rawRgba,
+      );
+      if (bytes == null) {
+        throw StateError('Canvas image capture returned no pixel data.');
+      }
+      return (bytes: bytes, height: image.height, width: image.width);
+    } finally {
+      image.dispose();
+    }
+  });
+  if (capture == null) {
+    throw StateError('Canvas image capture did not complete.');
+  }
   final colors = <String, Color>{};
   for (final sample in _toneSamplePoints.entries) {
     final globalPoint = paintRect.topLeft + Offset(
@@ -138,17 +149,16 @@ Future<Map<String, Color>> _renderTonePixels(
       paintRect.height * sample.value.dy,
     );
     final localPoint = globalPoint - boundaryRect.topLeft;
-    final x = localPoint.dx.floor().clamp(0, image.width - 1).toInt();
-    final y = localPoint.dy.floor().clamp(0, image.height - 1).toInt();
-    final offset = (y * image.width + x) * 4;
+    final x = localPoint.dx.floor().clamp(0, capture.width - 1).toInt();
+    final y = localPoint.dy.floor().clamp(0, capture.height - 1).toInt();
+    final offset = (y * capture.width + x) * 4;
     colors[sample.key] = Color.fromARGB(
-      bytes.getUint8(offset + 3),
-      bytes.getUint8(offset),
-      bytes.getUint8(offset + 1),
-      bytes.getUint8(offset + 2),
+      capture.bytes.getUint8(offset + 3),
+      capture.bytes.getUint8(offset),
+      capture.bytes.getUint8(offset + 1),
+      capture.bytes.getUint8(offset + 2),
     );
   }
-  image.dispose();
   return colors;
 }
 
@@ -390,17 +400,28 @@ void main() {
           closeTo(viewportRect.center.dy, 0.001),
         );
         expect(
-          stageRect.width,
-          closeTo(viewportCase.expectedStage.width, 0.001),
+          stageRect.left,
+          greaterThanOrEqualTo(viewportRect.left),
         );
         expect(
-          stageRect.height,
-          closeTo(viewportCase.expectedStage.height, 0.001),
+          stageRect.top,
+          greaterThanOrEqualTo(viewportRect.top),
         );
-        expect(stageRect.width, lessThanOrEqualTo(720));
+        expect(stageRect.right, lessThanOrEqualTo(viewportRect.right));
+        expect(stageRect.bottom, lessThanOrEqualTo(viewportRect.bottom));
+        final maximumWidth = viewportCase.viewport.width < 720
+            ? viewportCase.viewport.width
+            : 720.0;
+        expect(stageRect.width, lessThanOrEqualTo(maximumWidth));
         expect(
           stageRect.width / stageRect.height,
           closeTo(4 / 5, 0.000001),
+        );
+        expect(
+          (stageRect.width - maximumWidth).abs() < 0.001 ||
+              (stageRect.height - viewportCase.viewport.height).abs() < 0.001,
+          isTrue,
+          reason: 'the stage must saturate its limiting viewport dimension',
         );
       },
     );
