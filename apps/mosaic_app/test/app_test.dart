@@ -190,4 +190,50 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
   });
+
+  testWidgets(
+    'real RTL app keeps English authored Play LTR while shell remains RTL',
+    (tester) async {
+      tester.binding.platformDispatcher.localeTestValue = const Locale(
+        'ar',
+        'XB',
+      );
+      addTearDown(tester.binding.platformDispatcher.clearLocaleTestValue);
+      final state = _SeededAppState(
+        ConsumerFeedCache(
+          requestId: 'request_app_rtl',
+          items: <ConsumerFeedItem>[_seededItem()],
+          updatedAt: DateTime.now().toUtc(),
+        ),
+      );
+      final runtime = AppEventRuntime.create(
+        resources: AppEventResources(
+          outbox: _AppOutbox(),
+          consumerLocalState: state,
+          actorId: 'actor_app_rtl',
+          actorAccessToken: 'A' * 43,
+          close: () async {},
+        ),
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(child: MosaicApp(eventRuntime: runtime)),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        Directionality.of(
+          tester.element(find.byKey(const ValueKey<String>('guest-home'))),
+        ),
+        TextDirection.rtl,
+      );
+      expect(
+        Directionality.of(tester.element(find.text('Pick one.'))),
+        TextDirection.ltr,
+      );
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    },
+  );
 }
