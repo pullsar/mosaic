@@ -125,15 +125,15 @@ void main() {
         expect(handle, findsOneWidget);
         expect(targetHint, findsOneWidget);
         _expectRectClose(tester.getRect(canvasPaint), expectedStage);
-        final expectedHandle = _mapRect(
-          expectedStage,
-          _dragOrigin & _dragSize,
-        );
+        final expectedHandle = _mapRect(expectedStage, _dragOrigin & _dragSize);
         final expectedTarget = _mapRect(expectedStage, _target);
         _expectRectClose(tester.getRect(handle), expectedHandle);
         _expectRectClose(tester.getRect(targetHint), expectedTarget);
 
-        await tester.drag(handle, expectedTarget.center - expectedHandle.center);
+        await tester.drag(
+          handle,
+          expectedTarget.center - expectedHandle.center,
+        );
         await tester.pump();
 
         expect(find.text('Placed.'), findsOneWidget);
