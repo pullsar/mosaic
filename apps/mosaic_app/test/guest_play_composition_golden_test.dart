@@ -49,12 +49,17 @@ final class _PendingCanvasResolver implements PlayCanvasAssetResolver {
 
   @override
   Future<PlayCanvasAsset?> resolve(String assetId) => _pending.future;
+
+  void release() {
+    if (!_pending.isCompleted) _pending.complete(null);
+  }
 }
 
 final class _GoldenHarness {
   _GoldenHarness({
     required PlayDocument play,
     required PlayCanvasAssetResolver canvasResolver,
+    this.releasePendingCanvas,
   }) {
     runtime = AppEventRuntime.disabled();
     actions = ConsumerActionController(
@@ -86,11 +91,13 @@ final class _GoldenHarness {
   late final ConsumerActionController actions;
   late final GuestEngagementController engagement;
   late final PlayMediaLayerBuilder media;
+  final VoidCallback? releasePendingCanvas;
   var _eventId = 0;
 
   Future<void> close() async {
     actions.dispose();
     engagement.dispose();
+    releasePendingCanvas?.call();
     await mediaCoordinator.releaseAll();
     await runtime.close();
   }
@@ -266,12 +273,14 @@ Future<void> _pumpScenario(WidgetTester tester, _Scenario scenario) async {
     final canvas = _canvasFixture(name);
     canvases[canvas.id] = canvas;
   }
-  final canvasResolver = scenario.pendingCanvas
+  final pendingCanvas = scenario.pendingCanvas
       ? _PendingCanvasResolver()
-      : MapPlayCanvasAssetResolver(canvases);
+      : null;
+  final canvasResolver = pendingCanvas ?? MapPlayCanvasAssetResolver(canvases);
   final harness = _GoldenHarness(
     play: fixture.play,
     canvasResolver: canvasResolver,
+    releasePendingCanvas: pendingCanvas?.release,
   );
   addTearDown(harness.close);
   await harness.engagement.initialize();
