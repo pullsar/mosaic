@@ -399,15 +399,7 @@ Future<_ScenarioHandle> _pumpScenario(
               controller: harness.actions,
               onAdvance: (_) async => true,
               onShare: (_) {},
-              // These fixtures are authored in English. Shell direction and
-              // authored content direction remain independent until locale is
-              // carried by the published Play schema.
-              child: scenario.direction == TextDirection.rtl
-                  ? Directionality(
-                      textDirection: TextDirection.ltr,
-                      child: playSurface,
-                    )
-                  : playSurface,
+              child: MixliAuthoredPlayDirection(child: playSurface),
             ),
           ),
         ),

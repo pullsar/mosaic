@@ -49,9 +49,10 @@ Future<void> main() async {
 }
 
 final class MosaicApp extends StatefulWidget {
-  const MosaicApp({this.eventRuntime, super.key});
+  const MosaicApp({this.eventRuntime, this.locale, super.key});
 
   final AppEventRuntime? eventRuntime;
+  final Locale? locale;
 
   @override
   State<MosaicApp> createState() => _MosaicAppState();
@@ -241,22 +242,24 @@ final class _MosaicAppState extends State<MosaicApp> {
       semanticResumeEpoch: _semanticResumeEpoch,
       onVideoPlaybackEvent: videoDiagnostics.call,
     );
-    return PlaySurface(
-      key: ValueKey<String>('play:$playId:$revisionId'),
-      play: play,
-      mediaBuilder: media.call,
-      onResolved: (resolution) {
-        onMeaningfulInteraction?.call();
-        recordPlayResolutionTelemetry(
-          telemetry,
-          playId: playId,
-          outcome: resolution.outcome,
-          attempts: resolution.session.attempts,
-          completed: resolution.session.ended,
-          correct: resolution.wasCorrect,
-        );
-      },
-      onDirectManipulationChanged: onDirectManipulationChanged,
+    return MixliAuthoredPlayDirection(
+      child: PlaySurface(
+        key: ValueKey<String>('play:$playId:$revisionId'),
+        play: play,
+        mediaBuilder: media.call,
+        onResolved: (resolution) {
+          onMeaningfulInteraction?.call();
+          recordPlayResolutionTelemetry(
+            telemetry,
+            playId: playId,
+            outcome: resolution.outcome,
+            attempts: resolution.session.attempts,
+            completed: resolution.session.ended,
+            correct: resolution.wasCorrect,
+          );
+        },
+        onDirectManipulationChanged: onDirectManipulationChanged,
+      ),
     );
   }
 
@@ -443,6 +446,7 @@ final class _MosaicAppState extends State<MosaicApp> {
       title: 'Mixli',
       debugShowCheckedModeBanner: false,
       themeMode: ThemeMode.system,
+      locale: widget.locale,
       supportedLocales: MosaicOnboardingStrings.supportedLocales,
       localizationsDelegates: const <LocalizationsDelegate<Object>>[
         MosaicOnboardingStrings.delegate,
@@ -489,6 +493,22 @@ final class _MosaicAppState extends State<MosaicApp> {
       ),
     );
   }
+}
+
+/// Keeps today's English-authored Plays independent from surrounding app chrome.
+///
+/// Published Play documents do not yet carry an authored locale or direction.
+/// Replace this fixed policy with schema-owned direction when that contract lands.
+final class MixliAuthoredPlayDirection extends StatelessWidget {
+  const MixliAuthoredPlayDirection({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Directionality(
+    textDirection: TextDirection.ltr,
+    child: child,
+  );
 }
 
 ThemeData mixliTheme(Brightness brightness) {
