@@ -530,12 +530,8 @@ final class _PlayDragInputState extends State<PlayDragInput> {
               ? 'Target $decreasedTargetNumber of $targetCount'
               : null,
           onTap: _activateWithoutDrag,
-          onIncrease: targetCount > 1
-              ? () => _selectTarget(1)
-              : null,
-          onDecrease: targetCount > 1
-              ? () => _selectTarget(-1)
-              : null,
+          onIncrease: targetCount > 1 ? () => _selectTarget(1) : null,
+          onDecrease: targetCount > 1 ? () => _selectTarget(-1) : null,
           child: Listener(
             behavior: HitTestBehavior.opaque,
             onPointerDown: _pointerDown,
