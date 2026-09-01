@@ -341,9 +341,7 @@ void main() {
           dimension: 320,
           child: ResolvedPlayCanvas(
             assetId: 'pending_canvas',
-            resolver: CallbackPlayCanvasAssetResolver(
-              (_) => resolution.future,
-            ),
+            resolver: CallbackPlayCanvasAssetResolver((_) => resolution.future),
           ),
         ),
       ),
@@ -362,9 +360,9 @@ void main() {
       expect(label.style?.fontWeight, FontWeight.w500);
       expect(
         label.style?.color,
-        Theme.of(tester.element(find.text('Loading play')))
-            .colorScheme
-            .onSurfaceVariant,
+        Theme.of(
+          tester.element(find.text('Loading play')),
+        ).colorScheme.onSurfaceVariant,
       );
     } finally {
       if (!resolution.isCompleted) resolution.complete(null);
@@ -392,9 +390,9 @@ void main() {
     expect(label.style?.fontWeight, FontWeight.w500);
     expect(
       label.style?.color,
-      Theme.of(tester.element(find.text('Play unavailable')))
-          .colorScheme
-          .onSurfaceVariant,
+      Theme.of(
+        tester.element(find.text('Play unavailable')),
+      ).colorScheme.onSurfaceVariant,
     );
   });
 
