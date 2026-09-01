@@ -152,47 +152,47 @@ void main() {
     group('rejects invalid geometry', () {
       final invalidCases =
           <({String name, BoxConstraints constraints, EdgeInsets safeInsets})>[
-        (
-          name: 'unbounded width',
-          constraints: const BoxConstraints(
-            maxWidth: double.infinity,
-            maxHeight: 640,
-          ),
-          safeInsets: EdgeInsets.zero,
-        ),
-        (
-          name: 'negative inset',
-          constraints: const BoxConstraints.tightFor(
-            width: 320,
-            height: 640,
-          ),
-          safeInsets: const EdgeInsets.only(left: -1),
-        ),
-        (
-          name: 'non-finite inset',
-          constraints: const BoxConstraints.tightFor(
-            width: 320,
-            height: 640,
-          ),
-          safeInsets: const EdgeInsets.only(top: double.infinity),
-        ),
-        (
-          name: 'horizontal insets exceed the viewport',
-          constraints: const BoxConstraints.tightFor(
-            width: 320,
-            height: 640,
-          ),
-          safeInsets: const EdgeInsets.symmetric(horizontal: 161),
-        ),
-        (
-          name: 'vertical insets exceed the viewport',
-          constraints: const BoxConstraints.tightFor(
-            width: 320,
-            height: 640,
-          ),
-          safeInsets: const EdgeInsets.symmetric(vertical: 321),
-        ),
-      ];
+            (
+              name: 'unbounded width',
+              constraints: const BoxConstraints(
+                maxWidth: double.infinity,
+                maxHeight: 640,
+              ),
+              safeInsets: EdgeInsets.zero,
+            ),
+            (
+              name: 'negative inset',
+              constraints: const BoxConstraints.tightFor(
+                width: 320,
+                height: 640,
+              ),
+              safeInsets: const EdgeInsets.only(left: -1),
+            ),
+            (
+              name: 'non-finite inset',
+              constraints: const BoxConstraints.tightFor(
+                width: 320,
+                height: 640,
+              ),
+              safeInsets: const EdgeInsets.only(top: double.infinity),
+            ),
+            (
+              name: 'horizontal insets exceed the viewport',
+              constraints: const BoxConstraints.tightFor(
+                width: 320,
+                height: 640,
+              ),
+              safeInsets: const EdgeInsets.symmetric(horizontal: 161),
+            ),
+            (
+              name: 'vertical insets exceed the viewport',
+              constraints: const BoxConstraints.tightFor(
+                width: 320,
+                height: 640,
+              ),
+              safeInsets: const EdgeInsets.symmetric(vertical: 321),
+            ),
+          ];
 
       for (final invalidCase in invalidCases) {
         test('${invalidCase.name} with ArgumentError', () {
