@@ -26,6 +26,25 @@ function puzzle(id = 'puzzle_canvas') {
   };
 }
 
+function palette() {
+  return {
+    background: '#102030',
+    foreground: '#F0F0F0',
+    accent: '#FFCC00',
+    muted: '#8090A0',
+    surface: '#405060',
+  };
+}
+
+function assertPaletteRejected(invalidPalette: unknown): void {
+  assert.throws(
+    () => normalizeCanvasAssetDocument({...puzzle(), palette: invalidPalette}),
+    (error: unknown) =>
+      (error instanceof TypeError || error instanceof RangeError) &&
+      !/canvas asset contains unsupported field palette/.test(error.message),
+  );
+}
+
 async function migrateUp(): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const child = spawn(
@@ -74,6 +93,66 @@ test('canvas normalization materializes defaults into one bounded schema-v1 docu
   });
   assert.equal(Object.isFrozen(document), true);
   assert.equal(Object.isFrozen(document.elements), true);
+  assert.equal(Reflect.has(document, 'palette'), false);
+});
+
+test('canvas normalization preserves one immutable semantic palette', () => {
+  const sourcePalette = palette();
+  const document = normalizeCanvasAssetDocument({
+    ...puzzle(),
+    palette: sourcePalette,
+  });
+  const normalizedPalette = Reflect.get(document, 'palette');
+
+  assert.deepEqual(normalizedPalette, palette());
+  assert.equal(Object.isFrozen(document), true);
+  assert.equal(Object.isFrozen(normalizedPalette), true);
+  sourcePalette.background = '#FFFFFF';
+  assert.deepEqual(normalizedPalette, palette());
+});
+
+test('canvas palette rejects non-objects and incomplete or unknown roles', () => {
+  for (const invalidPalette of [null, '#102030', []]) {
+    assertPaletteRejected(invalidPalette);
+  }
+
+  const {surface: _, ...missingSurface} = palette();
+  assertPaletteRejected(missingSurface);
+  assertPaletteRejected({...palette(), highlight: '#FFFFFF'});
+});
+
+test('canvas palette accepts only canonical opaque RGB colors', () => {
+  const invalidColors = {
+    background: '#FFF',
+    foreground: '#abcdef',
+    accent: '#FFFFFFFF',
+    muted: 'FFFFFF',
+    surface: '#GGGGGG',
+  } as const;
+  for (const [role, invalidColor] of Object.entries(invalidColors)) {
+    assertPaletteRejected({...palette(), [role]: invalidColor});
+  }
+});
+
+test('canvas palette enforces readable foreground and accent contrast', () => {
+  assertPaletteRejected({
+    ...palette(),
+    background: '#FFFFFF',
+    foreground: '#FFFFFF',
+    accent: '#000000',
+  });
+  assertPaletteRejected({
+    ...palette(),
+    background: '#FFFFFF',
+    foreground: '#777777',
+    accent: '#000000',
+  });
+  assertPaletteRejected({
+    ...palette(),
+    background: '#FFFFFF',
+    foreground: '#000000',
+    accent: '#A0A0A0',
+  });
 });
 
 test('canvas validation rejects ambiguous, oversized and out-of-bounds documents', () => {
