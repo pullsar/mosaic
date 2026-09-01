@@ -242,10 +242,11 @@ final class PlayNormalizedRect {
 }
 
 final class PlayDragTarget {
-  const PlayDragTarget({required this.id, required this.rect});
+  const PlayDragTarget({required this.id, required this.rect, this.label});
 
   final String id;
   final PlayNormalizedRect rect;
+  final String? label;
 }
 
 final class PlayDragInputSpec {
@@ -313,6 +314,7 @@ final class _PlayDragInputState extends State<PlayDragInput> {
   int? _activePointer;
   bool _dragging = false;
   int _selectedTargetIndex = 0;
+  bool _focused = false;
 
   @override
   void didUpdateWidget(covariant PlayDragInput oldWidget) {
@@ -478,11 +480,33 @@ final class _PlayDragInputState extends State<PlayDragInput> {
                   ),
                 ),
               ),
+          if (_focused) _selectedTargetIndicator(bounds, colorScheme),
           _dragHandle(bounds, colorScheme),
         ],
       );
     },
   );
+
+  Widget _selectedTargetIndicator(Size bounds, ColorScheme colorScheme) {
+    final target = widget.spec.targets[_selectedTargetIndex];
+    return Positioned(
+      left: target.rect.x * bounds.width,
+      top: target.rect.y * bounds.height,
+      width: target.rect.width * bounds.width,
+      height: target.rect.height * bounds.height,
+      child: IgnorePointer(
+        child: ExcludeSemantics(
+          child: DecoratedBox(
+            key: const ValueKey<String>('play-drag-selected-target'),
+            decoration: BoxDecoration(
+              border: Border.all(color: colorScheme.primary, width: 2),
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _dragHandle(Size bounds, ColorScheme colorScheme) {
     final visualRect = Rect.fromLTWH(
@@ -505,29 +529,44 @@ final class _PlayDragInputState extends State<PlayDragInput> {
     final hitRect = Rect.fromLTWH(hitLeft, hitTop, hitWidth, hitHeight);
     final localVisualRect = visualRect.shift(-hitRect.topLeft);
     final targetCount = widget.spec.targets.length;
-    final selectedTargetNumber = _selectedTargetIndex + 1;
-    final increasedTargetNumber = math.min(
-      selectedTargetNumber + 1,
-      targetCount,
+    final increasedTargetIndex = math.min(
+      _selectedTargetIndex + 1,
+      targetCount - 1,
     );
-    final decreasedTargetNumber = math.max(selectedTargetNumber - 1, 1);
+    final decreasedTargetIndex = math.max(_selectedTargetIndex - 1, 0);
 
     return Positioned.fromRect(
       rect: hitRect,
       child: Focus(
         onKeyEvent: _handleKeyEvent,
+        onFocusChange: (focused) {
+          if (_focused == focused) return;
+          setState(() => _focused = focused);
+        },
         child: Semantics(
           button: true,
           focusable: true,
           label: widget.spec.handleLabel,
           value: targetCount > 1
-              ? 'Target $selectedTargetNumber of $targetCount'
+              ? _dragTargetSemanticValue(
+                  widget.spec.targets[_selectedTargetIndex],
+                  _selectedTargetIndex,
+                  targetCount,
+                )
               : null,
           increasedValue: targetCount > 1
-              ? 'Target $increasedTargetNumber of $targetCount'
+              ? _dragTargetSemanticValue(
+                  widget.spec.targets[increasedTargetIndex],
+                  increasedTargetIndex,
+                  targetCount,
+                )
               : null,
           decreasedValue: targetCount > 1
-              ? 'Target $decreasedTargetNumber of $targetCount'
+              ? _dragTargetSemanticValue(
+                  widget.spec.targets[decreasedTargetIndex],
+                  decreasedTargetIndex,
+                  targetCount,
+                )
               : null,
           onTap: _activateWithoutDrag,
           onIncrease: targetCount > 1 ? () => _selectTarget(1) : null,
@@ -583,6 +622,7 @@ bool _dragSpecsEquivalent(PlayDragInputSpec left, PlayDragInputSpec right) {
     final leftTarget = left.targets[index];
     final rightTarget = right.targets[index];
     if (leftTarget.id != rightTarget.id ||
+        leftTarget.label != rightTarget.label ||
         !_normalizedRectsEquivalent(leftTarget.rect, rightTarget.rect)) {
       return false;
     }
@@ -598,6 +638,36 @@ bool _normalizedRectsEquivalent(
     left.y == right.y &&
     left.width == right.width &&
     left.height == right.height;
+
+String _dragTargetSemanticValue(
+  PlayDragTarget target,
+  int index,
+  int count,
+) => '${_dragTargetLabel(target)}, target ${index + 1} of $count';
+
+String _dragTargetLabel(PlayDragTarget target) {
+  final authored = target.label?.trim();
+  if (authored != null && authored.isNotEmpty) return authored;
+
+  final centerX = target.rect.x + target.rect.width / 2;
+  final centerY = target.rect.y + target.rect.height / 2;
+  final isLeft = centerX < 1 / 3;
+  final isRight = centerX > 2 / 3;
+
+  if (centerY < 1 / 3) {
+    if (isLeft) return 'Upper left area';
+    if (isRight) return 'Upper right area';
+    return 'Upper area';
+  }
+  if (centerY > 2 / 3) {
+    if (isLeft) return 'Lower left area';
+    if (isRight) return 'Lower right area';
+    return 'Lower area';
+  }
+  if (isLeft) return 'Left area';
+  if (isRight) return 'Right area';
+  return 'Center area';
+}
 
 final class PlayInputUnavailable extends StatelessWidget {
   const PlayInputUnavailable({required this.type, super.key});
@@ -657,6 +727,10 @@ List<PlayDragTarget>? _readTargets(Object? raw) {
     if (idRaw is! String) return null;
     final id = idRaw.trim();
     if (id.isEmpty || !ids.add(id)) return null;
+    final labelRaw = item['label'];
+    final label = labelRaw is String && labelRaw.trim().isNotEmpty
+        ? labelRaw.trim()
+        : null;
     final x = _unit(item['x']);
     final y = _unit(item['y']);
     final width = _positiveUnit(item['width']);
@@ -666,6 +740,7 @@ List<PlayDragTarget>? _readTargets(Object? raw) {
     targets.add(
       PlayDragTarget(
         id: id,
+        label: label,
         rect: PlayNormalizedRect(x: x, y: y, width: width, height: height),
       ),
     );
