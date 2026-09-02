@@ -43,7 +43,8 @@ jobs:
       - name: Build Android release validation artifact
         working-directory: apps/mosaic_app
         run: |
-          flutter build apk --release
+          flutter build apk --release \
+            --dart-define=MOSAIC_API_BASE_URL=https://api.mixli.app/
           test -f build/app/outputs/flutter-apk/app-release.apk
       - name: Upload Android validation artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
