@@ -136,6 +136,7 @@ setup() {
   grep -Fq "flutter-version: '3.44.7'" "$workflow"
   grep -Fq 'flutter pub get --enforce-lockfile' "$workflow"
   grep -Fq 'flutter build apk --release' "$workflow"
+  grep -Fq -- '--dart-define=MOSAIC_API_BASE_URL=https://api.mixli.app/' "$workflow"
   grep -Fq 'test -f build/app/outputs/flutter-apk/app-release.apk' "$workflow"
   grep -Fq 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02' "$workflow"
   grep -Fq 'path: apps/mosaic_app/build/app/outputs/flutter-apk/app-release.apk' "$workflow"
