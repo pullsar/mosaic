@@ -146,22 +146,25 @@ final class _PlaySurfaceState extends State<PlaySurface> {
             ),
             Positioned.fromRect(
               rect: composition.stageRect,
-              child: SizedBox.expand(
-                key: const ValueKey<String>('play-stage'),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    for (final slot in mediaSlots)
-                      KeyedSubtree(
-                        key: ValueKey<String>(slot.key),
-                        child: _buildMedia(context, slot.layer),
-                      ),
-                    if (isDragInput)
-                      if (usesCanvasStage)
-                        PlayCanvasStage(child: dragPresentation)
-                      else
-                        dragPresentation,
-                  ],
+              child: _StageFeedback(
+                resolved: _session.ended,
+                child: SizedBox.expand(
+                  key: const ValueKey<String>('play-stage'),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      for (final slot in mediaSlots)
+                        KeyedSubtree(
+                          key: ValueKey<String>(slot.key),
+                          child: _buildMedia(context, slot.layer),
+                        ),
+                      if (isDragInput)
+                        if (usesCanvasStage)
+                          PlayCanvasStage(child: dragPresentation)
+                        else
+                          dragPresentation,
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -211,6 +214,50 @@ final class _PlaySurfaceState extends State<PlaySurface> {
       );
     }
     return result;
+  }
+}
+
+final class _StageFeedback extends StatelessWidget {
+  const _StageFeedback({required this.resolved, required this.child});
+  final bool resolved;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final reduced = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    final accent = Theme.of(context).colorScheme.primary;
+    return RepaintBoundary(
+      child: AnimatedScale(
+        scale: resolved ? 1.012 : 1,
+        duration: reduced ? Duration.zero : MosaicVisualTokens.fastFeedback,
+        curve: Curves.easeOutBack,
+        child: AnimatedContainer(
+          duration: reduced ? Duration.zero : MosaicVisualTokens.fastFeedback,
+          curve: Curves.easeOutCubic,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(
+              color: resolved
+                  ? accent.withValues(alpha: .72)
+                  : Colors.transparent,
+              width: resolved ? 2 : 0,
+            ),
+            boxShadow: resolved && !reduced
+                ? [
+                    BoxShadow(
+                      color: accent.withValues(alpha: .20),
+                      blurRadius: 18,
+                    ),
+                  ]
+                : const [],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(26),
+            child: child,
+          ),
+        ),
+      ),
+    );
   }
 }
 
