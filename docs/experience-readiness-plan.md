@@ -276,6 +276,19 @@ Every release claim should point to evidence, not aspiration:
 
 A checkbox without current evidence is not a launch gate passed.
 
+## Catalog Trust Gate
+
+Initial starter-catalog review now requires a pure integrity record before a revision can become the eligible release set. The first checked record covers:
+
+- `mixli_starter_move_one_match/rev_3` — source equation `6 + 4 = 4`, three authored destinations, unique valid result `8 - 4 = 4`, solved canvas `mixli_canvas_matchsticks_solved_v3`, and explicit drag destination-selection coverage at primitive, viewport, and app-composition levels pending pinned-SDK validation.
+- `mixli_starter_city_instinct/rev_3` — preference classification, no manufactured correct answer, distinct Lisbon and Marrakech visual evidence, and reveal copy comparing both choices.
+- `mixli_starter_finish_pattern/rev_3` — visual sequence circle, square, circle, square; accepted answer `square`; reveal starts with the answer.
+- `mixli_starter_find_orbit/rev_3` — labeled A/B/C route-continuity task with only path B connecting the marked endpoints.
+- `mixli_starter_color_energy/rev_3` — preference classification, no manufactured correct answer, distinct electric, soft, and afterglow palette evidence.
+- `mixli_starter_quick_logic/rev_3` — sequence `2, 6, 12, 20`, displayed gap evidence `+4, +6, +8`, accepted answer `30`.
+
+Historical `rev_1` and `rev_2` starter revisions remain immutable and are suspended from new feed eligibility. PostgreSQL publication verification requires a disposable database; local Windows validation without Docker records the test as skipped, not passed.
+
 ## Definition of done
 
 Mixli is experience-ready when it feels like a polished, calm, playful instrument: content is beautiful, the action is obvious, feedback is immediate, motion is purposeful, state reconciliation is trustworthy, accessibility is native to the interaction, resources remain bounded, and the user can always swipe away.

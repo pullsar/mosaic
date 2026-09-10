@@ -333,41 +333,46 @@ void main() {
     expect(find.byIcon(Icons.drag_indicator), findsNothing);
   });
 
-  testWidgets('semantic activation resolves without acquiring the feed lock', (
-    tester,
-  ) async {
-    final semantics = tester.ensureSemantics();
-    try {
-      final targets = <String>[];
-      final locks = <bool>[];
+  testWidgets(
+    'semantic activation chooses a destination without acquiring the feed lock',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      try {
+        final targets = <String>[];
+        final locks = <bool>[];
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Center(
-            child: SizedBox.square(
-              dimension: 300,
-              child: PlayDragInput(
-                spec: _accessibleMatchSpec,
-                onTarget: targets.add,
-                onManipulationChanged: locks.add,
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Center(
+              child: SizedBox.square(
+                dimension: 300,
+                child: PlayDragInput(
+                  spec: _accessibleMatchSpec,
+                  onTarget: targets.add,
+                  onManipulationChanged: locks.add,
+                ),
               ),
             ),
           ),
-        ),
-      );
+        );
 
-      final node = tester.getSemantics(find.bySemanticsLabel('Move match'));
-      expect(node.getSemanticsData().hasAction(SemanticsAction.tap), isTrue);
+        final node = tester.getSemantics(find.bySemanticsLabel('Move match'));
+        expect(node.getSemanticsData().hasAction(SemanticsAction.tap), isTrue);
 
-      tester.semantics.tap(find.semantics.byLabel('Move match'));
-      await tester.pump();
+        tester.semantics.tap(find.semantics.byLabel('Move match'));
+        await tester.pump();
+        expect(targets, isEmpty);
+        expect(find.bySemanticsLabel('Right area'), findsOneWidget);
 
-      expect(targets, ['solution']);
-      expect(locks, isEmpty);
-    } finally {
-      semantics.dispose();
-    }
-  });
+        tester.semantics.tap(find.semantics.byLabel('Right area'));
+        await tester.pump();
+        expect(targets, ['solution']);
+        expect(locks, isEmpty);
+      } finally {
+        semantics.dispose();
+      }
+    },
+  );
 
   testWidgets(
     'multi-target semantics lets the user choose without acquiring feed lock',
@@ -409,16 +414,24 @@ void main() {
 
         tester.semantics.tap(find.semantics.byLabel('Move match'));
         await tester.pump();
+        expect(targets, isEmpty);
+        expect(find.bySemanticsLabel('Left opening'), findsOneWidget);
+        expect(find.bySemanticsLabel('Right opening'), findsOneWidget);
+
+        tester.semantics.tap(find.semantics.byLabel('Left opening'));
+        await tester.pump();
         expect(targets, ['decoy']);
         expect(locks, isEmpty);
 
+        tester.semantics.tap(find.semantics.byLabel('Move match'));
+        await tester.pump();
         tester.semantics.increase(find.semantics.byLabel('Move match'));
         await tester.pump();
         expect(
           tester.getSemantics(handle).getSemanticsData().value,
           'Right opening, target 2 of 2',
         );
-        tester.semantics.tap(find.semantics.byLabel('Move match'));
+        tester.semantics.tap(find.semantics.byLabel('Right opening'));
         await tester.pump();
 
         expect(targets, ['decoy', 'solution']);
@@ -572,6 +585,10 @@ void main() {
         findsNothing,
       );
 
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      expect(targets, isEmpty);
+
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
       await tester.pump();
       final secondIndicatorRect = tester.getRect(indicator);
@@ -635,6 +652,8 @@ void main() {
 
       expect(find.text('Solved target.'), findsNothing);
       expect(find.byType(PlayDragInput), findsOneWidget);
+      expect(find.bySemanticsLabel('Left opening'), findsOneWidget);
+      expect(find.bySemanticsLabel('Right opening'), findsOneWidget);
       expect(locks, isEmpty);
 
       tester.semantics.increase(find.semantics.byLabel('Move match'));
@@ -646,7 +665,7 @@ void main() {
             .value,
         'Right opening, target 2 of 2',
       );
-      tester.semantics.tap(find.semantics.byLabel('Move match'));
+      tester.semantics.tap(find.semantics.byLabel('Right opening'));
       await tester.pumpAndSettle();
 
       expect(find.text('Solved target.'), findsOneWidget);

@@ -3,6 +3,10 @@ import {
   normalizeCanvasAssetDocument,
   PostgresCanvasAssetRepository,
 } from './canvas_asset.js';
+import type {
+  CatalogIntegrityReview,
+  ProductionCatalogIntegrityFixture,
+} from './catalog_integrity.js';
 import {canonicalJson} from './media.js';
 
 export const productionStarterPrefix = 'mixli_starter_';
@@ -249,7 +253,156 @@ const releaseCanvasAssets = [
   },
 ] as const;
 
-const canvasAssets = [...legacyCanvasAssets, ...releaseCanvasAssets] as const;
+const verifiedCanvasAssets = [
+  {
+    ...legacyCanvasAssets[0],
+    id: 'mixli_canvas_matchsticks_v3',
+    semanticLabel: 'A matchstick equation showing six plus four equals four',
+    palette: {
+      background: '#F6E8D5',
+      foreground: '#2A1C16',
+      accent: '#8A2F1B',
+      muted: '#715A4E',
+      surface: '#D7B58C',
+    },
+  },
+  {
+    schemaVersion: 1,
+    id: 'mixli_canvas_matchsticks_solved_v3',
+    semanticLabel: 'A solved matchstick equation showing 8 - 4 = 4',
+    elements: [
+      {type: 'label', x: 0.18, y: 0.42, text: '8', scale: 0.22},
+      {type: 'line', x1: 0.29, y1: 0.42, x2: 0.38, y2: 0.42, width: 0.016},
+      {type: 'label', x: 0.5, y: 0.42, text: '4', scale: 0.22},
+      {type: 'line', x1: 0.62, y1: 0.39, x2: 0.71, y2: 0.39, width: 0.012},
+      {type: 'line', x1: 0.62, y1: 0.45, x2: 0.71, y2: 0.45, width: 0.012},
+      {type: 'label', x: 0.82, y: 0.42, text: '4', scale: 0.22},
+    ],
+    palette: {
+      background: '#F6E8D5',
+      foreground: '#2A1C16',
+      accent: '#8A2F1B',
+      muted: '#715A4E',
+      surface: '#D7B58C',
+    },
+  },
+  {
+    schemaVersion: 1,
+    id: 'mixli_canvas_city_night_v3',
+    semanticLabel:
+      'Two warm night choices: Lisbon with hill lights and Marrakech with courtyard lamps',
+    elements: [
+      {type: 'label', x: 0.25, y: 0.18, text: 'Lisbon', scale: 0.075},
+      {type: 'circle', x: 0.24, y: 0.32, radius: 0.07, fill: true, tone: 'accent'},
+      {type: 'line', x1: 0.12, y1: 0.58, x2: 0.38, y2: 0.46, width: 0.014},
+      {type: 'rect', x: 0.12, y: 0.62, width: 0.1, height: 0.18, fill: true, tone: 'surface'},
+      {type: 'rect', x: 0.28, y: 0.54, width: 0.1, height: 0.26, fill: true, tone: 'muted'},
+      {type: 'label', x: 0.72, y: 0.18, text: 'Marrakech', scale: 0.07},
+      {type: 'circle', x: 0.72, y: 0.32, radius: 0.065, fill: true, tone: 'accent'},
+      {type: 'rect', x: 0.6, y: 0.52, width: 0.24, height: 0.26, fill: false, tone: 'surface'},
+      {type: 'line', x1: 0.62, y1: 0.62, x2: 0.82, y2: 0.62, width: 0.014},
+    ],
+    palette: {
+      background: '#101827',
+      foreground: '#F7F2E8',
+      accent: '#F4B942',
+      muted: '#748199',
+      surface: '#25334A',
+    },
+  },
+  {
+    schemaVersion: 1,
+    id: 'mixli_canvas_pattern_v3',
+    semanticLabel: 'Pattern sequence circle, square, circle, square',
+    elements: [
+      {type: 'circle', x: 0.16, y: 0.5, radius: 0.065, fill: true, tone: 'accent'},
+      {type: 'rect', x: 0.32, y: 0.43, width: 0.14, height: 0.14, radius: 0.02, fill: true, tone: 'surface'},
+      {type: 'circle', x: 0.58, y: 0.5, radius: 0.105, fill: true, tone: 'accent'},
+      {type: 'rect', x: 0.76, y: 0.39, width: 0.22, height: 0.22, radius: 0.02, fill: false, tone: 'surface'},
+    ],
+    palette: {
+      background: '#EFF2EC',
+      foreground: '#17261F',
+      accent: '#166A55',
+      muted: '#6C7C73',
+      surface: '#C9D8CF',
+    },
+  },
+  {
+    schemaVersion: 1,
+    id: 'mixli_canvas_orbit_v3',
+    semanticLabel: 'Route puzzle with paths A, B, and C. Path B connects the marked endpoints',
+    elements: [
+      {type: 'circle', x: 0.18, y: 0.5, radius: 0.035, fill: true, tone: 'accent'},
+      {type: 'circle', x: 0.82, y: 0.5, radius: 0.035, fill: true, tone: 'accent'},
+      {type: 'label', x: 0.18, y: 0.4, text: 'Start', scale: 0.055},
+      {type: 'label', x: 0.82, y: 0.4, text: 'End', scale: 0.055},
+      {type: 'line', x1: 0.22, y1: 0.45, x2: 0.55, y2: 0.25, width: 0.01, tone: 'muted'},
+      {type: 'line', x1: 0.55, y1: 0.25, x2: 0.78, y2: 0.38, width: 0.01, tone: 'muted'},
+      {type: 'label', x: 0.52, y: 0.2, text: 'A', scale: 0.075},
+      {type: 'line', x1: 0.22, y1: 0.5, x2: 0.78, y2: 0.5, width: 0.014, tone: 'surface'},
+      {type: 'label', x: 0.5, y: 0.44, text: 'B', scale: 0.075},
+      {type: 'line', x1: 0.22, y1: 0.56, x2: 0.48, y2: 0.76, width: 0.01, tone: 'muted'},
+      {type: 'line', x1: 0.48, y1: 0.76, x2: 0.68, y2: 0.6, width: 0.01, tone: 'muted'},
+      {type: 'label', x: 0.49, y: 0.82, text: 'C', scale: 0.075},
+    ],
+    palette: {
+      background: '#14152E',
+      foreground: '#F4F5FF',
+      accent: '#44D6E8',
+      muted: '#7779A0',
+      surface: '#292B58',
+    },
+  },
+  {
+    schemaVersion: 1,
+    id: 'mixli_canvas_color_energy_v3',
+    semanticLabel: 'Three distinct palettes: electric, soft, and afterglow',
+    elements: [
+      {type: 'circle', x: 0.2, y: 0.45, radius: 0.14, fill: true, tone: 'accent'},
+      {type: 'label', x: 0.2, y: 0.67, text: 'Electric', scale: 0.06},
+      {type: 'circle', x: 0.5, y: 0.45, radius: 0.14, fill: true, tone: 'surface'},
+      {type: 'label', x: 0.5, y: 0.67, text: 'Soft', scale: 0.06},
+      {type: 'circle', x: 0.8, y: 0.45, radius: 0.14, fill: true, tone: 'muted'},
+      {type: 'label', x: 0.8, y: 0.67, text: 'Afterglow', scale: 0.055},
+    ],
+    palette: {
+      background: '#FFF3E8',
+      foreground: '#241923',
+      accent: '#B32655',
+      muted: '#806A75',
+      surface: '#F2C4A5',
+    },
+  },
+  {
+    schemaVersion: 1,
+    id: 'mixli_canvas_quick_logic_v3',
+    semanticLabel: 'The sequence 2, 6, 12, 20 with gaps 4, 6, and 8',
+    elements: [
+      {type: 'label', x: 0.14, y: 0.46, text: '2', scale: 0.13},
+      {type: 'label', x: 0.3, y: 0.46, text: '6', scale: 0.13},
+      {type: 'label', x: 0.48, y: 0.46, text: '12', scale: 0.13},
+      {type: 'label', x: 0.68, y: 0.46, text: '20', scale: 0.13},
+      {type: 'circle', x: 0.87, y: 0.46, radius: 0.07, fill: true, tone: 'accent'},
+      {type: 'label', x: 0.22, y: 0.68, text: '+4', scale: 0.055, tone: 'muted'},
+      {type: 'label', x: 0.39, y: 0.68, text: '+6', scale: 0.055, tone: 'muted'},
+      {type: 'label', x: 0.58, y: 0.68, text: '+8', scale: 0.055, tone: 'muted'},
+    ],
+    palette: {
+      background: '#F3F1EC',
+      foreground: '#20211F',
+      accent: '#315C55',
+      muted: '#77766F',
+      surface: '#D9D5CB',
+    },
+  },
+] as const;
+
+const canvasAssets = [
+  ...legacyCanvasAssets,
+  ...releaseCanvasAssets,
+  ...verifiedCanvasAssets,
+] as const;
 
 const legacyChoiceSpecs: readonly ChoiceSpec[] = [
   {
@@ -510,7 +663,7 @@ const moveOneMatchV2: StarterPlay = {
   },
 };
 
-const starterPlays: readonly StarterPlay[] = [
+const releaseV2StarterPlays: readonly StarterPlay[] = [
   moveOneMatchV2,
   ...releaseChoiceSpecs.map((spec) => ({
     id: spec.id,
@@ -520,7 +673,236 @@ const starterPlays: readonly StarterPlay[] = [
   })),
 ];
 
-const allStarterPlays = [...legacyStarterPlays, ...starterPlays] as const;
+const releaseV3ChoiceSpecs: readonly ChoiceSpec[] = [
+  {
+    id: 'mixli_starter_city_instinct',
+    format: 'choose',
+    classification: 'preference',
+    topics: ['travel', 'city-breaks'],
+    assetId: 'mixli_canvas_city_night_v3',
+    prompt: 'Four days. Warm nights.',
+    options: [
+      {id: 'lisbon', label: 'Lisbon'},
+      {id: 'marrakech', label: 'Marrakech'},
+    ],
+    reveal: 'Lisbon brings late hills. Marrakech brings warm courtyards.',
+  },
+  {
+    id: 'mixli_starter_finish_pattern',
+    format: 'guess',
+    classification: 'challenge',
+    topics: ['patterns', 'design'],
+    assetId: 'mixli_canvas_pattern_v3',
+    prompt: 'Repeat the pattern.',
+    options: [
+      {id: 'circle', label: 'Circle'},
+      {id: 'triangle', label: 'Triangle'},
+      {id: 'square', label: 'Square'},
+    ],
+    answer: 'square',
+    reveal: 'Square. The rhythm repeats circle, square.',
+  },
+  {
+    id: 'mixli_starter_find_orbit',
+    format: 'guess',
+    classification: 'challenge',
+    topics: ['space', 'science'],
+    assetId: 'mixli_canvas_orbit_v3',
+    prompt: 'Which path connects?',
+    options: [
+      {id: 'a', label: 'A'},
+      {id: 'b', label: 'B'},
+      {id: 'c', label: 'C'},
+    ],
+    answer: 'b',
+    reveal: 'B. It joins the marked endpoints.',
+  },
+  {
+    id: 'mixli_starter_color_energy',
+    format: 'choose',
+    classification: 'preference',
+    topics: ['design', 'culture'],
+    assetId: 'mixli_canvas_color_energy_v3',
+    prompt: 'Pick tonight’s energy.',
+    options: [
+      {id: 'electric', label: 'Electric'},
+      {id: 'soft', label: 'Soft'},
+      {id: 'afterglow', label: 'Afterglow'},
+    ],
+    reveal: 'Electric is sharp. Soft is quiet. Afterglow is warm.',
+  },
+  {
+    id: 'mixli_starter_quick_logic',
+    format: 'guess',
+    classification: 'challenge',
+    topics: ['logic', 'numbers'],
+    assetId: 'mixli_canvas_quick_logic_v3',
+    prompt: 'Complete the sequence.',
+    options: [
+      {id: '26', label: '26'},
+      {id: '28', label: '28'},
+      {id: '30', label: '30'},
+    ],
+    answer: '30',
+    reveal: '30. The gaps rise by two.',
+  },
+];
+
+const moveOneMatchV3: StarterPlay = {
+  id: 'mixli_starter_move_one_match',
+  revisionId: 'rev_3',
+  topics: ['puzzles', 'logic'],
+  document: {
+    schemaVersion: 1,
+    id: 'mixli_starter_move_one_match',
+    revisionId: 'rev_3',
+    format: 'solve',
+    classification: 'challenge',
+    topics: ['puzzles', 'logic'],
+    learningTopics: [],
+    estimatedDurationSec: 20,
+    assets: ['mixli_canvas_matchsticks_v3', 'mixli_canvas_matchsticks_solved_v3'],
+    sources: [],
+    entryState: 'solve',
+    states: {
+      solve: {
+        presentation: {
+          layers: [
+            {type: 'canvas', role: 'media', assetId: 'mixli_canvas_matchsticks_v3'},
+            {type: 'text', role: 'prompt', value: 'Move one match.'},
+          ],
+        },
+        input: {
+          type: 'drag',
+          dragOrigin: {x: 0.335, y: 0.35},
+          dragSize: {width: 0.03, height: 0.14},
+          targets: [
+            {id: 'solution_a', x: 0.185, y: 0.29, width: 0.05, height: 0.14},
+            {id: 'invalid_left', x: 0.12, y: 0.55, width: 0.05, height: 0.14},
+            {id: 'invalid_right', x: 0.72, y: 0.56, width: 0.05, height: 0.14},
+          ],
+          handleLabel: 'Move match',
+        },
+        validation: {type: 'target_region', value: 'solution_a'},
+        transition: {correct: 'reveal', incorrect: 'solve'},
+      },
+      reveal: {
+        presentation: {
+          layers: [
+            {type: 'canvas', role: 'media', assetId: 'mixli_canvas_matchsticks_solved_v3'},
+            {type: 'text', role: 'reveal_title', value: '8 - 4 = 4. One stroke changes sides.'},
+          ],
+        },
+        input: {type: 'tap', label: 'Done'},
+        validation: {type: 'none'},
+        transition: {default: '$end'},
+      },
+    },
+  },
+};
+
+const starterPlays: readonly StarterPlay[] = [
+  moveOneMatchV3,
+  ...releaseV3ChoiceSpecs.map((spec) => ({
+    id: spec.id,
+    revisionId: 'rev_3',
+    topics: spec.topics,
+    document: choiceDocument(spec, 'rev_3'),
+  })),
+];
+
+const historicalStarterPlays = [
+  ...legacyStarterPlays,
+  ...releaseV2StarterPlays,
+] as const;
+
+const allStarterPlays = [...historicalStarterPlays, ...starterPlays] as const;
+
+const starterIntegrityReviews: readonly CatalogIntegrityReview[] = [
+  {
+    kind: 'matchstick',
+    playId: 'mixli_starter_move_one_match',
+    revisionId: 'rev_3',
+    prompt: 'Move one match.',
+    sourceAssetId: 'mixli_canvas_matchsticks_v3',
+    solvedAssetId: 'mixli_canvas_matchsticks_solved_v3',
+    sourceSegments: ['six_top_left', 'plus_vertical'],
+    sourceEquation: '6 + 4 = 4',
+    destinations: [
+      {
+        id: 'solution_a',
+        from: 'six_top_left',
+        to: 'eight_top_left',
+        equation: '8 - 4 = 4',
+      },
+      {
+        id: 'invalid_left',
+        from: 'six_top_left',
+        to: 'six_bottom_left',
+        equation: '5 - 4 = 4',
+      },
+      {
+        id: 'invalid_right',
+        from: 'six_top_left',
+        to: 'right_digit_extra',
+        equation: '3 - 4 = 4',
+      },
+    ],
+    answerDestinationId: 'solution_a',
+    solvedEquation: '8 - 4 = 4',
+  },
+  {
+    kind: 'preference',
+    playId: 'mixli_starter_city_instinct',
+    revisionId: 'rev_3',
+    prompt: 'Four days. Warm nights.',
+    optionIds: ['lisbon', 'marrakech'],
+    revealEvidence: ['Lisbon', 'Marrakech'],
+    semanticEvidence: ['Lisbon', 'Marrakech'],
+  },
+  {
+    kind: 'single_choice',
+    playId: 'mixli_starter_finish_pattern',
+    revisionId: 'rev_3',
+    prompt: 'Repeat the pattern.',
+    answer: 'square',
+    revealStartsWith: 'Square.',
+    semanticEvidence: ['circle', 'square', 'circle', 'square'],
+  },
+  {
+    kind: 'single_choice',
+    playId: 'mixli_starter_find_orbit',
+    revisionId: 'rev_3',
+    prompt: 'Which path connects?',
+    answer: 'b',
+    revealStartsWith: 'B.',
+    semanticEvidence: ['A', 'B', 'C', 'connects'],
+  },
+  {
+    kind: 'preference',
+    playId: 'mixli_starter_color_energy',
+    revisionId: 'rev_3',
+    prompt: 'Pick tonight’s energy.',
+    optionIds: ['electric', 'soft', 'afterglow'],
+    revealEvidence: ['electric', 'soft', 'afterglow'],
+    semanticEvidence: ['electric', 'soft', 'afterglow'],
+  },
+  {
+    kind: 'single_choice',
+    playId: 'mixli_starter_quick_logic',
+    revisionId: 'rev_3',
+    prompt: 'Complete the sequence.',
+    answer: '30',
+    revealStartsWith: '30.',
+    semanticEvidence: ['2', '6', '12', '20'],
+  },
+] as const;
+
+export const productionCatalogIntegrityFixture: ProductionCatalogIntegrityFixture = {
+  plays: starterPlays,
+  canvasAssets: canvasAssets.map((asset) => normalizeCanvasAssetDocument(asset)),
+  reviews: starterIntegrityReviews,
+};
 
 export async function applyProductionCatalog(
   pool: Pool,
@@ -531,7 +913,7 @@ export async function applyProductionCatalog(
   const client = await pool.connect();
   try {
     await client.query('begin');
-    for (const [curatedOrder, play] of legacyStarterPlays.entries()) {
+    for (const [curatedOrder, play] of historicalStarterPlays.entries()) {
       await applyStarterPlay(client, play, curatedOrder + 1, 'suspended');
     }
     await client.query(
@@ -569,7 +951,7 @@ export async function verifyProductionCatalog(
   const expectedCatalog = new Map(
     allStarterPlays.map((play) => [
       `${play.id}\u0000${play.revisionId}`,
-      play.revisionId === 'rev_2' ? 'eligible' : 'suspended',
+      play.revisionId === 'rev_3' ? 'eligible' : 'suspended',
     ]),
   );
   const actualCatalog = new Set(
@@ -674,7 +1056,7 @@ export async function verifyProductionCatalog(
 
 function choiceDocument(
   spec: ChoiceSpec,
-  revisionId: 'rev_1' | 'rev_2',
+  revisionId: 'rev_1' | 'rev_2' | 'rev_3',
 ): Record<string, unknown> {
   const transition =
     spec.answer === undefined
@@ -710,7 +1092,7 @@ function choiceDocument(
       reveal: {
         presentation: {
           layers: [
-            ...(revisionId === 'rev_2'
+            ...(revisionId !== 'rev_1'
               ? [{type: 'canvas', role: 'media', assetId: spec.assetId}]
               : []),
             {type: 'text', role: 'reveal_title', value: spec.reveal},

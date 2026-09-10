@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:play_flutter/play_flutter.dart';
 import 'package:play_schema/play_schema.dart';
@@ -203,6 +204,120 @@ void main() {
     expect(manipulation, [true, false]);
     await gesture.cancel();
   });
+
+  testWidgets('semantic drag activation requires an explicit destination', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    try {
+      final targets = <String>[];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Center(
+            child: SizedBox.square(
+              dimension: 300,
+              child: PlayDragInput(
+                spec: _multiTargetRuntimeDragSpec(),
+                onTarget: targets.add,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      tester.semantics.tap(find.semantics.byLabel('Move match'));
+      await tester.pump();
+
+      expect(targets, isEmpty);
+      expect(find.bySemanticsLabel('Left opening'), findsOneWidget);
+      expect(find.bySemanticsLabel('Right opening'), findsOneWidget);
+
+      tester.semantics.tap(find.semantics.byLabel('Right opening'));
+      await tester.pump();
+
+      expect(targets, ['solution']);
+    } finally {
+      semantics.dispose();
+    }
+  });
+
+  testWidgets('touch drag activation requires an explicit destination', (
+    tester,
+  ) async {
+    final targets = <String>[];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: SizedBox.square(
+            dimension: 300,
+            child: PlayDragInput(
+              spec: _multiTargetRuntimeDragSpec(),
+              onTarget: targets.add,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.bySemanticsLabel('Move match'));
+    await tester.pump();
+
+    expect(targets, isEmpty);
+    expect(
+      find.byKey(const ValueKey<String>('play-drag-alternate-target:decoy')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('play-drag-alternate-target:solution')),
+    );
+    await tester.pump();
+
+    expect(targets, ['solution']);
+  });
+
+  testWidgets('keyboard drag activation can choose or cancel a destination', (
+    tester,
+  ) async {
+    final targets = <String>[];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: SizedBox.square(
+            dimension: 300,
+            child: PlayDragInput(
+              spec: _multiTargetRuntimeDragSpec(),
+              onTarget: targets.add,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+
+    expect(targets, isEmpty);
+    expect(find.bySemanticsLabel('Left opening'), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
+    expect(find.bySemanticsLabel('Left opening'), findsNothing);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+
+    expect(targets, ['solution']);
+  });
 }
 
 PlayDragInputSpec _runtimeDragSpec(Offset origin, String targetId) =>
@@ -222,6 +337,24 @@ PlayDragInputSpec _runtimeDragSpec(Offset origin, String targetId) =>
         ),
       ],
     );
+
+PlayDragInputSpec _multiTargetRuntimeDragSpec() => const PlayDragInputSpec(
+  origin: Offset(0.48, 0.35),
+  size: Size(0.04, 0.2),
+  handleLabel: 'Move match',
+  targets: [
+    PlayDragTarget(
+      id: 'decoy',
+      label: 'Left opening',
+      rect: PlayNormalizedRect(x: 0.1, y: 0.1, width: 0.2, height: 0.2),
+    ),
+    PlayDragTarget(
+      id: 'solution',
+      label: 'Right opening',
+      rect: PlayNormalizedRect(x: 0.7, y: 0.4, width: 0.2, height: 0.2),
+    ),
+  ],
+);
 
 Widget _dragTestSurface(PlayDragInputSpec spec, List<bool> manipulation) =>
     MaterialApp(

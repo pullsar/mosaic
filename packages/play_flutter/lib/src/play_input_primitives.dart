@@ -314,6 +314,7 @@ final class _PlayDragInputState extends State<PlayDragInput> {
   int? _activePointer;
   bool _dragging = false;
   int _selectedTargetIndex = 0;
+  bool _selectingTarget = false;
   bool _focused = false;
 
   @override
@@ -324,6 +325,7 @@ final class _PlayDragInputState extends State<PlayDragInput> {
       _position = widget.spec.origin;
       _activePointer = null;
       _selectedTargetIndex = 0;
+      _selectingTarget = false;
     }
   }
 
@@ -400,16 +402,31 @@ final class _PlayDragInputState extends State<PlayDragInput> {
   void _cancel() {
     _activePointer = null;
     _setDragging(false);
-    setState(() => _position = widget.spec.origin);
+    setState(() {
+      _position = widget.spec.origin;
+      _selectingTarget = false;
+    });
   }
 
-  void _activateWithoutDrag() {
-    final target = widget.spec.targets[_selectedTargetIndex];
+  void _beginAlternateSelection() {
+    if (_selectingTarget) return;
+    setState(() => _selectingTarget = true);
+  }
+
+  void _cancelAlternateSelection() {
+    if (!_selectingTarget) return;
+    setState(() => _selectingTarget = false);
+  }
+
+  void _submitAlternateTarget(int index) {
+    final target = widget.spec.targets[index];
     final targetPosition = Offset(
       target.rect.x + (target.rect.width - widget.spec.size.width) / 2,
       target.rect.y + (target.rect.height - widget.spec.size.height) / 2,
     );
     setState(() {
+      _selectedTargetIndex = index;
+      _selectingTarget = false;
       _position = Offset(
         targetPosition.dx.clamp(0.0, 1 - widget.spec.size.width).toDouble(),
         targetPosition.dy.clamp(0.0, 1 - widget.spec.size.height).toDouble(),
@@ -440,7 +457,15 @@ final class _PlayDragInputState extends State<PlayDragInput> {
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.space) {
-      _activateWithoutDrag();
+      if (_selectingTarget) {
+        _submitAlternateTarget(_selectedTargetIndex);
+      } else {
+        _beginAlternateSelection();
+      }
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.escape) {
+      _cancelAlternateSelection();
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
@@ -480,12 +505,54 @@ final class _PlayDragInputState extends State<PlayDragInput> {
                   ),
                 ),
               ),
-          if (_focused) _selectedTargetIndicator(bounds, colorScheme),
+          if (_selectingTarget)
+            for (var index = 0; index < widget.spec.targets.length; index += 1)
+              _alternateTargetButton(index, bounds, colorScheme),
+          if (_focused || _selectingTarget)
+            _selectedTargetIndicator(bounds, colorScheme),
           _dragHandle(bounds, colorScheme),
         ],
       );
     },
   );
+
+  Widget _alternateTargetButton(
+    int index,
+    Size bounds,
+    ColorScheme colorScheme,
+  ) {
+    final target = widget.spec.targets[index];
+    final selected = index == _selectedTargetIndex;
+    return Positioned(
+      key: ValueKey<String>('play-drag-alternate-target:${target.id}'),
+      left: target.rect.x * bounds.width,
+      top: target.rect.y * bounds.height,
+      width: target.rect.width * bounds.width,
+      height: target.rect.height * bounds.height,
+      child: Semantics(
+        button: true,
+        label: _dragTargetLabel(target),
+        value: 'target ${index + 1} of ${widget.spec.targets.length}',
+        onTap: () => _submitAlternateTarget(index),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => _submitAlternateTarget(index),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: selected
+                    ? colorScheme.primary
+                    : colorScheme.outlineVariant,
+                width: selected ? 2 : 1,
+              ),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const SizedBox.expand(),
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _selectedTargetIndicator(Size bounds, ColorScheme colorScheme) {
     final target = widget.spec.targets[_selectedTargetIndex];
@@ -570,7 +637,7 @@ final class _PlayDragInputState extends State<PlayDragInput> {
                   targetCount,
                 )
               : null,
-          onTap: _activateWithoutDrag,
+          onTap: _beginAlternateSelection,
           onIncrease: targetCount > 1 ? () => _selectTarget(1) : null,
           onDecrease: targetCount > 1 ? () => _selectTarget(-1) : null,
           child: Listener(
@@ -580,6 +647,7 @@ final class _PlayDragInputState extends State<PlayDragInput> {
             onPointerCancel: _pointerEnded,
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
+              onTap: _beginAlternateSelection,
               onPanUpdate: (details) => _move(details, bounds),
               onPanEnd: (_) => _finish(),
               onPanCancel: _cancel,

@@ -70,7 +70,7 @@ test(
           order by catalog.play_id, catalog.revision_id`,
       );
 
-      assert.deepEqual(first, {eligiblePlays: 6, canvasAssets: 12});
+      assert.deepEqual(first, {eligiblePlays: 6, canvasAssets: 19});
       assert.deepEqual(second, first);
       assert.deepEqual(afterRetry.rows, beforeRetry.rows);
       assert.deepEqual(await verifyProductionCatalog(pool), first);
@@ -85,15 +85,17 @@ test(
       );
       assert.equal(
         releaseStates.rows.filter(
-          (row) => row.revision_id === 'rev_2' && row.state === 'eligible',
+          (row) => row.revision_id === 'rev_3' && row.state === 'eligible',
         ).length,
         6,
       );
       assert.equal(
         releaseStates.rows.filter(
-          (row) => row.revision_id === 'rev_1' && row.state === 'suspended',
+          (row) =>
+            (row.revision_id === 'rev_1' || row.revision_id === 'rev_2') &&
+            row.state === 'suspended',
         ).length,
-        6,
+        12,
       );
 
       const eligible = await pool.query<{
@@ -122,10 +124,12 @@ test(
       assert.equal(eligible.rows.length, 6);
       assert.equal(
         eligible.rows.filter((row) => {
-          const primaryAsset = row.document.assets?.[0];
+          const playAssets = new Set(row.document.assets ?? []);
           return row.document.states?.reveal?.presentation?.layers?.some(
             (layer) =>
-              layer.type === 'canvas' && layer.assetId === primaryAsset,
+              layer.type === 'canvas' &&
+              layer.assetId !== undefined &&
+              playAssets.has(layer.assetId),
           );
         }).length,
         6,
@@ -156,7 +160,7 @@ test(
         'select document from canvas_assets where id = any($1::text[])',
         [eligibleAssetIds],
       );
-      assert.equal(eligibleCanvases.rows.length, 6);
+      assert.equal(eligibleCanvases.rows.length, 7);
       assert.ok(
         new Set(
           eligibleCanvases.rows.map((row) => JSON.stringify(row.document.palette)),
@@ -165,13 +169,13 @@ test(
 
       const playSnapshot = await pool.query<{document: unknown}>(
         `select document from play_revisions
-          where play_id = 'mixli_starter_quick_logic' and revision_id = 'rev_2'`,
+          where play_id = 'mixli_starter_quick_logic' and revision_id = 'rev_3'`,
       );
       try {
         await pool.query(
           `update play_revisions
               set document = document - 'states'
-            where play_id = 'mixli_starter_quick_logic' and revision_id = 'rev_2'`,
+            where play_id = 'mixli_starter_quick_logic' and revision_id = 'rev_3'`,
         );
         await assert.rejects(
           verifyProductionCatalog(pool),
@@ -180,26 +184,26 @@ test(
       } finally {
         await pool.query(
           `update play_revisions set document = $1::jsonb
-            where play_id = 'mixli_starter_quick_logic' and revision_id = 'rev_2'`,
+            where play_id = 'mixli_starter_quick_logic' and revision_id = 'rev_3'`,
           [JSON.stringify(playSnapshot.rows[0]?.document)],
         );
       }
 
       const canvasSnapshot = await pool.query<{content_sha256: string}>(
         `select content_sha256 from canvas_assets
-          where id = 'mixli_canvas_quick_logic_v2'`,
+          where id = 'mixli_canvas_quick_logic_v3'`,
       );
       try {
         await pool.query(
           `update canvas_assets
               set content_sha256 = repeat('0', 64)
-            where id = 'mixli_canvas_quick_logic_v2'`,
+            where id = 'mixli_canvas_quick_logic_v3'`,
         );
         await assert.rejects(verifyProductionCatalog(pool), /content hash changed/);
       } finally {
         await pool.query(
           `update canvas_assets set content_sha256 = $1
-            where id = 'mixli_canvas_quick_logic_v2'`,
+            where id = 'mixli_canvas_quick_logic_v3'`,
           [canvasSnapshot.rows[0]?.content_sha256],
         );
       }
@@ -208,7 +212,7 @@ test(
         await pool.query(
           `delete from play_revision_topics
             where play_id = 'mixli_starter_city_instinct'
-              and revision_id = 'rev_2'
+              and revision_id = 'rev_3'
               and topic_id = 'travel'`,
         );
         await assert.rejects(
@@ -224,7 +228,7 @@ test(
           `update play_revision_topics
               set role = 'learning'
             where play_id = 'mixli_starter_quick_logic'
-              and revision_id = 'rev_2'
+              and revision_id = 'rev_3'
               and topic_id = 'logic'`,
         );
         await assert.rejects(

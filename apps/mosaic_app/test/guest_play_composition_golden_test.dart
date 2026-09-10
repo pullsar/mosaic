@@ -416,6 +416,11 @@ Future<_ScenarioHandle> _pumpScenario(
     try {
       tester.semantics.tap(find.semantics.byLabel('Move match'));
       await tester.pumpAndSettle();
+      expect(find.text('8 − 4 = 4'), findsNothing);
+      expect(find.bySemanticsLabel('Left area'), findsOneWidget);
+
+      tester.semantics.tap(find.semantics.byLabel('Left area'));
+      await tester.pumpAndSettle();
       expect(find.text('8 − 4 = 4'), findsOneWidget);
       expect(
         find.bySemanticsLabel('Solved matchstick equation: 8 minus 4 equals 4'),
