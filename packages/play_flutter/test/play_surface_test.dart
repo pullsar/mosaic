@@ -131,6 +131,70 @@ PlayCanvasAsset _continuousCanvas() => PlayCanvasAsset(
 );
 
 void main() {
+  testWidgets('fades a new stage state without duplicating the stage', (
+    tester,
+  ) async {
+    final play = PlayDocument.fromJson({
+      'schemaVersion': 1,
+      'id': 'observation_transition',
+      'revisionId': 'rev_1',
+      'format': 'guess',
+      'classification': 'challenge',
+      'topics': ['observation'],
+      'learningTopics': <String>[],
+      'estimatedDurationSec': 8,
+      'assets': <String>[],
+      'sources': <Object>[],
+      'entryState': 'observe',
+      'states': {
+        'observe': {
+          'presentation': {
+            'layers': [
+              {'type': 'text', 'role': 'prompt', 'value': 'Remember this.'},
+            ],
+          },
+          'input': {'type': 'tap', 'label': 'Ready'},
+          'validation': {'type': 'none'},
+          'transition': {'default': 'choose'},
+        },
+        'choose': {
+          'presentation': {
+            'layers': [
+              {'type': 'text', 'role': 'prompt', 'value': 'What changed?'},
+            ],
+          },
+          'input': {'type': 'tap', 'label': 'Done'},
+          'validation': {'type': 'none'},
+          'transition': {'default': r'$end'},
+        },
+      },
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: PlaySurface(play: play)),
+      ),
+    );
+    await tester.tap(find.text('Ready'));
+    await tester.pump();
+
+    final transition = tester.widget<FadeTransition>(
+      find.byKey(const ValueKey<String>('play-stage-state-transition')),
+    );
+    expect(transition.opacity.value, lessThan(1));
+    expect(find.byKey(const ValueKey<String>('play-stage')), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<FadeTransition>(
+            find.byKey(const ValueKey<String>('play-stage-state-transition')),
+          )
+          .opacity
+          .value,
+      1,
+    );
+  });
+
   testWidgets('renders the frozen game-theme backdrop', (tester) async {
     final play = PlayDocument.fromJson({
       'schemaVersion': 1,

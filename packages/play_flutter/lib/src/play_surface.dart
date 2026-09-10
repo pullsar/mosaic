@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -149,22 +150,25 @@ final class _PlaySurfaceState extends State<PlaySurface> {
               rect: composition.stageRect,
               child: _StageFeedback(
                 resolved: _session.ended,
-                child: SizedBox.expand(
-                  key: const ValueKey<String>('play-stage'),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      for (final slot in mediaSlots)
-                        KeyedSubtree(
-                          key: ValueKey<String>(slot.key),
-                          child: _buildMedia(context, slot.layer),
-                        ),
-                      if (isDragInput)
-                        if (usesCanvasStage)
-                          PlayCanvasStage(child: dragPresentation)
-                        else
-                          dragPresentation,
-                    ],
+                child: _StageStateTransition(
+                  stateId: _session.stateId,
+                  child: SizedBox.expand(
+                    key: const ValueKey<String>('play-stage'),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        for (final slot in mediaSlots)
+                          KeyedSubtree(
+                            key: ValueKey<String>(slot.key),
+                            child: _buildMedia(context, slot.layer),
+                          ),
+                        if (isDragInput)
+                          if (usesCanvasStage)
+                            PlayCanvasStage(child: dragPresentation)
+                          else
+                            dragPresentation,
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -296,6 +300,55 @@ final class _StageFeedback extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Gives an authored scene change one immediate visual beat without keeping a
+/// previous media tree alive. The state key resets only when the deterministic
+/// engine advances, so retries inside the same state remain stable.
+final class _StageStateTransition extends StatefulWidget {
+  const _StageStateTransition({required this.stateId, required this.child});
+
+  final String stateId;
+  final Widget child;
+
+  @override
+  State<_StageStateTransition> createState() => _StageStateTransitionState();
+}
+
+final class _StageStateTransitionState extends State<_StageStateTransition>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _opacity = AnimationController(
+    value: 1,
+    duration: MosaicVisualTokens.revealTransition,
+    vsync: this,
+  );
+
+  @override
+  void didUpdateWidget(covariant _StageStateTransition oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.stateId == widget.stateId) return;
+    if (MediaQuery.maybeOf(context)?.disableAnimations ?? false) {
+      _opacity.value = 1;
+    } else {
+      unawaited(_opacity.forward(from: .78));
+    }
+  }
+
+  @override
+  void dispose() {
+    _opacity.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final reduced = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    return FadeTransition(
+      key: const ValueKey<String>('play-stage-state-transition'),
+      opacity: reduced ? const AlwaysStoppedAnimation<double>(1) : _opacity,
+      child: widget.child,
     );
   }
 }
