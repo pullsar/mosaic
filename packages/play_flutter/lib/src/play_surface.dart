@@ -150,6 +150,7 @@ final class _PlaySurfaceState extends State<PlaySurface> {
               rect: composition.stageRect,
               child: _StageFeedback(
                 resolved: _session.ended,
+                animateScale: !isDragInput,
                 child: _StageStateTransition(
                   stateId: _session.stateId,
                   child: SizedBox.expand(
@@ -261,8 +262,13 @@ Color? _themeSurface(PlayPresentationReference reference) => switch ((
 };
 
 final class _StageFeedback extends StatelessWidget {
-  const _StageFeedback({required this.resolved, required this.child});
+  const _StageFeedback({
+    required this.resolved,
+    required this.animateScale,
+    required this.child,
+  });
   final bool resolved;
+  final bool animateScale;
   final Widget child;
 
   @override
@@ -271,33 +277,39 @@ final class _StageFeedback extends StatelessWidget {
     final accent = Theme.of(context).colorScheme.primary;
     return RepaintBoundary(
       child: AnimatedScale(
-        scale: resolved ? 1.012 : 1,
+        scale: resolved && animateScale ? 1.012 : 1,
         duration: reduced ? Duration.zero : MosaicVisualTokens.fastFeedback,
         curve: Curves.easeOutBack,
-        child: AnimatedContainer(
-          duration: reduced ? Duration.zero : MosaicVisualTokens.fastFeedback,
-          curve: Curves.easeOutCubic,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(28),
-            border: Border.all(
-              color: resolved
-                  ? accent.withValues(alpha: .72)
-                  : Colors.transparent,
-              width: resolved ? 2 : 0,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            ClipRRect(borderRadius: BorderRadius.circular(26), child: child),
+            IgnorePointer(
+              child: AnimatedContainer(
+                duration: reduced
+                    ? Duration.zero
+                    : MosaicVisualTokens.fastFeedback,
+                curve: Curves.easeOutCubic,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(28),
+                  border: Border.all(
+                    color: resolved
+                        ? accent.withValues(alpha: .72)
+                        : Colors.transparent,
+                    width: 2,
+                  ),
+                  boxShadow: resolved && !reduced
+                      ? [
+                          BoxShadow(
+                            color: accent.withValues(alpha: .20),
+                            blurRadius: 18,
+                          ),
+                        ]
+                      : const [],
+                ),
+              ),
             ),
-            boxShadow: resolved && !reduced
-                ? [
-                    BoxShadow(
-                      color: accent.withValues(alpha: .20),
-                      blurRadius: 18,
-                    ),
-                  ]
-                : const [],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(26),
-            child: child,
-          ),
+          ],
         ),
       ),
     );
