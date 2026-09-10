@@ -4,6 +4,7 @@ import {test} from 'node:test';
 import {Pool} from 'pg';
 import {
   applyProductionCatalog,
+  productionCatalogIntegrityFixture,
   verifyProductionCatalog,
 } from '../src/production_catalog.js';
 
@@ -70,24 +71,25 @@ test(
           order by catalog.play_id, catalog.revision_id`,
       );
 
-      assert.deepEqual(first, {eligiblePlays: 6, canvasAssets: 19});
+      assert.deepEqual(first, {eligiblePlays: 6, canvasAssets: 22});
       assert.deepEqual(second, first);
       assert.deepEqual(afterRetry.rows, beforeRetry.rows);
       assert.deepEqual(await verifyProductionCatalog(pool), first);
 
       const releaseStates = await pool.query<{
+        play_id: string;
         revision_id: string;
         state: string;
       }>(
-        `select revision_id, state
+        `select play_id, revision_id, state
            from feed_catalog_entries
           where play_id like 'mixli_starter_%'`,
       );
-      assert.equal(
-        releaseStates.rows.filter(
-          (row) => row.revision_id === 'rev_3' && row.state === 'eligible',
-        ).length,
-        6,
+      assert.deepEqual(
+        releaseStates.rows.filter((row) => row.state === 'eligible')
+          .map((row) => `${row.play_id}/${row.revision_id}`).sort(),
+        productionCatalogIntegrityFixture.plays
+          .map((play) => `${play.id}/${play.revisionId}`).sort(),
       );
       assert.equal(
         releaseStates.rows.filter(
@@ -97,6 +99,14 @@ test(
         ).length,
         12,
       );
+      assert.equal(releaseStates.rows.filter(
+        (row) => row.revision_id === 'rev_3' && row.state === 'suspended',
+      ).length, 2);
+      const preservedPattern = await pool.query<{document: {states: {choice: {presentation: {layers: Array<{value?: string}>}}}}}>(
+        `select document from play_revisions where play_id = 'mixli_starter_finish_pattern' and revision_id = 'rev_3'`,
+      );
+      assert.ok(preservedPattern.rows[0]!.document.states.choice.presentation.layers
+        .some((layer) => layer.value === 'Repeat the pattern.'));
 
       const eligible = await pool.query<{
         document: {
@@ -160,7 +170,7 @@ test(
         'select document from canvas_assets where id = any($1::text[])',
         [eligibleAssetIds],
       );
-      assert.equal(eligibleCanvases.rows.length, 7);
+      assert.equal(eligibleCanvases.rows.length, 8);
       assert.ok(
         new Set(
           eligibleCanvases.rows.map((row) => JSON.stringify(row.document.palette)),

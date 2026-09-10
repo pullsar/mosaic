@@ -33,6 +33,7 @@ interface ChoiceSpec {
   classification: 'preference' | 'challenge';
   topics: readonly string[];
   assetId: string;
+  revealAssetId?: string;
   prompt: string;
   options: readonly {id: string; label: string}[];
   answer?: string;
@@ -412,10 +413,53 @@ const verifiedCanvasAssets = [
   },
 ] as const;
 
+const patternV4Prefix = [
+  {type: 'circle', x: 0.17, y: 0.5, radius: 0.07, fill: true, tone: 'accent'},
+  {type: 'rect', x: 0.32, y: 0.444, width: 0.14, height: 0.112, radius: 0.015, fill: true, tone: 'accent'},
+  {type: 'circle', x: 0.61, y: 0.5, radius: 0.07, fill: true, tone: 'accent'},
+] as const;
+const patternV4Palette = {
+  background: '#EFF2EC', foreground: '#17261F', accent: '#166A55',
+  muted: '#6C7C73', surface: '#C9D8CF',
+} as const;
+const routeV3Asset = verifiedCanvasAssets.find((asset) => asset.id === 'mixli_canvas_orbit_v3')!;
+const clarifiedCanvasAssets = [
+  {
+    schemaVersion: 1, id: 'mixli_canvas_pattern_v4',
+    semanticLabel: 'Circle, square, circle, then a missing shape.',
+    elements: [...patternV4Prefix,
+      {type: 'label', x: 0.83, y: 0.5, text: '?', scale: 0.12}],
+    palette: patternV4Palette,
+  },
+  {
+    schemaVersion: 1, id: 'mixli_canvas_pattern_solved_v4',
+    semanticLabel: 'Circle, square, circle, square.',
+    elements: [...patternV4Prefix,
+      {type: 'rect', x: 0.76, y: 0.444, width: 0.14, height: 0.112, radius: 0.015, fill: true, tone: 'accent'}],
+    palette: patternV4Palette,
+  },
+  {
+    ...routeV3Asset,
+    id: 'mixli_canvas_orbit_v4',
+    semanticLabel: 'Coordinates are percent across, then percent down. Start: 18, 50. End: 82, 50. Route endpoints: A: 22, 45 and 78, 38. B: 18, 50 and 82, 50. C: 22, 56 and 68, 60.',
+    elements: routeV3Asset.elements.map((element) => {
+      if (element.type === 'line') {
+        return {...element, tone: 'foreground', width: 0.012,
+          ...(element.y1 === 0.5 && element.y2 === 0.5 ? {x1: 0.18, x2: 0.82} : {})};
+      }
+      if (element.type === 'label' && (element.text === 'Start' || element.text === 'End')) {
+        return {...element, x: element.text === 'Start' ? 0.08 : 0.92, y: 0.5, scale: 0.045};
+      }
+      return element;
+    }),
+  },
+] as const;
+
 const canvasAssets = [
   ...legacyCanvasAssets,
   ...releaseCanvasAssets,
   ...verifiedCanvasAssets,
+  ...clarifiedCanvasAssets,
 ] as const;
 
 const legacyChoiceSpecs: readonly ChoiceSpec[] = [
@@ -815,7 +859,7 @@ const moveOneMatchV3: StarterPlay = {
   },
 };
 
-const starterPlays: readonly StarterPlay[] = [
+const releaseV3StarterPlays: readonly StarterPlay[] = [
   moveOneMatchV3,
   ...releaseV3ChoiceSpecs.map((spec) => ({
     id: spec.id,
@@ -825,9 +869,24 @@ const starterPlays: readonly StarterPlay[] = [
   })),
 ];
 
+const clarifiedChoiceSpecs: readonly ChoiceSpec[] = releaseV3ChoiceSpecs
+  .filter((spec) => spec.id === 'mixli_starter_finish_pattern' || spec.id === 'mixli_starter_find_orbit')
+  .map((spec) => spec.id === 'mixli_starter_finish_pattern'
+    ? {...spec, assetId: 'mixli_canvas_pattern_v4', revealAssetId: 'mixli_canvas_pattern_solved_v4', prompt: 'Which shape is next?', reveal: 'Square. Same pair.'}
+    : {...spec, assetId: 'mixli_canvas_orbit_v4', reveal: 'B. No gaps.'});
+const clarifiedStarterPlays: readonly StarterPlay[] = clarifiedChoiceSpecs.map((spec) => ({
+  id: spec.id, revisionId: 'rev_4', topics: spec.topics,
+  document: choiceDocument(spec, 'rev_4'),
+}));
+const clarifiedPlayIds = new Set(clarifiedStarterPlays.map((play) => play.id));
+const starterPlays = releaseV3StarterPlays.map((play) =>
+  clarifiedStarterPlays.find((replacement) => replacement.id === play.id) ?? play,
+);
+
 const historicalStarterPlays = [
   ...legacyStarterPlays,
   ...releaseV2StarterPlays,
+  ...releaseV3StarterPlays.filter((play) => clarifiedPlayIds.has(play.id)),
 ] as const;
 
 const allStarterPlays = [...historicalStarterPlays, ...starterPlays] as const;
@@ -874,20 +933,20 @@ const starterIntegrityReviews: readonly CatalogIntegrityReview[] = [
   {
     kind: 'single_choice',
     playId: 'mixli_starter_finish_pattern',
-    revisionId: 'rev_3',
-    prompt: 'Repeat the pattern.',
+    revisionId: 'rev_4',
+    prompt: 'Which shape is next?',
     answer: 'square',
     revealStartsWith: 'Square.',
-    semanticEvidence: ['circle', 'square', 'circle', 'square'],
+    semanticEvidence: ['circle, square, circle', 'missing shape'],
   },
   {
     kind: 'single_choice',
     playId: 'mixli_starter_find_orbit',
-    revisionId: 'rev_3',
+    revisionId: 'rev_4',
     prompt: 'Which path connects?',
     answer: 'b',
     revealStartsWith: 'B.',
-    semanticEvidence: ['A', 'B', 'C', 'connects'],
+    semanticEvidence: ['A', 'B', 'C', 'Start', 'End'],
   },
   {
     kind: 'preference',
@@ -961,10 +1020,11 @@ export async function verifyProductionCatalog(
       where play_id like $1`,
     [`${productionStarterPrefix}%`],
   );
+  const eligibleIdentities = new Set(starterPlays.map((play) => `${play.id}\u0000${play.revisionId}`));
   const expectedCatalog = new Map(
     allStarterPlays.map((play) => [
       `${play.id}\u0000${play.revisionId}`,
-      play.revisionId === 'rev_3' ? 'eligible' : 'suspended',
+      eligibleIdentities.has(`${play.id}\u0000${play.revisionId}`) ? 'eligible' : 'suspended',
     ]),
   );
   const actualCatalog = new Set(
@@ -1069,7 +1129,7 @@ export async function verifyProductionCatalog(
 
 function choiceDocument(
   spec: ChoiceSpec,
-  revisionId: 'rev_1' | 'rev_2' | 'rev_3',
+  revisionId: 'rev_1' | 'rev_2' | 'rev_3' | 'rev_4',
 ): Record<string, unknown> {
   const transition =
     spec.answer === undefined
@@ -1084,7 +1144,7 @@ function choiceDocument(
     topics: [...spec.topics],
     learningTopics: [],
     estimatedDurationSec: 15,
-    assets: [spec.assetId],
+    assets: [spec.assetId, ...(spec.revealAssetId === undefined ? [] : [spec.revealAssetId])],
     sources: [],
     entryState: 'choice',
     states: {
@@ -1106,7 +1166,7 @@ function choiceDocument(
         presentation: {
           layers: [
             ...(revisionId !== 'rev_1'
-              ? [{type: 'canvas', role: 'media', assetId: spec.assetId}]
+              ? [{type: 'canvas', role: 'media', assetId: spec.revealAssetId ?? spec.assetId}]
               : []),
             {type: 'text', role: 'reveal_title', value: spec.reveal},
           ],

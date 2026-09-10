@@ -282,12 +282,18 @@ Initial starter-catalog review now requires a pure integrity record before a rev
 
 - `mixli_starter_move_one_match/rev_3` — source equation `6 + 4 = 4`, three authored destinations, unique valid move `operator.vertical → left.b`, derived result `8 - 4 = 4`, source and solved canvases generated from the occupied segment sets, and explicit drag destination-selection coverage at primitive, viewport, and app-composition levels pending pinned-SDK validation.
 - `mixli_starter_city_instinct/rev_3` — preference classification, no manufactured correct answer, distinct Lisbon and Marrakech visual evidence, and reveal copy comparing both choices.
-- `mixli_starter_finish_pattern/rev_3` — visual sequence circle, square, circle, square; accepted answer `square`; reveal starts with the answer.
-- `mixli_starter_find_orbit/rev_3` — labeled A/B/C route-continuity task with only path B connecting the marked endpoints.
+- `mixli_starter_finish_pattern/rev_4` — three equally sized, equally contrasted shapes and a neutral missing-slot marker; accepted answer `square`; reveal replaces only that marker with the solved square.
+- `mixli_starter_find_orbit/rev_4` — labeled A/B/C route-continuity task with equal stroke weight and contrast, symmetric endpoint-coordinate descriptions, and only path B connecting both marked endpoints.
 - `mixli_starter_color_energy/rev_3` — preference classification, no manufactured correct answer, distinct electric, soft, and afterglow palette evidence.
 - `mixli_starter_quick_logic/rev_3` — sequence `2, 6, 12, 20`, displayed gap evidence `+4, +6, +8`, accepted answer `30`.
 
-Historical `rev_1` and `rev_2` starter revisions remain immutable and are suspended from new feed eligibility. PostgreSQL publication verification runs against a disposable PostgreSQL 18 container; a missing database still records the test as skipped, not passed.
+Historical `rev_1` and `rev_2` starter revisions, plus the replaced pattern and route `rev_3` revisions, remain immutable and suspended from new feed eligibility. The other four `rev_3` games remain eligible. PostgreSQL publication verification runs against a disposable PostgreSQL 18 container; a missing database still records the test as skipped, not passed.
+
+The 2026-09-10 mechanics pass adds session-fenced input callbacks, fresh replay identities, bounded recovery without an action-limit trap, 48 px alternate drag targets, and interruptible 140 ms missed-drop return motion. Completed drags retain their placed piece while releasing input and focus. Pinned-SDK checks passed: 75 focused interaction/app tests, analyzer, format, and web release build. Full Flutter suites passed 328 tests with ten pre-existing Windows golden mismatches; canonical goldens were preserved.
+
+This is a mechanics and asset quality tranche, not completion of the game program. Scene-owned movable pieces, the new game families, curated audio, physical 60/120 Hz and screen-reader checks remain outstanding. The legacy matchstick canvas still draws its static source segment beneath the movable handle. New piece games require the planned stable-object scene contract before eligibility. Persistence, collections, sharing and operational work are outside this pass at the user's request.
+
+Asset review used the shared Flutter renderer in a release browser preview at 390×844 and 320×640, including the pattern's answer transition. Square geometry accounts for the renderer's 4:5 canvas stage; circles and squares now have equal physical extents. The corrected routes have readable labels and uniform strokes. This review does not replace physical-device or first-time-user evidence.
 
 ## Definition of done
 
