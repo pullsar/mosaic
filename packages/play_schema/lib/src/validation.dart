@@ -49,6 +49,8 @@ final class PlaySchemaValidator {
         ),
       );
     }
+    _validateThemeReferences(play, issues);
+    _validatePlatformFlags(play.requiredPlatformFlags, issues);
     if (play.estimatedDurationSec <= 0 || play.estimatedDurationSec > 180) {
       issues.add(
         const PlayValidationIssue(
@@ -186,6 +188,63 @@ final class PlaySchemaValidator {
     }
 
     return issues;
+  }
+
+  void _validateThemeReferences(
+    PlayDocument play,
+    List<PlayValidationIssue> issues,
+  ) {
+    final family = play.gameFamily;
+    if (family != null &&
+        (!_referenceText(family.id) || !_referenceText(family.revisionId))) {
+      issues.add(
+        const PlayValidationIssue(
+          code: 'game_family_reference',
+          path: 'gameFamily',
+          message: 'gameFamily requires bounded identifiers.',
+        ),
+      );
+    }
+
+    final presentation = play.presentation;
+    if (presentation != null &&
+        (!_referenceText(presentation.themeId) ||
+            !_referenceText(presentation.themeRevisionId) ||
+            !_referenceText(presentation.variantId))) {
+      issues.add(
+        const PlayValidationIssue(
+          code: 'presentation_reference',
+          path: 'presentation',
+          message: 'presentation requires bounded immutable identifiers.',
+        ),
+      );
+    }
+    if (presentation != null && family == null) {
+      issues.add(
+        const PlayValidationIssue(
+          code: 'presentation_family_required',
+          path: 'presentation',
+          message: 'presentation requires a gameFamily reference.',
+        ),
+      );
+    }
+  }
+
+  void _validatePlatformFlags(
+    List<String> flags,
+    List<PlayValidationIssue> issues,
+  ) {
+    if (flags.length > 64 ||
+        flags.any((flag) => !_referenceText(flag)) ||
+        flags.toSet().length != flags.length) {
+      issues.add(
+        const PlayValidationIssue(
+          code: 'platform_flags',
+          path: 'requiredPlatformFlags',
+          message: 'Platform flags must be unique bounded identifiers.',
+        ),
+      );
+    }
   }
 
   void _validateValidator(
@@ -439,6 +498,9 @@ String? _nonEmptyString(Object? value) {
   final normalized = value.trim();
   return normalized.isEmpty ? null : normalized;
 }
+
+bool _referenceText(String value) =>
+    value.trim().isNotEmpty && value.length <= 200;
 
 Set<String>? _uniqueStrings(Object? raw) {
   if (raw is! List) return null;

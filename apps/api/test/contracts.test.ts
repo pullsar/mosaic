@@ -37,6 +37,22 @@ test('server matcher fails closed for a future required primitive', async () => 
   assert.deepEqual(decision.missing, ['input:future_spin']);
 });
 
+test('server matcher rejects incomplete immutable presentation identity', async () => {
+  const raw = JSON.parse(
+    await readFile('../../packages/play_schema/fixtures/compat/v1_baseline_guess.json', 'utf8'),
+  ) as Record<string, unknown>;
+
+  const decision = checkPlayCompatibility(
+    {
+      ...raw,
+      presentation: {themeId: 'paper-studio', themeRevisionId: 'theme_1'},
+    },
+    m0Capabilities,
+  );
+
+  assert.deepEqual(decision, {compatible: false, reason: 'malformed', missing: []});
+});
+
 test('language-neutral contract artifacts remain parseable JSON', async () => {
   for (const path of [
     '../../contracts/play-v1.schema.json',

@@ -230,11 +230,30 @@ final class PlayCompatibilityChecker {
 
     final flagsRaw = json['requiredPlatformFlags'];
     if (flagsRaw != null) {
-      if (flagsRaw is! List) return null;
+      if (flagsRaw is! List || flagsRaw.length > 64) return null;
       for (final value in flagsRaw) {
-        if (value is! String || value.isEmpty) return null;
-        platformFlags.add(value);
+        if (value is! String ||
+            !_referenceText(value) ||
+            !platformFlags.add(value)) {
+          return null;
+        }
       }
+    }
+
+    final family = json['gameFamily'];
+    if (family != null &&
+        !_validExactReference(family, const ['id', 'revisionId'])) {
+      return null;
+    }
+    final presentation = json['presentation'];
+    if (presentation != null &&
+        (!_validExactReference(presentation, const [
+              'themeId',
+              'themeRevisionId',
+              'variantId',
+            ]) ||
+            family == null)) {
+      return null;
     }
 
     for (final stateValue in statesRaw.values) {
@@ -276,3 +295,18 @@ final class PlayCompatibilityChecker {
     );
   }
 }
+
+bool _validExactReference(Object? raw, List<String> keys) {
+  if (raw is! Map) return false;
+  final value = Map<String, Object?>.from(raw);
+  if (value.length != keys.length || !value.keys.toSet().containsAll(keys)) {
+    return false;
+  }
+  return keys.every((key) {
+    final item = value[key];
+    return item is String && _referenceText(item);
+  });
+}
+
+bool _referenceText(String value) =>
+    value.trim().isNotEmpty && value.length <= 200;

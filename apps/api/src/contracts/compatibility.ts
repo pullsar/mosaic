@@ -14,6 +14,8 @@ export interface CompatibilityDecision {
 
 const MAX_CAPABILITY_VALUES = 256;
 const MAX_CAPABILITY_TEXT_LENGTH = 100;
+const MAX_REFERENCE_TEXT_LENGTH = 200;
+const MAX_PLATFORM_FLAGS = 64;
 
 export function parseClientCapabilities(value: unknown): ClientCapabilities | null {
   if (!isRecord(value)) return null;
@@ -68,8 +70,13 @@ function textArray(value: unknown): string[] | null {
 }
 
 function stringSet(value: unknown): Set<string> | null {
-  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) return null;
-  return new Set(value as string[]);
+  if (!Array.isArray(value) || value.length > MAX_PLATFORM_FLAGS) return null;
+  const result = new Set<string>();
+  for (const item of value) {
+    if (!referenceText(item) || result.has(item)) return null;
+    result.add(item);
+  }
+  return result;
 }
 
 export function checkPlayCompatibility(
@@ -104,6 +111,19 @@ export function checkPlayCompatibility(
       ? new Set<string>()
       : stringSet(play.requiredPlatformFlags);
   if (requiredFlags === null) {
+    return {compatible: false, reason: 'malformed', missing: []};
+  }
+  if (!validOptionalReference(play.gameFamily, ['id', 'revisionId'])) {
+    return {compatible: false, reason: 'malformed', missing: []};
+  }
+  if (
+    !validOptionalReference(play.presentation, [
+      'themeId',
+      'themeRevisionId',
+      'variantId',
+    ]) ||
+    (play.presentation !== undefined && play.gameFamily === undefined)
+  ) {
     return {compatible: false, reason: 'malformed', missing: []};
   }
 
@@ -173,4 +193,22 @@ export function checkPlayCompatibility(
   return missing.length === 0
     ? {compatible: true, missing: []}
     : {compatible: false, reason: 'unsupported_capability', missing};
+}
+
+function validOptionalReference(value: unknown, keys: readonly string[]): boolean {
+  if (value === undefined) return true;
+  if (!isRecord(value)) return false;
+  const actual = Object.keys(value).sort();
+  if (actual.length !== keys.length || actual.some((key, index) => key !== [...keys].sort()[index])) {
+    return false;
+  }
+  return keys.every((key) => referenceText(value[key]));
+}
+
+function referenceText(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.trim().length > 0 &&
+    value.length <= MAX_REFERENCE_TEXT_LENGTH
+  );
 }

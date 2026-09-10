@@ -111,6 +111,55 @@ void main() {
     expect(supported, isA<DecodedPlay>());
   });
 
+  test('themed v1 metadata and platform requirements survive round-trip', () {
+    final raw = {
+      ..._fixture('compat/v1_baseline_guess.json'),
+      'requiredPlatformFlags': ['managed_game_themes'],
+      'gameFamily': {'id': 'quiet-switch', 'revisionId': 'family_1'},
+      'presentation': {
+        'themeId': 'paper-studio',
+        'themeRevisionId': 'theme_1',
+        'variantId': 'felt-ivory',
+      },
+    };
+
+    final play = PlayDocument.fromJson(raw);
+
+    expect(play.requiredPlatformFlags, ['managed_game_themes']);
+    expect(play.gameFamily?.id, 'quiet-switch');
+    expect(play.gameFamily?.revisionId, 'family_1');
+    expect(play.presentation?.themeId, 'paper-studio');
+    expect(play.presentation?.themeRevisionId, 'theme_1');
+    expect(play.presentation?.variantId, 'felt-ivory');
+    expect(
+      play.toJson(),
+      containsPair('requiredPlatformFlags', ['managed_game_themes']),
+    );
+    expect(play.toJson()['gameFamily'], {
+      'id': 'quiet-switch',
+      'revisionId': 'family_1',
+    });
+    expect(play.toJson()['presentation'], {
+      'themeId': 'paper-studio',
+      'themeRevisionId': 'theme_1',
+      'variantId': 'felt-ivory',
+    });
+  });
+
+  test('malformed presentation references fail closed before decoding', () {
+    final raw = {
+      ..._fixture('compat/v1_baseline_guess.json'),
+      'presentation': {'themeId': 'paper-studio', 'themeRevisionId': 'theme_1'},
+    };
+
+    final result = const PlayCompatibilityChecker().decode(
+      raw,
+      PlayCapabilityEnvelope.m0(),
+    );
+
+    expect(result, isA<MalformedPlay>());
+  });
+
   test('unknown optional fields remain additive-compatible', () {
     final raw = {
       ..._fixture('where_is_this.json'),

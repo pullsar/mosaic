@@ -39,9 +39,12 @@
     },
     "requiredPlatformFlags": {
       "type": "array",
-      "items": {"type": "string", "minLength": 1},
+      "maxItems": 64,
+      "items": {"type": "string", "minLength": 1, "maxLength": 200},
       "uniqueItems": true
     },
+    "gameFamily": {"$ref": "#/$defs/gameFamily"},
+    "presentation": {"$ref": "#/$defs/presentation"},
     "entryState": {"type": "string", "minLength": 1},
     "states": {
       "type": "object",
@@ -50,7 +53,32 @@
     }
   },
   "additionalProperties": true,
+  "allOf": [
+    {
+      "if": {"required": ["presentation"]},
+      "then": {"required": ["gameFamily"]}
+    }
+  ],
   "$defs": {
+    "gameFamily": {
+      "type": "object",
+      "required": ["id", "revisionId"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 200},
+        "revisionId": {"type": "string", "minLength": 1, "maxLength": 200}
+      },
+      "additionalProperties": false
+    },
+    "presentation": {
+      "type": "object",
+      "required": ["themeId", "themeRevisionId", "variantId"],
+      "properties": {
+        "themeId": {"type": "string", "minLength": 1, "maxLength": 200},
+        "themeRevisionId": {"type": "string", "minLength": 1, "maxLength": 200},
+        "variantId": {"type": "string", "minLength": 1, "maxLength": 200}
+      },
+      "additionalProperties": false
+    },
     "source": {
       "type": "object",
       "required": ["url"],
