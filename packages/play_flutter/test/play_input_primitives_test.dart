@@ -376,6 +376,35 @@ void main() {
     ]);
   });
 
+  testWidgets('piano scrolling never enters a sequence', (tester) async {
+    final sequences = <List<String>>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 140,
+            height: 110,
+            child: PlayPianoInput(
+              keys: const ['C4', 'D4', 'E4', 'F4'],
+              sequenceLength: 1,
+              onSequence: sequences.add,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.bySemanticsLabel('C4')),
+    );
+    await tester.pump();
+    await gesture.moveBy(const Offset(-80, 0));
+    await gesture.up();
+    await tester.pump();
+
+    expect(sequences, isEmpty);
+  });
+
   testWidgets('piano keeps every key tappable in a compact 56px allocation', (
     tester,
   ) async {
