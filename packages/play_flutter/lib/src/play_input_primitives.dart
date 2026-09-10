@@ -318,6 +318,7 @@ final class _PlayDragInputState extends State<PlayDragInput>
   late Offset _position = widget.spec.origin;
   int? _activePointer;
   bool _dragging = false;
+  String? _hoveredTargetId;
   int _selectedTargetIndex = 0;
   bool _selectingTarget = false;
   bool _focused = false;
@@ -349,6 +350,7 @@ final class _PlayDragInputState extends State<PlayDragInput>
       _endInterruptedManipulation(oldWidget.onManipulationChanged);
       _position = widget.spec.origin;
       _activePointer = null;
+      _hoveredTargetId = null;
       _selectedTargetIndex = 0;
       _selectingTarget = false;
     }
@@ -372,20 +374,20 @@ final class _PlayDragInputState extends State<PlayDragInput>
 
   void _setDragging(bool value, {bool notify = true}) {
     if (_dragging == value) return;
-    _dragging = value;
+    setState(() => _dragging = value);
     if (notify) widget.onManipulationChanged?.call(value);
   }
 
   void _pointerDown(PointerDownEvent event) {
     if (_activePointer != null) return;
     _returnMotion.stop();
-    _activePointer = event.pointer;
+    setState(() => _activePointer = event.pointer);
     _setDragging(true);
   }
 
   void _pointerEnded(PointerEvent event) {
     if (_activePointer != event.pointer) return;
-    _activePointer = null;
+    setState(() => _activePointer = null);
     _setDragging(false);
   }
 
@@ -393,30 +395,22 @@ final class _PlayDragInputState extends State<PlayDragInput>
     if (bounds.width <= 0 || bounds.height <= 0) return;
     final maxX = 1 - widget.spec.size.width;
     final maxY = 1 - widget.spec.size.height;
+    final next = Offset(
+      (_position.dx + details.delta.dx / bounds.width)
+          .clamp(0.0, maxX)
+          .toDouble(),
+      (_position.dy + details.delta.dy / bounds.height)
+          .clamp(0.0, maxY)
+          .toDouble(),
+    );
     setState(() {
-      _position = Offset(
-        (_position.dx + details.delta.dx / bounds.width)
-            .clamp(0.0, maxX)
-            .toDouble(),
-        (_position.dy + details.delta.dy / bounds.height)
-            .clamp(0.0, maxY)
-            .toDouble(),
-      );
+      _position = next;
+      _hoveredTargetId = _targetAt(next)?.id;
     });
   }
 
   void _finish() {
-    final center = Offset(
-      _position.dx + widget.spec.size.width / 2,
-      _position.dy + widget.spec.size.height / 2,
-    );
-    PlayDragTarget? target;
-    for (final candidate in widget.spec.targets) {
-      if (candidate.rect.contains(center)) {
-        target = candidate;
-        break;
-      }
-    }
+    final target = _targetAt(_position);
 
     _setDragging(false);
     if (target != null) {
@@ -429,11 +423,26 @@ final class _PlayDragInputState extends State<PlayDragInput>
   void _returnToOrigin() {
     _returnMotion.stop();
     if (MediaQuery.maybeOf(context)?.disableAnimations ?? false) {
-      setState(() => _position = widget.spec.origin);
+      setState(() {
+        _position = widget.spec.origin;
+        _hoveredTargetId = null;
+      });
       return;
     }
+    setState(() => _hoveredTargetId = null);
     _returnFrom = _position;
     unawaited(_returnMotion.forward(from: 0));
+  }
+
+  PlayDragTarget? _targetAt(Offset position) {
+    final center = Offset(
+      position.dx + widget.spec.size.width / 2,
+      position.dy + widget.spec.size.height / 2,
+    );
+    for (final candidate in widget.spec.targets) {
+      if (candidate.rect.contains(center)) return candidate;
+    }
+    return null;
   }
 
   void _tickReturn() {
@@ -453,6 +462,7 @@ final class _PlayDragInputState extends State<PlayDragInput>
     _setDragging(false);
     setState(() {
       _selectingTarget = false;
+      _hoveredTargetId = null;
     });
     _returnToOrigin();
   }
@@ -478,6 +488,7 @@ final class _PlayDragInputState extends State<PlayDragInput>
     setState(() {
       _selectedTargetIndex = index;
       _selectingTarget = false;
+      _hoveredTargetId = null;
       _position = Offset(
         targetPosition.dx.clamp(0.0, 1 - widget.spec.size.width).toDouble(),
         targetPosition.dy.clamp(0.0, 1 - widget.spec.size.height).toDouble(),
@@ -534,6 +545,7 @@ final class _PlayDragInputState extends State<PlayDragInput>
       }
 
       final colorScheme = Theme.of(context).colorScheme;
+      final reduced = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
       return Stack(
         fit: StackFit.expand,
         children: [
@@ -547,11 +559,34 @@ final class _PlayDragInputState extends State<PlayDragInput>
                 child: IgnorePointer(
                   key: ValueKey<String>('play-drag-target:${target.id}'),
                   child: ExcludeSemantics(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        border: Border.all(color: colorScheme.outlineVariant),
-                        borderRadius: BorderRadius.circular(12),
+                    child: AnimatedContainer(
+                      key: ValueKey<String>(
+                        'play-drag-target-glow:${target.id}',
                       ),
+                      duration: reduced
+                          ? Duration.zero
+                          : MosaicVisualTokens.fastFeedback,
+                      curve: Curves.easeOutCubic,
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: _hoveredTargetId == target.id
+                              ? colorScheme.primary
+                              : colorScheme.outlineVariant,
+                          width: _hoveredTargetId == target.id ? 2 : 1,
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: _hoveredTargetId == target.id && !reduced
+                            ? <BoxShadow>[
+                                BoxShadow(
+                                  color: colorScheme.primary.withValues(
+                                    alpha: .22,
+                                  ),
+                                  blurRadius: 12,
+                                ),
+                              ]
+                            : const <BoxShadow>[],
+                      ),
+                      child: const SizedBox.expand(),
                     ),
                   ),
                 ),
@@ -754,16 +789,45 @@ final class _PlayDragInputState extends State<PlayDragInput>
                 children: [
                   Positioned.fromRect(
                     rect: localVisualRect,
-                    child: DecoratedBox(
-                      key: const ValueKey<String>('play-drag-object'),
-                      decoration: BoxDecoration(
-                        color: colorScheme.primaryContainer,
-                        border: Border.all(
-                          color: colorScheme.onPrimaryContainer,
-                          width: 1.5,
-                        ),
-                        borderRadius: BorderRadius.circular(
-                          visualRect.shortestSide / 2,
+                    child: AnimatedScale(
+                      key: const ValueKey<String>('play-drag-object-motion'),
+                      scale:
+                          _dragging &&
+                              !(MediaQuery.maybeOf(
+                                    context,
+                                  )?.disableAnimations ??
+                                  false)
+                          ? 1.06
+                          : 1,
+                      duration: MosaicVisualTokens.fastFeedback,
+                      curve: Curves.easeOutBack,
+                      child: DecoratedBox(
+                        key: const ValueKey<String>('play-drag-object'),
+                        decoration: BoxDecoration(
+                          color: colorScheme.primaryContainer,
+                          border: Border.all(
+                            color: colorScheme.onPrimaryContainer,
+                            width: 1.5,
+                          ),
+                          borderRadius: BorderRadius.circular(
+                            visualRect.shortestSide / 2,
+                          ),
+                          boxShadow:
+                              _dragging &&
+                                  !(MediaQuery.maybeOf(
+                                        context,
+                                      )?.disableAnimations ??
+                                      false)
+                              ? <BoxShadow>[
+                                  BoxShadow(
+                                    color: colorScheme.onSurface.withValues(
+                                      alpha: .18,
+                                    ),
+                                    blurRadius: 10,
+                                    offset: const Offset(0, 3),
+                                  ),
+                                ]
+                              : const <BoxShadow>[],
                         ),
                       ),
                     ),

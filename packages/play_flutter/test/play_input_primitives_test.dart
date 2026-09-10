@@ -40,6 +40,99 @@ void main() {
     expect(locks.last, isFalse);
   });
 
+  testWidgets('drag pickup lifts the object and marks an eligible target', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: SizedBox.square(
+            dimension: 300,
+            child: PlayDragInput(
+              spec: const PlayDragInputSpec(
+                origin: const Offset(.1, .1),
+                size: const Size(.2, .1),
+                handleLabel: 'Move match',
+                showTargetHints: true,
+                targets: const [
+                  PlayDragTarget(
+                    id: 'target',
+                    rect: PlayNormalizedRect(
+                      x: .6,
+                      y: .2,
+                      width: .2,
+                      height: .2,
+                    ),
+                  ),
+                ],
+              ),
+              onTarget: (_) {},
+            ),
+          ),
+        ),
+      ),
+    );
+    final object = find.byKey(const ValueKey<String>('play-drag-object'));
+    final target = find.byKey(
+      const ValueKey<String>('play-drag-target-glow:target'),
+    );
+    final gesture = await tester.startGesture(tester.getCenter(object));
+    // Establish the pan before moving to the target. The gesture arena consumes
+    // the motion that exceeds its touch slop, so a single long test move would
+    // leave the object short of the target.
+    await gesture.moveBy(const Offset(20, 0));
+    await tester.pump();
+    await gesture.moveTo(tester.getCenter(target));
+    await tester.pump();
+
+    final lift = tester.widget<AnimatedScale>(
+      find.byKey(const ValueKey<String>('play-drag-object-motion')),
+    );
+    expect(lift.scale, 1.06);
+    final glow = tester.widget<AnimatedContainer>(
+      target,
+    );
+    final border = (glow.decoration! as BoxDecoration).border! as Border;
+    expect(
+      border.top.color,
+      Theme.of(tester.element(object)).colorScheme.primary,
+    );
+
+    await gesture.cancel();
+  });
+
+  testWidgets('drag lift is immediate with reduced motion', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(disableAnimations: true),
+          child: Center(
+            child: SizedBox.square(
+              dimension: 300,
+              child: PlayDragInput(
+                spec: _runtimeDragSpec(const Offset(.1, .1), 'target'),
+                onTarget: (_) {},
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final object = find.byKey(const ValueKey<String>('play-drag-object'));
+    final gesture = await tester.startGesture(tester.getCenter(object));
+    await tester.pump();
+
+    expect(
+      tester
+          .widget<AnimatedScale>(
+            find.byKey(const ValueKey<String>('play-drag-object-motion')),
+          )
+          .scale,
+      1,
+    );
+    await gesture.cancel();
+  });
+
   testWidgets('adjacent thin targets select the visible destination', (
     tester,
   ) async {
