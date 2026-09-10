@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:play_schema/play_schema.dart';
 
+import 'visual_tokens.dart';
+
 final class PlayPianoInputSpec {
   const PlayPianoInputSpec({required this.keys, required this.sequenceLength});
 
@@ -309,7 +311,10 @@ final class PlayDragInput extends StatefulWidget {
   State<PlayDragInput> createState() => _PlayDragInputState();
 }
 
-final class _PlayDragInputState extends State<PlayDragInput> {
+final class _PlayDragInputState extends State<PlayDragInput>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _returnMotion;
+  Offset? _returnFrom;
   late Offset _position = widget.spec.origin;
   int? _activePointer;
   bool _dragging = false;
@@ -318,9 +323,29 @@ final class _PlayDragInputState extends State<PlayDragInput> {
   bool _focused = false;
 
   @override
+  void initState() {
+    super.initState();
+    _returnMotion = AnimationController(
+      vsync: this,
+      duration: MosaicVisualTokens.fastFeedback,
+    )..addListener(_tickReturn);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_returnMotion.isAnimating &&
+        (MediaQuery.maybeOf(context)?.disableAnimations ?? false)) {
+      _returnMotion.stop();
+      _position = widget.spec.origin;
+    }
+  }
+
+  @override
   void didUpdateWidget(covariant PlayDragInput oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!_dragSpecsEquivalent(oldWidget.spec, widget.spec)) {
+      _returnMotion.stop();
       _endInterruptedManipulation(oldWidget.onManipulationChanged);
       _position = widget.spec.origin;
       _activePointer = null;
@@ -331,6 +356,7 @@ final class _PlayDragInputState extends State<PlayDragInput> {
 
   @override
   void dispose() {
+    _returnMotion.dispose();
     _activePointer = null;
     _endInterruptedManipulation(widget.onManipulationChanged);
     super.dispose();
@@ -352,6 +378,7 @@ final class _PlayDragInputState extends State<PlayDragInput> {
 
   void _pointerDown(PointerDownEvent event) {
     if (_activePointer != null) return;
+    _returnMotion.stop();
     _activePointer = event.pointer;
     _setDragging(true);
   }
@@ -396,20 +423,43 @@ final class _PlayDragInputState extends State<PlayDragInput> {
       widget.onTarget(target.id);
       return;
     }
-    setState(() => _position = widget.spec.origin);
+    _returnToOrigin();
+  }
+
+  void _returnToOrigin() {
+    _returnMotion.stop();
+    if (MediaQuery.maybeOf(context)?.disableAnimations ?? false) {
+      setState(() => _position = widget.spec.origin);
+      return;
+    }
+    _returnFrom = _position;
+    unawaited(_returnMotion.forward(from: 0));
+  }
+
+  void _tickReturn() {
+    final from = _returnFrom;
+    if (from == null) return;
+    setState(
+      () => _position = Offset.lerp(
+        from,
+        widget.spec.origin,
+        Curves.easeOutCubic.transform(_returnMotion.value),
+      )!,
+    );
   }
 
   void _cancel() {
     _activePointer = null;
     _setDragging(false);
     setState(() {
-      _position = widget.spec.origin;
       _selectingTarget = false;
     });
+    _returnToOrigin();
   }
 
   void _beginAlternateSelection() {
     if (_selectingTarget) return;
+    _returnMotion.stop();
     setState(() => _selectingTarget = true);
   }
 
@@ -419,6 +469,7 @@ final class _PlayDragInputState extends State<PlayDragInput> {
   }
 
   void _submitAlternateTarget(int index) {
+    _returnMotion.stop();
     final target = widget.spec.targets[index];
     final targetPosition = Offset(
       target.rect.x + (target.rect.width - widget.spec.size.width) / 2,
@@ -505,12 +556,12 @@ final class _PlayDragInputState extends State<PlayDragInput> {
                   ),
                 ),
               ),
-          if (_selectingTarget)
-            for (var index = 0; index < widget.spec.targets.length; index += 1)
-              _alternateTargetButton(index, bounds, colorScheme),
           if (_focused || _selectingTarget)
             _selectedTargetIndicator(bounds, colorScheme),
           _dragHandle(bounds, colorScheme),
+          if (_selectingTarget)
+            for (var index = 0; index < widget.spec.targets.length; index += 1)
+              _alternateTargetButton(index, bounds, colorScheme),
         ],
       );
     },
@@ -523,12 +574,14 @@ final class _PlayDragInputState extends State<PlayDragInput> {
   ) {
     final target = widget.spec.targets[index];
     final selected = index == _selectedTargetIndex;
+    final visual = _targetVisualRect(target, bounds);
+    final hit = _touchRect(visual, bounds);
     return Positioned(
       key: ValueKey<String>('play-drag-alternate-target:${target.id}'),
-      left: target.rect.x * bounds.width,
-      top: target.rect.y * bounds.height,
-      width: target.rect.width * bounds.width,
-      height: target.rect.height * bounds.height,
+      left: hit.left,
+      top: hit.top,
+      width: hit.width,
+      height: hit.height,
       child: Semantics(
         button: true,
         label: _dragTargetLabel(target),
@@ -536,21 +589,66 @@ final class _PlayDragInputState extends State<PlayDragInput> {
         onTap: () => _submitAlternateTarget(index),
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: () => _submitAlternateTarget(index),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              border: Border.all(
-                color: selected
-                    ? colorScheme.primary
-                    : colorScheme.outlineVariant,
-                width: selected ? 2 : 1,
+          onTapUp: (details) => _submitAlternateTarget(
+            _nearestTarget(details.localPosition + hit.topLeft, bounds),
+          ),
+          child: Stack(
+            children: [
+              Positioned.fromRect(
+                rect: visual.shift(-hit.topLeft),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: selected
+                          ? colorScheme.primary
+                          : colorScheme.outlineVariant,
+                      width: selected ? 2 : 1,
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const SizedBox.expand(),
+                ),
               ),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const SizedBox.expand(),
+            ],
           ),
         ),
       ),
+    );
+  }
+
+  // Expanded touch regions can overlap. Visible geometry takes precedence;
+  // otherwise select the nearest eligible destination, independent of z-order.
+  int _nearestTarget(Offset point, Size bounds) {
+    var nearest = _selectedTargetIndex;
+    var distance = double.infinity;
+    for (var index = 0; index < widget.spec.targets.length; index++) {
+      final visual = _targetVisualRect(widget.spec.targets[index], bounds);
+      if (visual.contains(point)) return index;
+      if (!_touchRect(visual, bounds).contains(point)) continue;
+      final candidateDistance = (point - visual.center).distanceSquared;
+      if (candidateDistance < distance) {
+        nearest = index;
+        distance = candidateDistance;
+      }
+    }
+    return nearest;
+  }
+
+  Rect _targetVisualRect(PlayDragTarget target, Size bounds) => Rect.fromLTWH(
+    target.rect.x * bounds.width,
+    target.rect.y * bounds.height,
+    target.rect.width * bounds.width,
+    target.rect.height * bounds.height,
+  );
+
+  Rect _touchRect(Rect visual, Size bounds) {
+    final width = math.min(bounds.width, math.max(48.0, visual.width));
+    final height = math.min(bounds.height, math.max(48.0, visual.height));
+    return Rect.fromLTWH(
+      (visual.center.dx - width / 2).clamp(0.0, bounds.width - width),
+      (visual.center.dy - height / 2).clamp(0.0, bounds.height - height),
+      width,
+      height,
     );
   }
 

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mosaic_app/game_attempt_controller.dart';
 import 'package:play_engine/play_engine.dart';
@@ -36,6 +38,55 @@ PlayDocument _play() => PlayDocument.fromJson({
 });
 
 void main() {
+  test('a recovered run replays with a fresh ID', () {
+    final first = GameAttemptController(play: _play());
+    final restored = GameAttemptController.restoreRecoverySnapshot(
+      play: _play(),
+      encodedSnapshot: first.encodeRecoverySnapshot(capabilityVersion: 1)!,
+      capabilityVersion: 1,
+    )!;
+    final oldId = restored.attemptId;
+    restored.replay();
+    expect(restored.attemptId, isNot(oldId));
+  });
+
+  test('duplicate input callback cannot apply twice within a run', () {
+    final controller = GameAttemptController(play: _play());
+    final callback = controller.captureActionHandler();
+    callback(const ChoiceAction('b'));
+    callback(const ChoiceAction('b'));
+    expect(controller.session.attempts, 1);
+  });
+
+  test('recovery limit does not trap the live puzzle', () {
+    final controller = GameAttemptController(play: _play());
+    for (var index = 0; index < 129; index++) {
+      controller.apply(const ChoiceAction('b'));
+    }
+    expect(controller.encodeRecoverySnapshot(capabilityVersion: 1), isNull);
+    expect(controller.actions.length, lessThanOrEqualTo(128));
+    controller.apply(const ChoiceAction('a'));
+    expect(controller.completed, isTrue);
+  });
+
+  test('recovery rejects an answer never authored as a choice', () {
+    final controller = GameAttemptController(play: _play());
+    final snapshot =
+        jsonDecode(controller.encodeRecoverySnapshot(capabilityVersion: 1)!)
+            as Map<String, dynamic>;
+    snapshot['actions'] = [
+      {'type': 'choice', 'optionId': 'invented'},
+    ];
+    expect(
+      GameAttemptController.restoreRecoverySnapshot(
+        play: _play(),
+        encodedSnapshot: jsonEncode(snapshot),
+        capabilityVersion: 1,
+      ),
+      isNull,
+    );
+  });
+
   test('replay starts fresh without changing immutable Play identity', () {
     final ids = ['attempt-a', 'attempt-b'].iterator;
     final controller = GameAttemptController(

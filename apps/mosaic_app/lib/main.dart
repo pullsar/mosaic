@@ -273,10 +273,16 @@ final class _MosaicAppState extends State<MosaicApp> {
               },
             ),
             mediaBuilder: media.call,
-            terminal: FilledButton.icon(
-              onPressed: attempt.replay,
-              icon: const Icon(Icons.replay_rounded),
-              label: const Text('Replay'),
+            terminal: Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: Padding(
+                padding: const EdgeInsetsDirectional.fromSTEB(20, 8, 20, 8),
+                child: FilledButton.icon(
+                  onPressed: attempt.replay,
+                  icon: const Icon(Icons.replay_rounded),
+                  label: const Text('Replay'),
+                ),
+              ),
             ),
             onDirectManipulationChanged: onDirectManipulationChanged,
           ),

@@ -119,9 +119,17 @@ final class _PlaySurfaceState extends State<PlaySurface> {
       final input = _InputOverlay(
         input: state.input,
         validation: state.validation,
-        inputEpoch: _session.attempts,
+        // A direct terminal drag keeps the placed object from its final input.
+        inputEpoch: _session.attempts - (isDragInput && _session.ended ? 1 : 0),
         onAction: _apply,
         onDirectManipulationChanged: widget.onDirectManipulationChanged,
+      );
+      final dragPresentation = IgnorePointer(
+        ignoring: _session.ended,
+        child: ExcludeFocus(
+          excluding: _session.ended,
+          child: ExcludeSemantics(excluding: _session.ended, child: input),
+        ),
       );
 
       return ColoredBox(
@@ -150,9 +158,9 @@ final class _PlaySurfaceState extends State<PlaySurface> {
                       ),
                     if (isDragInput)
                       if (usesCanvasStage)
-                        PlayCanvasStage(child: input)
+                        PlayCanvasStage(child: dragPresentation)
                       else
-                        input,
+                        dragPresentation,
                   ],
                 ),
               ),

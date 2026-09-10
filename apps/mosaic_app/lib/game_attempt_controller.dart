@@ -47,6 +47,8 @@ final class GameAttemptController extends ChangeNotifier {
   late GameAttemptMode _mode;
   late PlaySession _session;
   PlayResolution? _lastResolution;
+  bool _recoverable = true;
+  bool _disposed = false;
 
   String get attemptId => _attemptId;
   GameAttemptMode get mode => _mode;
@@ -56,7 +58,7 @@ final class GameAttemptController extends ChangeNotifier {
   List<PlayAction> get actions => List<PlayAction>.unmodifiable(_actions);
 
   String? encodeRecoverySnapshot({required int capabilityVersion}) {
-    if (completed || capabilityVersion < 1) return null;
+    if (completed || !_recoverable || capabilityVersion < 1) return null;
     final encoded = jsonEncode(<String, Object?>{
       'version': 1,
       'playId': _session.play.id,
@@ -75,6 +77,7 @@ final class GameAttemptController extends ChangeNotifier {
     required PlayDocument play,
     required String encodedSnapshot,
     required int capabilityVersion,
+    AttemptIdFactory idFactory = secureUuidV4,
   }) {
     if (capabilityVersion < 1 ||
         utf8.encode(encodedSnapshot).length > maxRecoveryBytes) {
@@ -107,11 +110,15 @@ final class GameAttemptController extends ChangeNotifier {
       final controller = GameAttemptController(
         play: play,
         mode: mode,
-        idFactory: () => attemptId,
+        idFactory: idFactory,
       );
+      controller._attemptId = attemptId;
       for (final rawAction in rawActions) {
         final action = _decodeAction(rawAction);
-        if (action == null || controller.completed) return null;
+        if (action == null ||
+            controller.completed ||
+            !controller._isAuthoredAction(action))
+          return null;
         controller.apply(action);
       }
       if (controller.completed ||
@@ -129,8 +136,12 @@ final class GameAttemptController extends ChangeNotifier {
   }) {
     final capturedId = _attemptId;
     final capturedGeneration = _lease.generation;
+    final capturedSession = _session;
     return (action) {
-      if (capturedId != _attemptId || !_lease.accepts(capturedGeneration)) {
+      if (_disposed ||
+          capturedId != _attemptId ||
+          !identical(capturedSession, _session) ||
+          !_lease.accepts(capturedGeneration)) {
         return;
       }
       final resolution = apply(action);
@@ -139,11 +150,17 @@ final class GameAttemptController extends ChangeNotifier {
   }
 
   PlayResolution apply(PlayAction action) {
-    if (_actions.length >= maxActions) {
-      throw StateError('Attempt action limit reached.');
+    if (_disposed) throw StateError('Attempt is disposed.');
+    final frozenAction = action is SequenceAction
+        ? SequenceAction(List<String>.unmodifiable(action.values))
+        : action;
+    final resolution = _engine.apply(_session, frozenAction);
+    if (_recoverable && _actions.length < maxActions) {
+      _actions.add(frozenAction);
+    } else {
+      _recoverable = false;
+      _actions.clear();
     }
-    final resolution = _engine.apply(_session, action);
-    _actions.add(action);
     _session = resolution.session;
     _lastResolution = resolution;
     notifyListeners();
@@ -156,12 +173,14 @@ final class GameAttemptController extends ChangeNotifier {
     _mode = mode;
     _session = _engine.start(_session.play);
     _actions.clear();
+    _recoverable = true;
     _lastResolution = null;
     notifyListeners();
   }
 
   @override
   void dispose() {
+    _disposed = true;
     _lease.invalidate();
     super.dispose();
   }
@@ -197,6 +216,7 @@ final class GameAttemptController extends ChangeNotifier {
   static PlayAction? _decodeAction(Object? raw) {
     if (raw is! Map) return null;
     final action = raw.cast<String, Object?>();
+    if (action['type'] != 'tap' && action.length != 2) return null;
     return switch (action['type']) {
       'tap' => action.length == 1 ? const TapAction() : null,
       'choice' => _boundedActionText(action['optionId'], 'choice'),
@@ -229,6 +249,31 @@ final class GameAttemptController extends ChangeNotifier {
     'challenge' => GameAttemptMode.challenge,
     _ => null,
   };
+
+  bool _isAuthoredAction(PlayAction action) {
+    final input = _session.state.input;
+    return switch (action) {
+      TapAction() => input.type == PlayInputType.tap,
+      ChoiceAction(:final optionId) => input.options.any(
+        (option) => option.id == optionId,
+      ),
+      DragAction(:final targetId) =>
+        input.properties['targets'] is List &&
+            (input.properties['targets'] as List).any(
+              (target) => target is Map && target['id'] == targetId,
+            ),
+      SequenceAction(:final values) =>
+        input.type == PlayInputType.pianoKey &&
+            values.every(
+              (value) =>
+                  (input.properties['keys'] ?? MosaicPianoInputDefaults.keys)
+                      is List &&
+                  ((input.properties['keys'] ?? MosaicPianoInputDefaults.keys)
+                          as List)
+                      .contains(value),
+            ),
+    };
+  }
 }
 
 typedef GameAttemptBuilder =
