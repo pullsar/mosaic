@@ -51,6 +51,54 @@ export interface GameThemeManifest {
   variants: readonly GameThemeVariant[];
 }
 
+export type ThemePreference = 'random' | string;
+export type PresentationResolution =
+  | {kind: 'resolved'; presentation: GamePresentationReference}
+  | {kind: 'neutral'; reason: 'empty_pool' | 'preference_unavailable' | 'frozen_unavailable'};
+
+/** Resolves once at round preparation; it owns neither time nor random state. */
+export function resolvePresentation(
+  frozen: GamePresentationReference | undefined,
+  preference: ThemePreference,
+  candidates: readonly GamePresentationReference[],
+  recentPackIds: readonly string[],
+  nextWord: () => number,
+): PresentationResolution {
+  const pool = [...candidates].sort((a, b) =>
+    a.themeId.localeCompare(b.themeId) || a.themeRevisionId.localeCompare(b.themeRevisionId) || a.variantId.localeCompare(b.variantId),
+  );
+  const key = (value: GamePresentationReference) => `${value.themeId}\n${value.themeRevisionId}\n${value.variantId}`;
+  const frozenKey = frozen && key(frozen);
+  if (frozenKey) {
+    const match = pool.find((candidate) => key(candidate) === frozenKey);
+    return match ? {kind: 'resolved', presentation: match} : {kind: 'neutral', reason: 'frozen_unavailable'};
+  }
+  if (pool.length === 0) return {kind: 'neutral', reason: 'empty_pool'};
+  if (preference !== 'random') {
+    const preferred = pool.filter((candidate) => candidate.themeId === preference);
+    if (preferred.length === 0) return {kind: 'neutral', reason: 'preference_unavailable'};
+    return {kind: 'resolved', presentation: preferred[uniformIndex(preferred.length, nextWord)]!};
+  }
+  const recent = new Set(recentPackIds.slice(-2));
+  const withoutRecent = pool.filter((candidate) => !recent.has(candidate.themeId));
+  const eligible = withoutRecent.length === 0 ? pool : withoutRecent;
+  const packs = [...new Set(eligible.map((candidate) => candidate.themeId))].sort();
+  const pack = packs[uniformIndex(packs.length, nextWord)]!;
+  const variants = eligible.filter((candidate) => candidate.themeId === pack);
+  return {kind: 'resolved', presentation: variants[uniformIndex(variants.length, nextWord)]!};
+}
+
+export function uniformIndex(size: number, nextWord: () => number): number {
+  if (!Number.isInteger(size) || size < 1 || size > 65536) throw new Error('invalid_choice_count');
+  const limit = Math.floor(4294967296 / size) * size;
+  for (let attempt = 0; attempt < 128; attempt += 1) {
+    const word = nextWord();
+    if (!Number.isInteger(word) || word < 0 || word >= 4294967296) throw new Error('invalid_random_word');
+    if (word < limit) return word % size;
+  }
+  throw new Error('random_source_exhausted');
+}
+
 export interface GameThemeAssetReadiness {
   assertReady(assetIds: readonly string[]): Promise<void>;
 }

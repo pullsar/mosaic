@@ -4,6 +4,8 @@ import {
   assertGamePresentationCompatible,
   normalizeGameFamilyManifest,
   normalizeGameThemeManifest,
+  resolvePresentation,
+  uniformIndex,
 } from '../src/game_theme.js';
 
 const family = {
@@ -123,4 +125,29 @@ test('an unknown theme revision cannot be presented to a family', () => {
       ),
     /theme_revision_not_found/,
   );
+});
+
+test('presentation resolution freezes exact choices and avoids recent packs', () => {
+  const candidates = [
+    {themeId: 'glass-garden', themeRevisionId: 'theme_1', variantId: 'mineral'},
+    {themeId: 'paper-studio', themeRevisionId: 'theme_1', variantId: 'felt-ivory'},
+    {themeId: 'paper-studio', themeRevisionId: 'theme_1', variantId: 'felt-coral'},
+  ];
+  assert.deepEqual(
+    resolvePresentation({themeId: 'paper-studio', themeRevisionId: 'theme_1', variantId: 'felt-ivory'}, 'random', candidates, [], () => 0),
+    {kind: 'resolved', presentation: candidates[1]},
+  );
+  assert.deepEqual(
+    resolvePresentation(undefined, 'random', candidates, ['paper-studio'], () => 0),
+    {kind: 'resolved', presentation: candidates[0]},
+  );
+  assert.deepEqual(
+    resolvePresentation(undefined, 'orbital', candidates, [], () => 0),
+    {kind: 'neutral', reason: 'preference_unavailable'},
+  );
+});
+
+test('uniform selection rejects modulo-biased words', () => {
+  const words = [4294967295, 4];
+  assert.equal(uniformIndex(3, () => words.shift()!), 1);
 });
