@@ -34,6 +34,14 @@ export interface MosaicRepository {
   verifyActorAccess(actorId: string, credentialDigest: string): Promise<boolean>;
   bindActorToUser(actorId: string, userId: string): Promise<void>;
   getPlayRevision(playId: string, revisionId: string): Promise<unknown | null>;
+  /**
+   * Resolves a revision that has been deliberately published to the catalog.
+   * Suspended catalog entries remain reachable by their immutable identity so
+   * old links preserve their original result; a future withdrawal state must
+   * be modeled explicitly before it can make an already-published revision
+   * unavailable.
+   */
+  getPublicPlayRevision(playId: string, revisionId: string): Promise<unknown | null>;
   insertEvent(event: EventInput): Promise<'inserted' | 'duplicate'>;
 }
 
@@ -147,6 +155,21 @@ export class PostgresRepository implements MosaicRepository {
       `select document
          from play_revisions
         where play_id = $1 and revision_id = $2`,
+      [playId, revisionId],
+    );
+    return result.rows[0]?.document ?? null;
+  }
+
+  async getPublicPlayRevision(playId: string, revisionId: string): Promise<unknown | null> {
+    const result = await this.pool.query<{document: unknown}>(
+      `select revision.document
+         from play_revisions revision
+         join feed_catalog_entries catalog
+           on catalog.play_id = revision.play_id
+          and catalog.revision_id = revision.revision_id
+        where revision.play_id = $1
+          and revision.revision_id = $2
+          and catalog.state in ('eligible', 'suspended')`,
       [playId, revisionId],
     );
     return result.rows[0]?.document ?? null;

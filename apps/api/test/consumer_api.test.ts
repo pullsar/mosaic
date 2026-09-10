@@ -55,6 +55,9 @@ class CoreRepository implements MosaicRepository {
   async getPlayRevision(): Promise<unknown | null> {
     return null;
   }
+  async getPublicPlayRevision(): Promise<unknown | null> {
+    return null;
+  }
   async insertEvent(_event: EventInput): Promise<'inserted' | 'duplicate'> {
     return 'inserted';
   }

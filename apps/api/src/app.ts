@@ -226,6 +226,18 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     return reply.send(document);
   });
 
+  app.get('/v1/public/plays/:playId/revisions/:revisionId', async (request, reply) => {
+    const params = request.params as {playId?: string; revisionId?: string};
+    const playId = boundedText(params.playId, 200);
+    const revisionId = boundedText(params.revisionId, 200);
+    if (playId === null || revisionId === null) {
+      return reply.code(400).send({error: 'invalid_public_play_request'});
+    }
+    const document = await options.repository.getPublicPlayRevision(playId, revisionId);
+    if (document === null) return reply.code(404).send({error: 'public_play_not_found'});
+    return reply.send(document);
+  });
+
   if (options.consumerRepository && feedService) {
     const consumerRepository = options.consumerRepository;
 

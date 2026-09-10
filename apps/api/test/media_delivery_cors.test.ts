@@ -27,6 +27,9 @@ const repository: MosaicRepository = {
   async getPlayRevision() {
     return null;
   },
+  async getPublicPlayRevision() {
+    return null;
+  },
   async insertEvent() {
     return 'inserted';
   },
