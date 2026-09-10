@@ -76,6 +76,40 @@ test('pattern reveal fills only the missing slot with the accepted shape', () =>
   assert.ok((play.document.assets as string[]).includes(after.id));
 });
 
+test('Quiet Switch changes only the vase between observation and choice', () => {
+  const play = productionCatalogIntegrityFixture.plays.find(
+    (candidate) => candidate.id === 'mixli_starter_quiet_switch',
+  );
+  assert.ok(play);
+  const states = play.document.states as Record<string, {
+    presentation: {layers: Array<{type: string; assetId?: string}>};
+  }>;
+  const beforeId = states.observe!.presentation.layers.find(
+    (layer) => layer.type === 'canvas',
+  )!.assetId;
+  const afterId = states.choose!.presentation.layers.find(
+    (layer) => layer.type === 'canvas',
+  )!.assetId;
+  const before = productionCatalogIntegrityFixture.canvasAssets.find(
+    (asset) => asset.id === beforeId,
+  )!;
+  const after = productionCatalogIntegrityFixture.canvasAssets.find(
+    (asset) => asset.id === afterId,
+  )!;
+
+  assert.equal(before.semanticLabel, after.semanticLabel);
+  assert.equal(before.elements.length, after.elements.length);
+  const changed = before.elements.reduce<number[]>((indices, element, index) => {
+    if (JSON.stringify(element) !== JSON.stringify(after.elements[index])) {
+      indices.push(index);
+    }
+    return indices;
+  }, []);
+  assert.deepEqual(changed, [2]);
+  assert.equal(before.elements[2]!.type, 'circle');
+  assert.equal(after.elements[2]!.type, 'circle');
+});
+
 test('moving a piece preserves count and the original configuration', () => {
   const before = new Set(['a', 'b']);
 

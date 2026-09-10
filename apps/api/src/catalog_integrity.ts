@@ -52,6 +52,18 @@ export type CatalogIntegrityReview =
       readonly destinations: readonly MatchstickDestination[];
       readonly answerDestinationId: string;
       readonly solvedEquation: string;
+    }
+  | {
+      readonly kind: 'quiet_switch';
+      readonly playId: string;
+      readonly revisionId: string;
+      readonly prompt: string;
+      readonly sourceAssetId: string;
+      readonly choiceAssetId: string;
+      readonly choicePrompt: string;
+      readonly answer: string;
+      readonly changedElementIndex: number;
+      readonly revealStartsWith: string;
     };
 
 export interface MatchstickDestination {
@@ -81,6 +93,7 @@ type PlayState = {
     readonly targets?: readonly {readonly id?: unknown}[];
   };
   readonly validation?: {readonly type?: unknown; readonly value?: unknown};
+  readonly transition?: Readonly<Record<string, unknown>>;
 };
 
 export function moveSegment(
@@ -269,7 +282,80 @@ export function assertProductionCatalogIntegrity(
       case 'matchstick':
         assertMatchstickReview(review, entryState, states, assetById);
         break;
+      case 'quiet_switch':
+        assertQuietSwitchReview(review, entryState, states, assetById);
+        break;
     }
+  }
+}
+
+function assertQuietSwitchReview(
+  review: Extract<CatalogIntegrityReview, {kind: 'quiet_switch'}>,
+  entryState: Record<string, unknown>,
+  states: Record<string, unknown>,
+  assetById: ReadonlyMap<string, CanvasAssetDocument>,
+): void {
+  assertPrompt(review, entryState);
+  const entryInput = record(entryState.input, `${review.playId}.input`);
+  const entryValidation = record(entryState.validation, `${review.playId}.validation`);
+  const entryTransition = record(entryState.transition, `${review.playId}.transition`);
+  if (
+    entryInput.type !== 'tap' ||
+    entryValidation.type !== 'none' ||
+    entryTransition.default !== 'choose'
+  ) {
+    throw new Error(`quiet_switch_observation_flow:${review.playId}`);
+  }
+  const entryLayers = presentationLayers(entryState, review.playId);
+  if (!entryLayers.some((layer) => layer.type === 'canvas' && layer.assetId === review.sourceAssetId)) {
+    throw new Error(`quiet_switch_source_asset_mismatch:${review.playId}`);
+  }
+  const choiceState = record(states.choose, `${review.playId}.choose`);
+  assertPrompt({...review, prompt: review.choicePrompt}, choiceState);
+  const choiceInput = record(choiceState.input, `${review.playId}.choose.input`);
+  const choiceValidation = record(choiceState.validation, `${review.playId}.choose.validation`);
+  if (
+    choiceInput.type !== 'single_choice' ||
+    !optionIdsFrom(choiceInput, review.playId).includes(review.answer) ||
+    choiceValidation.type !== 'equals' ||
+    choiceValidation.value !== review.answer
+  ) {
+    throw new Error(`quiet_switch_answer_mismatch:${review.playId}`);
+  }
+  const choiceLayers = presentationLayers(choiceState, review.playId);
+  if (!choiceLayers.some((layer) => layer.type === 'canvas' && layer.assetId === review.choiceAssetId)) {
+    throw new Error(`quiet_switch_choice_asset_mismatch:${review.playId}`);
+  }
+  const source = assetById.get(review.sourceAssetId);
+  const choice = assetById.get(review.choiceAssetId);
+  if (source === undefined || choice === undefined) {
+    throw new Error(`missing_canvas_asset:${review.playId}`);
+  }
+  if (
+    source.semanticLabel !== choice.semanticLabel ||
+    canonicalJson(source.palette) !== canonicalJson(choice.palette) ||
+    source.elements.length !== choice.elements.length
+  ) {
+    throw new Error(`quiet_switch_scene_structure:${review.playId}`);
+  }
+  const changed = source.elements.flatMap((element, index) =>
+    canonicalJson(element) === canonicalJson(choice.elements[index]) ? [] : [index],
+  );
+  if (
+    changed.length !== 1 ||
+    changed[0] !== review.changedElementIndex ||
+    source.elements[review.changedElementIndex]?.type !== 'circle' ||
+    choice.elements[review.changedElementIndex]?.type !== 'circle'
+  ) {
+    throw new Error(`quiet_switch_change_mismatch:${review.playId}`);
+  }
+  const revealState = record(states.reveal, `${review.playId}.reveal`);
+  const revealLayers = presentationLayers(revealState, review.playId);
+  if (!revealLayers.some((layer) => layer.type === 'canvas' && layer.assetId === review.choiceAssetId)) {
+    throw new Error(`quiet_switch_reveal_asset_mismatch:${review.playId}`);
+  }
+  if (!revealTitleFrom(revealState, review.playId).startsWith(review.revealStartsWith)) {
+    throw new Error(`review_reveal_mismatch:${review.playId}`);
   }
 }
 

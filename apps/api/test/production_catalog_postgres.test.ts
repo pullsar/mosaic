@@ -71,7 +71,7 @@ test(
           order by catalog.play_id, catalog.revision_id`,
       );
 
-      assert.deepEqual(first, {eligiblePlays: 6, canvasAssets: 22});
+      assert.deepEqual(first, {eligiblePlays: 7, canvasAssets: 24});
       assert.deepEqual(second, first);
       assert.deepEqual(afterRetry.rows, beforeRetry.rows);
       assert.deepEqual(await verifyProductionCatalog(pool), first);
@@ -131,7 +131,7 @@ test(
             and catalog.state = 'eligible'
           order by catalog.curated_order`,
       );
-      assert.equal(eligible.rows.length, 6);
+      assert.equal(eligible.rows.length, 7);
       assert.equal(
         eligible.rows.filter((row) => {
           const playAssets = new Set(row.document.assets ?? []);
@@ -142,7 +142,7 @@ test(
               playAssets.has(layer.assetId),
           );
         }).length,
-        6,
+        7,
       );
       const interactionTypes = new Set(
         eligible.rows.map((row) => {
@@ -154,6 +154,7 @@ test(
       );
       assert.equal(interactionTypes.has('single_choice'), true);
       assert.equal(interactionTypes.has('drag'), true);
+      assert.equal(interactionTypes.has('tap'), true);
       for (let index = 1; index < eligible.rows.length; index += 1) {
         assert.notEqual(
           eligible.rows[index]?.document.topics?.[0],
@@ -170,7 +171,7 @@ test(
         'select document from canvas_assets where id = any($1::text[])',
         [eligibleAssetIds],
       );
-      assert.equal(eligibleCanvases.rows.length, 8);
+      assert.equal(eligibleCanvases.rows.length, 10);
       assert.ok(
         new Set(
           eligibleCanvases.rows.map((row) => JSON.stringify(row.document.palette)),

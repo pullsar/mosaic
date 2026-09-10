@@ -13,7 +13,7 @@ import {
 import {canonicalJson} from './media.js';
 
 export const productionStarterPrefix = 'mixli_starter_';
-export const productionStarterCount = 6;
+export const productionStarterCount = 7;
 
 export interface ProductionCatalogStatus {
   eligiblePlays: number;
@@ -422,6 +422,17 @@ const patternV4Palette = {
   background: '#EFF2EC', foreground: '#17261F', accent: '#166A55',
   muted: '#6C7C73', surface: '#C9D8CF',
 } as const;
+const quietSwitchPalette = {
+  background: '#18282E', foreground: '#F6EBDD', accent: '#D7A15D',
+  muted: '#86A7A6', surface: '#365159',
+} as const;
+const quietSwitchRoom = [
+  {type: 'rect', x: 0.12, y: 0.24, width: 0.76, height: 0.09, radius: 0.018, fill: true, tone: 'surface'},
+  {type: 'rect', x: 0.22, y: 0.47, width: 0.2, height: 0.07, radius: 0.012, fill: true, tone: 'foreground'},
+  {type: 'circle', x: 0.36, y: 0.2, radius: 0.052, fill: true, tone: 'accent'},
+  {type: 'line', x1: 0.72, y1: 0.62, x2: 0.72, y2: 0.38, width: 0.018, tone: 'muted'},
+  {type: 'circle', x: 0.72, y: 0.32, radius: 0.075, fill: true, tone: 'foreground'},
+] as const;
 const routeV3Asset = verifiedCanvasAssets.find((asset) => asset.id === 'mixli_canvas_orbit_v3')!;
 const clarifiedCanvasAssets = [
   {
@@ -455,11 +466,31 @@ const clarifiedCanvasAssets = [
   },
 ] as const;
 
+const quietSwitchCanvasAssets = [
+  {
+    schemaVersion: 1,
+    id: 'mixli_canvas_quiet_switch_before_v1',
+    semanticLabel: 'A reading room with a shelf, book, lamp, and vase.',
+    elements: quietSwitchRoom,
+    palette: quietSwitchPalette,
+  },
+  {
+    schemaVersion: 1,
+    id: 'mixli_canvas_quiet_switch_after_v1',
+    semanticLabel: 'A reading room with a shelf, book, lamp, and vase.',
+    elements: quietSwitchRoom.map((element, index) =>
+      index === 2 ? {...element, x: 0.58} : element,
+    ),
+    palette: quietSwitchPalette,
+  },
+] as const;
+
 const canvasAssets = [
   ...legacyCanvasAssets,
   ...releaseCanvasAssets,
   ...verifiedCanvasAssets,
   ...clarifiedCanvasAssets,
+  ...quietSwitchCanvasAssets,
 ] as const;
 
 const legacyChoiceSpecs: readonly ChoiceSpec[] = [
@@ -859,6 +890,70 @@ const moveOneMatchV3: StarterPlay = {
   },
 };
 
+const quietSwitchV1: StarterPlay = {
+  id: 'mixli_starter_quiet_switch',
+  revisionId: 'rev_1',
+  topics: ['observation', 'design'],
+  document: {
+    schemaVersion: 1,
+    id: 'mixli_starter_quiet_switch',
+    revisionId: 'rev_1',
+    format: 'guess',
+    classification: 'challenge',
+    topics: ['observation', 'design'],
+    learningTopics: [],
+    estimatedDurationSec: 15,
+    assets: [
+      'mixli_canvas_quiet_switch_before_v1',
+      'mixli_canvas_quiet_switch_after_v1',
+    ],
+    sources: [],
+    entryState: 'observe',
+    states: {
+      observe: {
+        presentation: {
+          layers: [
+            {type: 'canvas', role: 'media', assetId: 'mixli_canvas_quiet_switch_before_v1'},
+            {type: 'text', role: 'prompt', value: 'Remember the room.'},
+          ],
+        },
+        input: {type: 'tap', label: 'Ready'},
+        validation: {type: 'none'},
+        transition: {default: 'choose'},
+      },
+      choose: {
+        presentation: {
+          layers: [
+            {type: 'canvas', role: 'media', assetId: 'mixli_canvas_quiet_switch_after_v1'},
+            {type: 'text', role: 'prompt', value: 'What changed?'},
+          ],
+        },
+        input: {
+          type: 'single_choice',
+          options: [
+            {id: 'vase', label: 'The vase moved'},
+            {id: 'book', label: 'The book changed'},
+            {id: 'lamp', label: 'The lamp changed'},
+          ],
+        },
+        validation: {type: 'equals', value: 'vase'},
+        transition: {correct: 'reveal', incorrect: 'choose'},
+      },
+      reveal: {
+        presentation: {
+          layers: [
+            {type: 'canvas', role: 'media', assetId: 'mixli_canvas_quiet_switch_after_v1'},
+            {type: 'text', role: 'reveal_title', value: 'The vase moved to the right.'},
+          ],
+        },
+        input: {type: 'tap', label: 'Done'},
+        validation: {type: 'none'},
+        transition: {default: '$end'},
+      },
+    },
+  },
+};
+
 const releaseV3StarterPlays: readonly StarterPlay[] = [
   moveOneMatchV3,
   ...releaseV3ChoiceSpecs.map((spec) => ({
@@ -879,9 +974,12 @@ const clarifiedStarterPlays: readonly StarterPlay[] = clarifiedChoiceSpecs.map((
   document: choiceDocument(spec, 'rev_4'),
 }));
 const clarifiedPlayIds = new Set(clarifiedStarterPlays.map((play) => play.id));
-const starterPlays = releaseV3StarterPlays.map((play) =>
-  clarifiedStarterPlays.find((replacement) => replacement.id === play.id) ?? play,
-);
+const starterPlays = [
+  ...releaseV3StarterPlays.map((play) =>
+    clarifiedStarterPlays.find((replacement) => replacement.id === play.id) ?? play,
+  ),
+  quietSwitchV1,
+] as const;
 
 const historicalStarterPlays = [
   ...legacyStarterPlays,
@@ -965,6 +1063,18 @@ const starterIntegrityReviews: readonly CatalogIntegrityReview[] = [
     answer: '30',
     revealStartsWith: '30.',
     semanticEvidence: ['2', '6', '12', '20'],
+  },
+  {
+    kind: 'quiet_switch',
+    playId: 'mixli_starter_quiet_switch',
+    revisionId: 'rev_1',
+    prompt: 'Remember the room.',
+    sourceAssetId: 'mixli_canvas_quiet_switch_before_v1',
+    choiceAssetId: 'mixli_canvas_quiet_switch_after_v1',
+    choicePrompt: 'What changed?',
+    answer: 'vase',
+    changedElementIndex: 2,
+    revealStartsWith: 'The vase moved',
   },
 ] as const;
 
