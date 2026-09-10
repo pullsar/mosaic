@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:play_engine/play_engine.dart';
 import 'package:play_flutter/play_flutter.dart';
 import 'package:play_schema/play_schema.dart';
 
@@ -99,5 +100,84 @@ void main() {
 
     expect(find.text('Reveal stable'), findsOneWidget);
     expect(find.text('Ignored rewrite'), findsNothing);
+  });
+
+  testWidgets('controlled surface delegates actions to its session owner', (
+    tester,
+  ) async {
+    final play = _play(id: 'controlled', prompt: 'Controlled prompt');
+    const engine = PlayEngine();
+    var session = engine.start(play);
+    late StateSetter rebuild;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) {
+            rebuild = setState;
+            return PlaySurface.controlled(
+              session: session,
+              onAction: (action) {
+                rebuild(() => session = engine.apply(session, action).session);
+              },
+            );
+          },
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('A'));
+    await tester.pump();
+    expect(find.text('Reveal controlled'), findsOneWidget);
+
+    rebuild(() {});
+    await tester.pump();
+    expect(find.text('Reveal controlled'), findsOneWidget);
+  });
+
+  testWidgets('controlled surface never advances without owner state', (
+    tester,
+  ) async {
+    final play = _play(id: 'delegated', prompt: 'Delegated prompt');
+    const engine = PlayEngine();
+    final actions = <PlayAction>[];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PlaySurface.controlled(
+          session: engine.start(play),
+          onAction: actions.add,
+        ),
+      ),
+    );
+    await tester.tap(find.text('A'));
+    await tester.pump();
+
+    expect(actions, hasLength(1));
+    expect(find.text('Delegated prompt'), findsOneWidget);
+    expect(find.text('Reveal delegated'), findsNothing);
+  });
+
+  testWidgets('ended session replaces the old input with terminal action', (
+    tester,
+  ) async {
+    final play = _play(id: 'terminal', prompt: 'Terminal prompt');
+    const engine = PlayEngine();
+    var session = engine.start(play);
+    session = engine.apply(session, const ChoiceAction('a')).session;
+    session = engine.apply(session, const TapAction()).session;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PlaySurface.controlled(
+          session: session,
+          onAction: (_) => fail('ended input must not dispatch'),
+          terminal: const Text('Replay'),
+        ),
+      ),
+    );
+
+    expect(find.text('Done'), findsNothing);
+    expect(find.text('Replay'), findsOneWidget);
   });
 }

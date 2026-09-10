@@ -21,6 +21,7 @@ dependencies:
   platform_contracts: ^0.1.0
   platform_flutter: ^0.1.0
   play_flutter: ^0.1.0
+  play_engine: ^0.1.0
   play_schema: ^0.1.0
   sentry_flutter: ^9.28.0
 dev_dependencies:

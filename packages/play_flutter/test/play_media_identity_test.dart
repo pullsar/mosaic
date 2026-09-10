@@ -25,4 +25,15 @@ void main() {
     expect(() => playMediaOwnerIdFor(' ', 'rev_1'), throwsArgumentError);
     expect(() => playMediaOwnerIdFor('play_a', ' '), throwsArgumentError);
   });
+
+  test('attempt identity isolates media for replays of one revision', () {
+    expect(
+      playMediaOwnerIdForAttempt('play_a', 'rev_1', 'attempt_a'),
+      isNot(playMediaOwnerIdForAttempt('play_a', 'rev_1', 'attempt_b')),
+    );
+    expect(
+      () => playMediaOwnerIdForAttempt('play_a', 'rev_1', ' '),
+      throwsArgumentError,
+    );
+  });
 }
