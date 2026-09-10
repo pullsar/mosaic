@@ -12,16 +12,23 @@ final class SavedGameEntry {
 
 typedef SavedGameEntriesLoader = Future<List<SavedGameEntry>> Function();
 typedef SavedGameOpenCallback = Future<void> Function(ConsumerFeedItem item);
+typedef SavedGameUnsaveCallback = Future<bool> Function(SavedGameEntry entry);
 
 /// A local-first view of Saved games.
 ///
 /// The owner supplies retained, validated revisions so this surface never
 /// creates another renderer or bypasses the shared Play route.
 final class SavedGamesPage extends StatefulWidget {
-  const SavedGamesPage({required this.loadEntries, this.onOpen, super.key});
+  const SavedGamesPage({
+    required this.loadEntries,
+    this.onOpen,
+    this.onUnsave,
+    super.key,
+  });
 
   final SavedGameEntriesLoader loadEntries;
   final SavedGameOpenCallback? onOpen;
+  final SavedGameUnsaveCallback? onUnsave;
 
   @override
   State<SavedGamesPage> createState() => _SavedGamesPageState();
@@ -30,11 +37,19 @@ final class SavedGamesPage extends StatefulWidget {
 final class _SavedGamesPageState extends State<SavedGamesPage> {
   late Future<List<SavedGameEntry>> _entries = widget.loadEntries();
 
-  void _retry() => setState(() => _entries = widget.loadEntries());
+  void _retry() => setState(() {
+    _entries = widget.loadEntries();
+  });
 
   Future<void> _open(ConsumerFeedItem item) async {
     final callback = widget.onOpen;
     if (callback != null) await callback(item);
+  }
+
+  Future<void> _unsave(SavedGameEntry entry) async {
+    final callback = widget.onUnsave;
+    if (callback == null) return;
+    if (await callback(entry) && mounted) _retry();
   }
 
   @override
@@ -80,21 +95,42 @@ final class _SavedGamesPageState extends State<SavedGamesPage> {
                 color: Theme.of(context).colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(20),
                 clipBehavior: Clip.antiAlias,
-                child: InkWell(
-                  key: ValueKey<String>('saved-game:${entry.item.playId}'),
-                  onTap: () => _open(entry.item),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Align(
-                      alignment: AlignmentDirectional.bottomStart,
-                      child: Text(
-                        prompt,
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleMedium,
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: InkWell(
+                        key: ValueKey<String>(
+                          'saved-game:${entry.item.playId}',
+                        ),
+                        onTap: () => _open(entry.item),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Align(
+                            alignment: AlignmentDirectional.bottomStart,
+                            child: Text(
+                              prompt,
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                          ),
+                        ),
                       ),
                     ),
-                  ),
+                    if (widget.onUnsave != null)
+                      PositionedDirectional(
+                        top: 4,
+                        end: 4,
+                        child: IconButton(
+                          key: ValueKey<String>(
+                            'saved-game-unsave:${entry.item.playId}',
+                          ),
+                          tooltip: 'Unsave',
+                          onPressed: () => _unsave(entry),
+                          icon: const Icon(Icons.bookmark_remove_outlined),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             );

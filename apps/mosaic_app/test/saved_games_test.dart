@@ -79,4 +79,34 @@ void main() {
 
     expect(find.text('No saved games'), findsOneWidget);
   });
+
+  testWidgets('Saved removes an unsaved round from the collection', (
+    tester,
+  ) async {
+    var saved = true;
+    final entry = SavedGameEntry(
+      item: _item('unsave_play'),
+      updatedAt: DateTime.utc(2026, 9, 11),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SavedGamesPage(
+          loadEntries: () async =>
+              saved ? <SavedGameEntry>[entry] : const <SavedGameEntry>[],
+          onUnsave: (_) async {
+            saved = false;
+            return true;
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('saved-game-unsave:unsave_play')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('No saved games'), findsOneWidget);
+  });
 }

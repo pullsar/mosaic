@@ -472,6 +472,11 @@ final class _MosaicAppState extends State<MosaicApp> {
     MaterialPageRoute<void>(
       builder: (routeContext) => SavedGamesPage(
         loadEntries: _loadSavedGames,
+        onUnsave: (entry) => _actionController.toggleSave(
+          playId: entry.item.playId,
+          revisionId: entry.item.revisionId,
+          feedRequestId: 'saved:${entry.item.revisionId}',
+        ),
         onOpen: (item) => _openPlay(
           routeContext,
           playId: item.playId,
