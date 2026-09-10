@@ -6,9 +6,11 @@ import 'package:play_schema/play_schema.dart';
 
 import 'consumer_api_client.dart';
 import 'consumer_local_state.dart';
+import 'game_sound_preferences.dart';
 import 'guest_engagement.dart';
 
 const _preferencesKey = 'preferences.v1';
+const _soundPreferencesKey = 'game_sound_preferences.v1';
 const _onboardingCompletedKey = 'onboarding_completed.v1';
 const _feedResumeKey = 'feed_resume.v1';
 const _recentFeedKey = 'recent_feed.v1';
@@ -18,10 +20,34 @@ const _guestEngagementKey = 'guest_engagement.v1';
 const _maxMutedTopics = 512;
 
 final class IndexedDbConsumerLocalState
-    implements ConsumerLocalState, GuestEngagementStore {
+    implements
+        ConsumerLocalState,
+        GuestEngagementStore,
+        GameSoundPreferencesStore {
   const IndexedDbConsumerLocalState(this._store);
 
   final IndexedDbEventStore _store;
+
+  @override
+  Future<GameSoundPreferences> readGameSoundPreferences() async {
+    final encoded = await _store.readConsumerMetadata(_soundPreferencesKey);
+    if (encoded == null) return GameSoundPreferences();
+    try {
+      final decoded = jsonDecode(encoded);
+      if (decoded is! Map) throw const FormatException('sound preferences');
+      return GameSoundPreferences.fromJson(decoded.cast<String, Object?>());
+    } on Object {
+      await _store.deleteConsumerMetadata(_soundPreferencesKey);
+      return GameSoundPreferences();
+    }
+  }
+
+  @override
+  Future<void> writeGameSoundPreferences(GameSoundPreferences preferences) =>
+      _store.writeConsumerMetadata(
+        _soundPreferencesKey,
+        jsonEncode(preferences.toJson()),
+      );
 
   @override
   Future<ConsumerPreferences> readPreferences() async {

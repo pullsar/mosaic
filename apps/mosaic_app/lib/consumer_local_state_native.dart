@@ -5,13 +5,40 @@ import 'package:play_schema/play_schema.dart';
 
 import 'consumer_api_client.dart';
 import 'consumer_local_state.dart';
+import 'game_sound_preferences.dart';
 import 'guest_engagement.dart';
 
 final class SqliteConsumerLocalState
-    implements ConsumerLocalState, GuestEngagementStore {
+    implements
+        ConsumerLocalState,
+        GuestEngagementStore,
+        GameSoundPreferencesStore {
   const SqliteConsumerLocalState(this._store);
 
   final MosaicLocalStore _store;
+  static const _soundPreferencesKey = 'game_sound_preferences.v1';
+
+  @override
+  Future<GameSoundPreferences> readGameSoundPreferences() async {
+    final encoded = _store.loadConsumerMetadata(_soundPreferencesKey);
+    if (encoded == null) return GameSoundPreferences();
+    try {
+      final decoded = jsonDecode(encoded);
+      if (decoded is! Map) throw const FormatException('sound preferences');
+      return GameSoundPreferences.fromJson(decoded.cast<String, Object?>());
+    } on Object {
+      _store.clearConsumerMetadata(_soundPreferencesKey);
+      return GameSoundPreferences();
+    }
+  }
+
+  @override
+  Future<void> writeGameSoundPreferences(
+    GameSoundPreferences preferences,
+  ) async => _store.saveConsumerMetadata(
+    _soundPreferencesKey,
+    jsonEncode(preferences.toJson()),
+  );
 
   @override
   Future<ConsumerPreferences> readPreferences() async => ConsumerPreferences(
