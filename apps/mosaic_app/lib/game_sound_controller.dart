@@ -42,8 +42,8 @@ final class GameSoundController extends ChangeNotifier {
     }
   }
 
-  Future<void> setMasterMuted(bool value) => _update(
-    GameSoundPreferences(
+  Future<void> setMasterMuted(bool value) => _afterInitialized(
+    () => GameSoundPreferences(
       masterMuted: value,
       musicEnabled: _preferences.musicEnabled,
       effectsEnabled: _preferences.effectsEnabled,
@@ -51,8 +51,8 @@ final class GameSoundController extends ChangeNotifier {
     ),
   );
 
-  Future<void> setMusicEnabled(bool value) => _update(
-    GameSoundPreferences(
+  Future<void> setMusicEnabled(bool value) => _afterInitialized(
+    () => GameSoundPreferences(
       masterMuted: _preferences.masterMuted,
       musicEnabled: value,
       effectsEnabled: _preferences.effectsEnabled,
@@ -60,8 +60,8 @@ final class GameSoundController extends ChangeNotifier {
     ),
   );
 
-  Future<void> setEffectsEnabled(bool value) => _update(
-    GameSoundPreferences(
+  Future<void> setEffectsEnabled(bool value) => _afterInitialized(
+    () => GameSoundPreferences(
       masterMuted: _preferences.masterMuted,
       musicEnabled: _preferences.musicEnabled,
       effectsEnabled: value,
@@ -69,14 +69,21 @@ final class GameSoundController extends ChangeNotifier {
     ),
   );
 
-  Future<void> setThemeId(String? value) => _update(
-    GameSoundPreferences(
+  Future<void> setThemeId(String? value) => _afterInitialized(
+    () => GameSoundPreferences(
       masterMuted: _preferences.masterMuted,
       musicEnabled: _preferences.musicEnabled,
       effectsEnabled: _preferences.effectsEnabled,
       themeId: value,
     ),
   );
+
+  Future<void> _afterInitialized(GameSoundPreferences Function() next) async {
+    if (_disposed) return;
+    await initialize();
+    if (_disposed) return;
+    await _update(next());
+  }
 
   Future<void> _update(GameSoundPreferences next) {
     if (_disposed) return Future<void>.value();

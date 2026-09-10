@@ -9,10 +9,12 @@ final class _MemorySoundPreferencesStore implements GameSoundPreferencesStore {
 
   GameSoundPreferences preferences;
   final List<GameSoundPreferences> writes = <GameSoundPreferences>[];
+  Completer<GameSoundPreferences>? readGate;
   Completer<void>? writeGate;
 
   @override
-  Future<GameSoundPreferences> readGameSoundPreferences() async => preferences;
+  Future<GameSoundPreferences> readGameSoundPreferences() async =>
+      await readGate?.future ?? preferences;
 
   @override
   Future<void> writeGameSoundPreferences(GameSoundPreferences value) async {
@@ -61,4 +63,26 @@ void main() {
     expect(notifications, 1);
     expect(store.writes, isEmpty);
   });
+
+  test(
+    'queues a sound change until persisted preferences finish loading',
+    () async {
+      final store = _MemorySoundPreferencesStore(GameSoundPreferences())
+        ..readGate = Completer<GameSoundPreferences>();
+      final controller = GameSoundController(store: store);
+      addTearDown(controller.dispose);
+
+      final load = controller.initialize();
+      final change = controller.setMasterMuted(true);
+      store.readGate!.complete(
+        GameSoundPreferences(musicEnabled: true, effectsEnabled: true),
+      );
+      await Future.wait([load, change]);
+
+      expect(controller.preferences.masterMuted, isTrue);
+      expect(controller.preferences.musicEnabled, isTrue);
+      expect(controller.preferences.effectsEnabled, isTrue);
+      expect(store.writes.single.masterMuted, isTrue);
+    },
+  );
 }
