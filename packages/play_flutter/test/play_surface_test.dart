@@ -131,6 +131,61 @@ PlayCanvasAsset _continuousCanvas() => PlayCanvasAsset(
 );
 
 void main() {
+  testWidgets('renders the frozen game-theme backdrop', (tester) async {
+    final play = PlayDocument.fromJson({
+      'schemaVersion': 1,
+      'id': 'themed_demo',
+      'revisionId': 'rev_1',
+      'format': 'guess',
+      'classification': 'challenge',
+      'topics': ['observation'],
+      'learningTopics': <String>[],
+      'estimatedDurationSec': 8,
+      'assets': <String>[],
+      'sources': <Object>[],
+      'gameFamily': {'id': 'quiet-switch', 'revisionId': 'family_1'},
+      'presentation': {
+        'themeId': 'paper-studio',
+        'themeRevisionId': 'theme_1',
+        'variantId': 'felt-ivory',
+      },
+      'entryState': 'guess',
+      'states': {
+        'guess': {
+          'presentation': {
+            'layers': [
+              {'type': 'text', 'role': 'prompt', 'value': 'Look closer.'},
+            ],
+          },
+          'input': {
+            'type': 'single_choice',
+            'options': [
+              {'id': 'a', 'label': 'A'},
+              {'id': 'b', 'label': 'B'},
+            ],
+          },
+          'validation': {'type': 'equals', 'value': 'a'},
+          'transition': {'correct': r'$end', 'incorrect': r'$end'},
+        },
+      },
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: PlaySurface(play: play)),
+      ),
+    );
+
+    expect(
+      find.byKey(
+        const ValueKey<String>(
+          'play-theme-backdrop:paper-studio:theme_1:felt-ivory',
+        ),
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('renders concise prompt and advances a choice', (tester) async {
     final play = PlayDocument.fromJson({
       'schemaVersion': 1,

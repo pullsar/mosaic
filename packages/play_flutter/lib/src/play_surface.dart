@@ -137,6 +137,7 @@ final class _PlaySurfaceState extends State<PlaySurface> {
         child: Stack(
           fit: StackFit.expand,
           children: [
+            _PlayThemeBackdrop(presentation: widget.play.presentation),
             Positioned.fromRect(
               rect: composition.promptRect,
               child: SizedBox.expand(
@@ -216,6 +217,44 @@ final class _PlaySurfaceState extends State<PlaySurface> {
     return result;
   }
 }
+
+/// A frozen, low-cost visual treatment selected when the immutable Play was
+/// prepared. It deliberately uses no time, random state, or user preference:
+/// replaying a revision retains the same visual identity.
+final class _PlayThemeBackdrop extends StatelessWidget {
+  const _PlayThemeBackdrop({required this.presentation});
+
+  final PlayPresentationReference? presentation;
+
+  @override
+  Widget build(BuildContext context) {
+    final reference = presentation;
+    if (reference == null) return const SizedBox.expand();
+    final color = _themeSurface(reference);
+    if (color == null) return const SizedBox.expand();
+    return RepaintBoundary(
+      child: ColoredBox(
+        key: ValueKey<String>(
+          'play-theme-backdrop:${reference.themeId}:'
+          '${reference.themeRevisionId}:${reference.variantId}',
+        ),
+        color: color,
+      ),
+    );
+  }
+}
+
+Color? _themeSurface(PlayPresentationReference reference) => switch ((
+  reference.themeId,
+  reference.themeRevisionId,
+  reference.variantId,
+)) {
+  ('paper-studio', 'theme_1', 'felt-ivory') => const Color(0xFF302821),
+  ('night-museum', 'theme_1', 'ceramic-night') => const Color(0xFF111216),
+  ('glass-garden', 'theme_1', 'mineral-mist') => const Color(0xFF102C30),
+  ('orbital', 'theme_1', 'onyx-orbit') => const Color(0xFF0B1020),
+  _ => null,
+};
 
 final class _StageFeedback extends StatelessWidget {
   const _StageFeedback({required this.resolved, required this.child});
