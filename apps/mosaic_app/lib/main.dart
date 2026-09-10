@@ -19,6 +19,7 @@ import 'consumer_feed.dart';
 import 'consumer_runtime.dart';
 import 'consumer_search.dart';
 import 'event_runtime_resources_factory.dart';
+import 'game_attempt_controller.dart';
 import 'guest_engagement.dart';
 import 'guest_home.dart';
 import 'onboarding_localizations.dart';
@@ -224,42 +225,69 @@ final class _MosaicAppState extends State<MosaicApp> {
     required ValueChanged<bool> onDirectManipulationChanged,
     VoidCallback? onMeaningfulInteraction,
   }) {
-    final videoDiagnostics = PlayVideoDiagnosticObserver(
-      telemetry: telemetry,
-      runtimeDiagnostics: const FlutterRuntimeDiagnostics(),
-    );
-    final media = PlayMediaLayerBuilder(
-      ownerId: playMediaOwnerId(play),
-      visualResolver: _visualResolver,
-      videoResolver: _videoResolver,
-      videoPosterResolver: _videoPosterResolver,
-      audioResolver: _audioResolver,
-      audioEngine: _audioEngine,
-      canvasResolver: _canvasResolver,
-      mediaCoordinator: _mediaCoordinator,
-      videoControllerFactory: VideoPlayerPlayController.new,
-      active: active,
-      semanticResumeEpoch: _semanticResumeEpoch,
-      onVideoPlaybackEvent: videoDiagnostics.call,
-    );
-    return MixliAuthoredPlayDirection(
-      child: PlaySurface(
-        key: ValueKey<String>('play:$playId:$revisionId'),
-        play: play,
-        mediaBuilder: media.call,
-        onResolved: (resolution) {
-          onMeaningfulInteraction?.call();
-          recordPlayResolutionTelemetry(
-            telemetry,
-            playId: playId,
-            outcome: resolution.outcome,
-            attempts: resolution.session.attempts,
-            completed: resolution.session.ended,
-            correct: resolution.wasCorrect,
-          );
-        },
-        onDirectManipulationChanged: onDirectManipulationChanged,
-      ),
+    return GameAttemptHost(
+      key: ValueKey<String>('attempt:$playId:$revisionId'),
+      play: play,
+      builder: (context, attempt) {
+        final videoDiagnostics = PlayVideoDiagnosticObserver(
+          telemetry: telemetry,
+          runtimeDiagnostics: const FlutterRuntimeDiagnostics(),
+        );
+        final media = PlayMediaLayerBuilder(
+          ownerId: playMediaOwnerIdForAttempt(
+            playId,
+            revisionId,
+            attempt.attemptId,
+          ),
+          visualResolver: _visualResolver,
+          videoResolver: _videoResolver,
+          videoPosterResolver: _videoPosterResolver,
+          audioResolver: _audioResolver,
+          audioEngine: _audioEngine,
+          canvasResolver: _canvasResolver,
+          mediaCoordinator: _mediaCoordinator,
+          videoControllerFactory: VideoPlayerPlayController.new,
+          active: active,
+          semanticResumeEpoch: _semanticResumeEpoch,
+          onVideoPlaybackEvent: videoDiagnostics.call,
+        );
+        return MixliAuthoredPlayDirection(
+          child: PlaySurface.controlled(
+            key: ValueKey<String>(
+              'play:$playId:$revisionId:${attempt.attemptId}',
+            ),
+            session: attempt.session,
+            onAction: attempt.captureActionHandler(
+              onResolved: (resolution) {
+                onMeaningfulInteraction?.call();
+                recordPlayResolutionTelemetry(
+                  telemetry,
+                  playId: playId,
+                  outcome: resolution.outcome,
+                  attempts: resolution.session.attempts,
+                  completed: resolution.session.ended,
+                  correct: resolution.wasCorrect,
+                  attemptId: attempt.attemptId,
+                  attemptMode: attempt.mode.wireName,
+                );
+              },
+            ),
+            mediaBuilder: media.call,
+            terminal: Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: Padding(
+                padding: const EdgeInsetsDirectional.fromSTEB(20, 8, 20, 8),
+                child: FilledButton.icon(
+                  onPressed: attempt.replay,
+                  icon: const Icon(Icons.replay_rounded),
+                  label: const Text('Replay'),
+                ),
+              ),
+            ),
+            onDirectManipulationChanged: onDirectManipulationChanged,
+          ),
+        );
+      },
     );
   }
 

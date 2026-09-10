@@ -5,6 +5,179 @@ import 'package:play_flutter/play_flutter.dart';
 import 'package:play_schema/play_schema.dart';
 
 void main() {
+  testWidgets('a new pickup interrupts the return without a late snap', (
+    tester,
+  ) async {
+    final locks = <bool>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: SizedBox.square(
+            dimension: 300,
+            child: PlayDragInput(
+              spec: _runtimeDragSpec(const Offset(.1, .1), 'target'),
+              onTarget: (_) => fail('miss is not an answer'),
+              onManipulationChanged: locks.add,
+            ),
+          ),
+        ),
+      ),
+    );
+    final object = find.byKey(const ValueKey<String>('play-drag-object'));
+    final first = await tester.startGesture(tester.getCenter(object));
+    await first.moveBy(const Offset(25, 0));
+    await first.moveBy(const Offset(50, 0));
+    await first.up();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 35));
+    final second = await tester.startGesture(tester.getCenter(object));
+    final pickedUp = tester.getRect(object);
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(tester.getRect(object), pickedUp);
+    expect(locks, [true, false, true]);
+    await second.cancel();
+    await tester.pumpAndSettle();
+    expect(locks.last, isFalse);
+  });
+
+  testWidgets('adjacent thin targets select the visible destination', (
+    tester,
+  ) async {
+    final selected = <String>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: SizedBox.square(
+            dimension: 300,
+            child: PlayDragInput(
+              spec: const PlayDragInputSpec(
+                origin: Offset(.1, .1),
+                size: Size(.03, .14),
+                handleLabel: 'Move match',
+                targets: [
+                  PlayDragTarget(
+                    id: 'first',
+                    rect: PlayNormalizedRect(
+                      x: .5,
+                      y: .4,
+                      width: .03,
+                      height: .14,
+                    ),
+                  ),
+                  PlayDragTarget(
+                    id: 'second',
+                    rect: PlayNormalizedRect(
+                      x: .55,
+                      y: .4,
+                      width: .03,
+                      height: .14,
+                    ),
+                  ),
+                ],
+              ),
+              onTarget: selected.add,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.bySemanticsLabel('Move match'));
+    await tester.pump();
+    final stage = tester.getRect(find.byType(PlayDragInput));
+    await tester.tapAt(stage.topLeft + const Offset(.515 * 300, .47 * 300));
+    expect(selected, ['first']);
+  });
+
+  for (final reduced in [false, true]) {
+    testWidgets('missed drop returns with reduced motion $reduced', (
+      tester,
+    ) async {
+      final locks = <bool>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MediaQuery(
+            data: MediaQueryData(disableAnimations: reduced),
+            child: Center(
+              child: SizedBox.square(
+                dimension: 300,
+                child: PlayDragInput(
+                  spec: _runtimeDragSpec(const Offset(.1, .1), 'target'),
+                  onTarget: (_) => fail('miss is not an answer'),
+                  onManipulationChanged: locks.add,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      final object = find.byKey(const ValueKey<String>('play-drag-object'));
+      final origin = tester.getRect(object);
+      final gesture = await tester.startGesture(tester.getCenter(object));
+      await gesture.moveBy(const Offset(25, 0));
+      await gesture.moveBy(const Offset(35, 0));
+      await tester.pump();
+      final moved = tester.getRect(object);
+      expect(moved.left, greaterThan(origin.left));
+      await gesture.up();
+      await tester.pump();
+      expect(locks.last, isFalse);
+      if (reduced) {
+        expect(tester.getRect(object), origin);
+      } else {
+        expect(tester.getRect(object).left, greaterThan(origin.left));
+        await tester.pump(const Duration(milliseconds: 70));
+        expect(tester.getRect(object).left, greaterThan(origin.left));
+        expect(tester.getRect(object).left, lessThan(moved.left));
+      }
+      await tester.pumpAndSettle();
+      expect(tester.getRect(object), origin);
+    });
+  }
+
+  testWidgets('thin alternate destination has a full touch target', (
+    tester,
+  ) async {
+    final selected = <String>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: SizedBox.square(
+            dimension: 300,
+            child: PlayDragInput(
+              spec: const PlayDragInputSpec(
+                origin: Offset(.1, .1),
+                size: Size(.03, .14),
+                handleLabel: 'Move match',
+                targets: [
+                  PlayDragTarget(
+                    id: 'slot',
+                    label: 'Opening',
+                    rect: PlayNormalizedRect(
+                      x: .6,
+                      y: .4,
+                      width: .03,
+                      height: .14,
+                    ),
+                  ),
+                ],
+              ),
+              onTarget: selected.add,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.bySemanticsLabel('Move match'));
+    await tester.pump();
+    final target = find.byKey(
+      const ValueKey<String>('play-drag-alternate-target:slot'),
+    );
+    expect(tester.getSize(target).width, greaterThanOrEqualTo(48));
+    expect(tester.getSize(target).height, greaterThanOrEqualTo(48));
+    await tester.tapAt(tester.getCenter(target) + const Offset(18, 0));
+    expect(selected, ['slot']);
+  });
+
   test('piano spec is authored, bounded, and sequence-aware', () {
     final input = PlayInputDefinition(
       type: PlayInputType.pianoKey,

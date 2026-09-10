@@ -18,13 +18,30 @@ final class PlaySurface extends StatefulWidget {
     required this.play,
     this.mediaBuilder,
     this.onResolved,
+    this.terminal,
     this.onDirectManipulationChanged,
     super.key,
-  });
+  }) : session = null,
+       onAction = null;
+
+  PlaySurface.controlled({
+    required PlaySession session,
+    required ValueChanged<PlayAction> onAction,
+    this.mediaBuilder,
+    this.onResolved,
+    this.terminal,
+    this.onDirectManipulationChanged,
+    super.key,
+  }) : play = session.play,
+       session = session,
+       onAction = onAction;
 
   final PlayDocument play;
+  final PlaySession? session;
+  final ValueChanged<PlayAction>? onAction;
   final PlayMediaBuilder? mediaBuilder;
   final ValueChanged<PlayResolution>? onResolved;
+  final Widget? terminal;
 
   /// True while a direct-manipulation primitive owns a drag gesture.
   ///
@@ -38,27 +55,43 @@ final class PlaySurface extends StatefulWidget {
 
 final class _PlaySurfaceState extends State<PlaySurface> {
   static const _engine = PlayEngine();
-  late PlaySession _session;
+  PlaySession? _ownedSession;
+
+  bool get _isControlled => widget.session != null;
+
+  PlaySession get _session => widget.session ?? _ownedSession!;
 
   @override
   void initState() {
     super.initState();
-    _session = _engine.start(widget.play);
+    if (!_isControlled) _ownedSession = _engine.start(widget.play);
   }
 
   @override
   void didUpdateWidget(covariant PlaySurface oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.play.id != widget.play.id ||
-        oldWidget.play.revisionId != widget.play.revisionId) {
-      _session = _engine.start(widget.play);
+    final wasControlled = oldWidget.session != null;
+    if (wasControlled != _isControlled) {
+      throw FlutterError(
+        'Changing PlaySurface session ownership requires a new widget identity.',
+      );
+    }
+    if (!_isControlled &&
+        (oldWidget.play.id != widget.play.id ||
+            oldWidget.play.revisionId != widget.play.revisionId)) {
+      _ownedSession = _engine.start(widget.play);
     }
   }
 
   void _apply(PlayAction action) {
     if (_session.ended) return;
+    final delegated = widget.onAction;
+    if (delegated != null) {
+      delegated(action);
+      return;
+    }
     final result = _engine.apply(_session, action);
-    setState(() => _session = result.session);
+    setState(() => _ownedSession = result.session);
     widget.onResolved?.call(result);
   }
 
@@ -86,9 +119,17 @@ final class _PlaySurfaceState extends State<PlaySurface> {
       final input = _InputOverlay(
         input: state.input,
         validation: state.validation,
-        inputEpoch: _session.attempts,
+        // A direct terminal drag keeps the placed object from its final input.
+        inputEpoch: _session.attempts - (isDragInput && _session.ended ? 1 : 0),
         onAction: _apply,
         onDirectManipulationChanged: widget.onDirectManipulationChanged,
+      );
+      final dragPresentation = IgnorePointer(
+        ignoring: _session.ended,
+        child: ExcludeFocus(
+          excluding: _session.ended,
+          child: ExcludeSemantics(excluding: _session.ended, child: input),
+        ),
       );
 
       return ColoredBox(
@@ -117,9 +158,9 @@ final class _PlaySurfaceState extends State<PlaySurface> {
                       ),
                     if (isDragInput)
                       if (usesCanvasStage)
-                        PlayCanvasStage(child: input)
+                        PlayCanvasStage(child: dragPresentation)
                       else
-                        input,
+                        dragPresentation,
                   ],
                 ),
               ),
@@ -128,7 +169,11 @@ final class _PlaySurfaceState extends State<PlaySurface> {
               rect: composition.inputRect,
               child: SizedBox.expand(
                 key: const ValueKey<String>('play-input'),
-                child: isDragInput ? const SizedBox.shrink() : input,
+                child: _session.ended
+                    ? _terminalOrEmpty(widget.terminal)
+                    : isDragInput
+                    ? const SizedBox.shrink()
+                    : input,
               ),
             ),
             Positioned.fromRect(
@@ -597,3 +642,6 @@ final class _ControlButton extends StatelessWidget {
     ),
   );
 }
+
+Widget _terminalOrEmpty(Widget? terminal) =>
+    terminal ?? const SizedBox.shrink();

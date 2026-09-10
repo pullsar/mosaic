@@ -7,12 +7,18 @@ void recordPlayResolutionTelemetry(
   required String outcome,
   required int attempts,
   required bool completed,
+  required String attemptId,
+  required String attemptMode,
   bool? correct,
 }) {
   final normalizedPlayId = _boundedText(playId);
   final normalizedOutcome = _boundedText(outcome);
+  final normalizedAttemptId = _boundedText(attemptId);
+  final normalizedAttemptMode = _boundedText(attemptMode);
   if (normalizedPlayId == null ||
       normalizedOutcome == null ||
+      normalizedAttemptId == null ||
+      normalizedAttemptMode == null ||
       attempts < 1 ||
       attempts > 1000) {
     return;
@@ -21,12 +27,16 @@ void recordPlayResolutionTelemetry(
     'playId': normalizedPlayId,
     'outcome': normalizedOutcome,
     'attempt': attempts,
+    'attemptId': normalizedAttemptId,
+    'attemptMode': normalizedAttemptMode,
     if (correct != null) 'correct': correct,
   });
   if (completed) {
     telemetry.event(MosaicEventName.playCompleted, <String, Object?>{
       'playId': normalizedPlayId,
       'attempts': attempts,
+      'attemptId': normalizedAttemptId,
+      'attemptMode': normalizedAttemptMode,
     });
   }
 }
