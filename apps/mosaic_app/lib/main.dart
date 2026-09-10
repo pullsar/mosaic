@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:analytics_contract/analytics_contract.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:platform_contracts/platform_contracts.dart';
@@ -26,11 +27,16 @@ import 'guest_engagement.dart';
 import 'guest_home.dart';
 import 'onboarding_localizations.dart';
 import 'play_resolution_telemetry.dart';
+import 'play_share.dart';
 import 'saved_games.dart';
 
 const _apiBaseUrl = String.fromEnvironment('MOSAIC_API_BASE_URL');
 const _allowInsecureLocalApi = bool.fromEnvironment(
   'MOSAIC_ALLOW_INSECURE_LOCAL_API',
+);
+const _shareOriginValue = String.fromEnvironment(
+  'MIXLI_SHARE_ORIGIN',
+  defaultValue: 'https://mixli.app',
 );
 
 Future<void> main() async {
@@ -53,10 +59,18 @@ Future<void> main() async {
 }
 
 final class MosaicApp extends StatefulWidget {
-  const MosaicApp({this.eventRuntime, this.locale, super.key});
+  const MosaicApp({
+    this.eventRuntime,
+    this.locale,
+    this.shareGateway,
+    this.shareOrigin,
+    super.key,
+  });
 
   final AppEventRuntime? eventRuntime;
   final Locale? locale;
+  final ShareGateway? shareGateway;
+  final Uri? shareOrigin;
 
   @override
   State<MosaicApp> createState() => _MosaicAppState();
@@ -68,6 +82,8 @@ final class _MosaicAppState extends State<MosaicApp> {
   final ConsumerFeedController _feedController = ConsumerFeedController();
   late final AppEventRuntime _eventRuntime;
   late final ConsumerApiClient? _consumerApi;
+  late final ShareGateway _shareGateway;
+  late final Uri _shareOrigin;
   late final ConsumerActionController _actionController;
   late final AssetDeliveryClient? _assetDelivery;
   late final AssetMetadataWarmController? _metadataWarmer;
@@ -90,6 +106,8 @@ final class _MosaicAppState extends State<MosaicApp> {
   void initState() {
     super.initState();
     _eventRuntime = widget.eventRuntime ?? AppEventRuntime.disabled();
+    _shareGateway = widget.shareGateway ?? SharePlusGateway();
+    _shareOrigin = widget.shareOrigin ?? Uri.parse(_shareOriginValue);
     _assetDelivery = _createAssetDeliveryClient();
     final binaryDelivery = _assetDelivery?.supportsBinaryNetworkAssets ?? false;
     final assetDelivery = _assetDelivery;
@@ -360,18 +378,54 @@ final class _MosaicAppState extends State<MosaicApp> {
       feedRequestId: feedRequestId,
       controller: _actionController,
       onAdvance: _feedController.advance,
-      onShare: (_) {
-        final messenger = ScaffoldMessenger.maybeOf(context);
-        if (messenger == null) return;
-        messenger
-          ..hideCurrentSnackBar()
-          ..showSnackBar(
-            const SnackBar(content: Text('Share links are opening soon')),
-          );
-      },
+      onShare: _sharePlay,
       soundController: _gameSoundController,
       active: active,
     );
+  }
+
+  Future<void> _sharePlay(
+    ConsumerFeedItem item,
+    BuildContext actionContext,
+  ) async {
+    final link = PlayShareLink.build(
+      origin: _shareOrigin,
+      playId: item.playId,
+      revisionId: item.revisionId,
+    );
+    ShareDisposition disposition;
+    try {
+      disposition = await _shareGateway.share(link);
+    } on Object catch (error, stackTrace) {
+      _reportEventRuntimeError(error, stackTrace, operation: 'play_share');
+      disposition = ShareDisposition.unavailable;
+    }
+    if (!mounted) return;
+    if (disposition == ShareDisposition.dismissed) return;
+    if (disposition == ShareDisposition.unavailable) {
+      try {
+        await Clipboard.setData(ClipboardData(text: link.toString()));
+      } on Object catch (error, stackTrace) {
+        _reportEventRuntimeError(
+          error,
+          stackTrace,
+          operation: 'play_share_copy',
+        );
+        return;
+      }
+      if (!mounted) return;
+      _showShareFeedback(actionContext, 'Link copied');
+      return;
+    }
+    _showShareFeedback(actionContext, 'Shared');
+  }
+
+  void _showShareFeedback(BuildContext context, String message) {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _openSearch(BuildContext context) async {

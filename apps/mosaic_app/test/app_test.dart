@@ -8,6 +8,7 @@ import 'package:mosaic_app/consumer_api_client.dart';
 import 'package:mosaic_app/consumer_local_state.dart';
 import 'package:mosaic_app/event_runtime_resources.dart';
 import 'package:mosaic_app/main.dart';
+import 'package:platform_contracts/platform_contracts.dart';
 import 'package:play_schema/play_schema.dart';
 
 final class _AppOutbox implements EventOutbox {
@@ -36,6 +37,19 @@ final class _AppOutbox implements EventOutbox {
 
   @override
   Future<void> close() async {}
+}
+
+final class _ShareGateway implements ShareGateway {
+  Uri? sharedUri;
+
+  @override
+  Future<ShareDisposition> share(
+    Uri canonicalPlayUri, {
+    String? message,
+  }) async {
+    sharedUri = canonicalPlayUri;
+    return ShareDisposition.shared;
+  }
 }
 
 final class _SeededAppState implements ConsumerLocalState {
@@ -152,6 +166,7 @@ void main() {
   testWidgets('real guest feed exposes exact Save Share More utilities', (
     tester,
   ) async {
+    final shareGateway = _ShareGateway();
     final state = _SeededAppState(
       ConsumerFeedCache(
         requestId: 'request_app_share',
@@ -170,7 +185,13 @@ void main() {
     );
 
     await tester.pumpWidget(
-      ProviderScope(child: MosaicApp(eventRuntime: runtime)),
+      ProviderScope(
+        child: MosaicApp(
+          eventRuntime: runtime,
+          shareGateway: shareGateway,
+          shareOrigin: Uri.parse('https://mixli.app'),
+        ),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -193,7 +214,11 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey<String>('play-action-share')));
     await tester.pump();
-    expect(find.text('Share links are opening soon'), findsOneWidget);
+    expect(
+      shareGateway.sharedUri,
+      Uri.parse('https://mixli.app/p/play_app_share/revision_app_share'),
+    );
+    expect(find.text('Shared'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();

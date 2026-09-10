@@ -10,7 +10,8 @@ import 'consumer_local_state.dart';
 import 'game_sound_controller.dart';
 import 'game_sound_controls.dart';
 
-typedef ConsumerShareCallback = FutureOr<void> Function(ConsumerFeedItem item);
+typedef ConsumerShareCallback =
+    FutureOr<void> Function(ConsumerFeedItem item, BuildContext context);
 
 final class ConsumerActionControls extends StatefulWidget {
   const ConsumerActionControls({
@@ -180,7 +181,7 @@ final class _ConsumerActionControlsState extends State<ConsumerActionControls> {
 
   Future<void> _share() async {
     final callback = widget.onShare;
-    if (callback != null) await callback(widget.item);
+    if (callback != null) await callback(widget.item, context);
   }
 
   List<PopupMenuEntry<String>> _menuItems(BuildContext context) {
