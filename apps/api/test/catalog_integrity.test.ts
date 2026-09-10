@@ -21,6 +21,23 @@ test('eligible starter Plays have verified answers and solved artwork', () => {
   );
 });
 
+test('matchstick equations must be derived from the occupied segments', () => {
+  const reviews = productionCatalogIntegrityFixture.reviews.map((review) =>
+    review.kind === 'matchstick'
+      ? {...review, sourceEquation: '9 + 4 = 4'}
+      : review,
+  );
+
+  assert.throws(
+    () =>
+      assertProductionCatalogIntegrity({
+        ...productionCatalogIntegrityFixture,
+        reviews,
+      }),
+    /matchstick_source_equation_mismatch/,
+  );
+});
+
 test('catalog integrity requires one review for every eligible Play', () => {
   const [_firstReview, ...remainingReviews] = productionCatalogIntegrityFixture.reviews;
 

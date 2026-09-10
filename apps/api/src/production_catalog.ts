@@ -3,9 +3,12 @@ import {
   normalizeCanvasAssetDocument,
   PostgresCanvasAssetRepository,
 } from './canvas_asset.js';
-import type {
-  CatalogIntegrityReview,
-  ProductionCatalogIntegrityFixture,
+import {
+  assertProductionCatalogIntegrity,
+  buildMatchstickCanvasAsset,
+  moveSegment,
+  type CatalogIntegrityReview,
+  type ProductionCatalogIntegrityFixture,
 } from './catalog_integrity.js';
 import {canonicalJson} from './media.js';
 
@@ -253,39 +256,50 @@ const releaseCanvasAssets = [
   },
 ] as const;
 
+const matchstickPalette = {
+  background: '#F6E8D5',
+  foreground: '#2A1C16',
+  accent: '#8A2F1B',
+  muted: '#715A4E',
+  surface: '#D7B58C',
+} as const;
+
+const matchstickSourceSegments = new Set([
+  'left.a',
+  'left.c',
+  'left.d',
+  'left.e',
+  'left.f',
+  'left.g',
+  'operator.horizontal',
+  'operator.vertical',
+  'right.b',
+  'right.c',
+  'right.f',
+  'right.g',
+  'result.b',
+  'result.c',
+  'result.f',
+  'result.g',
+]);
+
+const matchstickSolvedSegments = moveSegment(
+  matchstickSourceSegments,
+  'operator.vertical',
+  'left.b',
+);
+
 const verifiedCanvasAssets = [
-  {
-    ...legacyCanvasAssets[0],
-    id: 'mixli_canvas_matchsticks_v3',
-    semanticLabel: 'A matchstick equation showing six plus four equals four',
-    palette: {
-      background: '#F6E8D5',
-      foreground: '#2A1C16',
-      accent: '#8A2F1B',
-      muted: '#715A4E',
-      surface: '#D7B58C',
-    },
-  },
-  {
-    schemaVersion: 1,
-    id: 'mixli_canvas_matchsticks_solved_v3',
-    semanticLabel: 'A solved matchstick equation showing 8 - 4 = 4',
-    elements: [
-      {type: 'label', x: 0.18, y: 0.42, text: '8', scale: 0.22},
-      {type: 'line', x1: 0.29, y1: 0.42, x2: 0.38, y2: 0.42, width: 0.016},
-      {type: 'label', x: 0.5, y: 0.42, text: '4', scale: 0.22},
-      {type: 'line', x1: 0.62, y1: 0.39, x2: 0.71, y2: 0.39, width: 0.012},
-      {type: 'line', x1: 0.62, y1: 0.45, x2: 0.71, y2: 0.45, width: 0.012},
-      {type: 'label', x: 0.82, y: 0.42, text: '4', scale: 0.22},
-    ],
-    palette: {
-      background: '#F6E8D5',
-      foreground: '#2A1C16',
-      accent: '#8A2F1B',
-      muted: '#715A4E',
-      surface: '#D7B58C',
-    },
-  },
+  buildMatchstickCanvasAsset(
+    'mixli_canvas_matchsticks_v3',
+    matchstickSourceSegments,
+    matchstickPalette,
+  ),
+  buildMatchstickCanvasAsset(
+    'mixli_canvas_matchsticks_solved_v3',
+    matchstickSolvedSegments,
+    matchstickPalette,
+  ),
   {
     schemaVersion: 1,
     id: 'mixli_canvas_city_night_v3',
@@ -774,12 +788,12 @@ const moveOneMatchV3: StarterPlay = {
         },
         input: {
           type: 'drag',
-          dragOrigin: {x: 0.335, y: 0.35},
+          dragOrigin: {x: 0.325, y: 0.43},
           dragSize: {width: 0.03, height: 0.14},
           targets: [
-            {id: 'solution_a', x: 0.185, y: 0.29, width: 0.05, height: 0.14},
-            {id: 'invalid_left', x: 0.12, y: 0.55, width: 0.05, height: 0.14},
-            {id: 'invalid_right', x: 0.72, y: 0.56, width: 0.05, height: 0.14},
+            {id: 'solution_a', x: 0.195, y: 0.36, width: 0.04, height: 0.14},
+            {id: 'invalid_left', x: 0.425, y: 0.5, width: 0.04, height: 0.14},
+            {id: 'invalid_right', x: 0.745, y: 0.5, width: 0.04, height: 0.14},
           ],
           handleLabel: 'Move match',
         },
@@ -826,26 +840,23 @@ const starterIntegrityReviews: readonly CatalogIntegrityReview[] = [
     prompt: 'Move one match.',
     sourceAssetId: 'mixli_canvas_matchsticks_v3',
     solvedAssetId: 'mixli_canvas_matchsticks_solved_v3',
-    sourceSegments: ['six_top_left', 'plus_vertical'],
+    sourceSegments: [...matchstickSourceSegments],
     sourceEquation: '6 + 4 = 4',
     destinations: [
       {
         id: 'solution_a',
-        from: 'six_top_left',
-        to: 'eight_top_left',
-        equation: '8 - 4 = 4',
+        from: 'operator.vertical',
+        to: 'left.b',
       },
       {
         id: 'invalid_left',
-        from: 'six_top_left',
-        to: 'six_bottom_left',
-        equation: '5 - 4 = 4',
+        from: 'operator.vertical',
+        to: 'right.e',
       },
       {
         id: 'invalid_right',
-        from: 'six_top_left',
-        to: 'right_digit_extra',
-        equation: '3 - 4 = 4',
+        from: 'operator.vertical',
+        to: 'result.e',
       },
     ],
     answerDestinationId: 'solution_a',
@@ -903,6 +914,8 @@ export const productionCatalogIntegrityFixture: ProductionCatalogIntegrityFixtur
   canvasAssets: canvasAssets.map((asset) => normalizeCanvasAssetDocument(asset)),
   reviews: starterIntegrityReviews,
 };
+
+assertProductionCatalogIntegrity(productionCatalogIntegrityFixture);
 
 export async function applyProductionCatalog(
   pool: Pool,

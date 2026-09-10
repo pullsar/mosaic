@@ -271,6 +271,8 @@ void main() {
       final gesture = await tester.startGesture(tester.getCenter(handle));
       await gesture.moveBy(const Offset(24, 0));
       await tester.pump();
+      await gesture.moveBy(const Offset(24, 0));
+      await tester.pump();
       final firstMovedRect = tester.getRect(handle);
 
       expect(firstMovedRect.left, greaterThan(originRect.left));

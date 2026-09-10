@@ -262,66 +262,68 @@ void main() {
   testWidgets('matchstick Play renders and resolves entirely from data', (
     tester,
   ) async {
-    final play = _fixture('move_one_match.json');
-    final unsolved = _canvasFixture('puzzle_match_01.json');
-    final solved = _canvasFixture('puzzle_match_01_solved.json');
-    final manipulation = <bool>[];
-    final media = PlayMediaLayerBuilder(
-      ownerId: playMediaOwnerId(play),
-      visualResolver: MapPlayVisualAssetResolver(const {}),
-      videoResolver: MapPlayVideoAssetResolver(const {}),
-      canvasResolver: MapPlayCanvasAssetResolver({
-        unsolved.id: unsolved,
-        solved.id: solved,
-      }),
-      mediaCoordinator: ActiveMediaCoordinator(),
-      videoControllerFactory: (_) =>
-          throw StateError('Video controller must not be requested.'),
-    );
+    final semantics = tester.ensureSemantics();
+    try {
+      final play = _fixture('move_one_match.json');
+      final unsolved = _canvasFixture('puzzle_match_01.json');
+      final solved = _canvasFixture('puzzle_match_01_solved.json');
+      final manipulation = <bool>[];
+      final media = PlayMediaLayerBuilder(
+        ownerId: playMediaOwnerId(play),
+        visualResolver: MapPlayVisualAssetResolver(const {}),
+        videoResolver: MapPlayVideoAssetResolver(const {}),
+        canvasResolver: MapPlayCanvasAssetResolver({
+          unsolved.id: unsolved,
+          solved.id: solved,
+        }),
+        mediaCoordinator: ActiveMediaCoordinator(),
+        videoControllerFactory: (_) =>
+            throw StateError('Video controller must not be requested.'),
+      );
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Center(
-            child: SizedBox.square(
-              dimension: 400,
-              child: PlaySurface(
-                play: play,
-                mediaBuilder: media.call,
-                onDirectManipulationChanged: manipulation.add,
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox.square(
+                dimension: 400,
+                child: PlaySurface(
+                  play: play,
+                  mediaBuilder: media.call,
+                  onDirectManipulationChanged: manipulation.add,
+                ),
               ),
             ),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.text('Move one match.'), findsOneWidget);
-    expect(
-      find.bySemanticsLabel('Matchstick equation: 6 plus 4 equals 4'),
-      findsOneWidget,
-    );
+      expect(find.text('Move one match.'), findsOneWidget);
+      expect(
+        find.bySemanticsLabel('Matchstick equation: 6 plus 4 equals 4'),
+        findsOneWidget,
+      );
 
-    final canvasStage = tester.getSize(
-      find.descendant(
-        of: find.byType(PlayCanvas),
-        matching: find.byType(CustomPaint),
-      ),
-    );
-    await tester.drag(
-      find.bySemanticsLabel('Move match'),
-      Offset(-0.14 * canvasStage.width, -0.06 * canvasStage.height),
-    );
-    await tester.pumpAndSettle();
+      tester.semantics.tap(find.semantics.byLabel('Move match'));
+      await tester.pump();
 
-    expect(manipulation, [true, false]);
-    expect(find.text('8 − 4 = 4'), findsOneWidget);
-    expect(
-      find.bySemanticsLabel('Solved matchstick equation: 8 minus 4 equals 4'),
-      findsOneWidget,
-    );
-    expect(find.text('Done'), findsOneWidget);
+      expect(find.text('8 − 4 = 4'), findsNothing);
+      expect(find.bySemanticsLabel('Left area'), findsOneWidget);
+
+      tester.semantics.tap(find.semantics.byLabel('Left area'));
+      await tester.pumpAndSettle();
+
+      expect(manipulation, isEmpty);
+      expect(find.text('8 − 4 = 4'), findsOneWidget);
+      expect(
+        find.bySemanticsLabel('Solved matchstick equation: 8 minus 4 equals 4'),
+        findsOneWidget,
+      );
+      expect(find.text('Done'), findsOneWidget);
+    } finally {
+      semantics.dispose();
+    }
   });
 
   testWidgets('reveal preserves the dominant canvas element in place', (

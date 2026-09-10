@@ -1,4 +1,9 @@
-import type {CanvasAssetDocument} from './canvas_asset.js';
+import type {
+  CanvasAssetDocument,
+  CanvasElement,
+  CanvasPalette,
+} from './canvas_asset.js';
+import {canonicalJson} from './media.js';
 
 export interface StarterPlayIntegrityDocument {
   readonly id?: unknown;
@@ -53,7 +58,6 @@ export interface MatchstickDestination {
   readonly id: string;
   readonly from: string;
   readonly to: string;
-  readonly equation: string;
 }
 
 export interface ProductionCatalogIntegrityFixture {
@@ -91,6 +95,124 @@ export function moveSegment(
   next.delete(from);
   next.add(to);
   return next;
+}
+
+const digitSegments = {
+  '0': ['a', 'b', 'c', 'd', 'e', 'f'],
+  '1': ['b', 'c'],
+  '2': ['a', 'b', 'd', 'e', 'g'],
+  '3': ['a', 'b', 'c', 'd', 'g'],
+  '4': ['b', 'c', 'f', 'g'],
+  '5': ['a', 'c', 'd', 'f', 'g'],
+  '6': ['a', 'c', 'd', 'e', 'f', 'g'],
+  '7': ['a', 'b', 'c'],
+  '8': ['a', 'b', 'c', 'd', 'e', 'f', 'g'],
+  '9': ['a', 'b', 'c', 'd', 'f', 'g'],
+} as const;
+
+const digitBySignature = new Map(
+  Object.entries(digitSegments).map(([digit, segments]) => [
+    [...segments].sort().join(','),
+    digit,
+  ]),
+);
+
+const digitSlots = ['left', 'right', 'result'] as const;
+const digitSegmentNames = ['a', 'b', 'c', 'd', 'e', 'f', 'g'] as const;
+const operatorSegmentNames = ['horizontal', 'vertical'] as const;
+const knownMatchstickSegments = new Set<string>([
+  ...digitSlots.flatMap((slot) =>
+    digitSegmentNames.map((segment) => `${slot}.${segment}`),
+  ),
+  ...operatorSegmentNames.map((segment) => `operator.${segment}`),
+]);
+
+export function matchstickEquationFromSegments(
+  occupied: ReadonlySet<string>,
+): string | null {
+  if ([...occupied].some((segment) => !knownMatchstickSegments.has(segment))) {
+    return null;
+  }
+  const digits = digitSlots.map((slot) => {
+    const signature = digitSegmentNames
+      .filter((segment) => occupied.has(`${slot}.${segment}`))
+      .sort()
+      .join(',');
+    return digitBySignature.get(signature);
+  });
+  if (digits.some((digit) => digit === undefined)) return null;
+  const horizontal = occupied.has('operator.horizontal');
+  const vertical = occupied.has('operator.vertical');
+  const operator = horizontal && vertical ? '+' : horizontal ? '-' : null;
+  if (operator === null) return null;
+  return `${digits[0]} ${operator} ${digits[1]} = ${digits[2]}`;
+}
+
+export function buildMatchstickCanvasAsset(
+  id: string,
+  occupied: ReadonlySet<string>,
+  palette: CanvasPalette,
+): CanvasAssetDocument {
+  const equation = matchstickEquationFromSegments(occupied);
+  if (equation === null) throw new Error('matchstick_configuration_not_renderable');
+  const elements: CanvasElement[] = [];
+  for (const segment of occupied) {
+    const element = matchstickLineById.get(segment);
+    if (element === undefined) {
+      throw new Error(`matchstick_unknown_segment:${segment}`);
+    }
+    elements.push({...element});
+  }
+  elements.push(
+    line(0.62, 0.47, 0.7, 0.47),
+    line(0.62, 0.53, 0.7, 0.53),
+  );
+  return {
+    schemaVersion: 1,
+    id,
+    semanticLabel: `${
+      parseEquation(equation) ? 'A solved' : 'A'
+    } matchstick equation showing ${equation}`,
+    elements,
+    palette,
+  };
+}
+
+const matchstickLineById = buildMatchstickLineMap();
+
+function buildMatchstickLineMap(): ReadonlyMap<string, CanvasElement> {
+  const lines = new Map<string, CanvasElement>();
+  const centers = {left: 0.16, right: 0.5, result: 0.82} as const;
+  for (const [slot, centerX] of Object.entries(centers)) {
+    const left = centerX - 0.055;
+    const right = centerX + 0.055;
+    const top = 0.36;
+    const middle = 0.5;
+    const bottom = 0.64;
+    lines.set(`${slot}.a`, line(left, top, right, top));
+    lines.set(`${slot}.b`, line(right, top, right, middle));
+    lines.set(`${slot}.c`, line(right, middle, right, bottom));
+    lines.set(`${slot}.d`, line(left, bottom, right, bottom));
+    lines.set(`${slot}.e`, line(left, middle, left, bottom));
+    lines.set(`${slot}.f`, line(left, top, left, middle));
+    lines.set(`${slot}.g`, line(left, middle, right, middle));
+  }
+  lines.set('operator.horizontal', line(0.3, 0.5, 0.38, 0.5));
+  lines.set('operator.vertical', line(0.34, 0.43, 0.34, 0.57));
+  return lines;
+}
+
+function line(x1: number, y1: number, x2: number, y2: number): CanvasElement {
+  return {
+    type: 'line',
+    x1,
+    y1,
+    x2,
+    y2,
+    width: 0.016,
+    cap: 'round',
+    tone: 'foreground',
+  };
 }
 
 export function assertProductionCatalogIntegrity(
@@ -247,16 +369,42 @@ function assertMatchstickReview(
     throw new Error(`review_answer_mismatch:${review.playId}`);
   }
   const source = new Set(review.sourceSegments);
+  if (source.size !== review.sourceSegments.length) {
+    throw new Error(`matchstick_duplicate_source_segment:${review.playId}`);
+  }
+  const sourceEquation = matchstickEquationFromSegments(source);
+  if (sourceEquation !== review.sourceEquation) {
+    throw new Error(`matchstick_source_equation_mismatch:${review.playId}`);
+  }
   if (parseEquation(review.sourceEquation) !== false) {
     throw new Error(`matchstick_source_already_valid:${review.playId}`);
   }
-  const validDestinations = review.destinations.filter((destination) => {
-    moveSegment(source, destination.from, destination.to);
-    return parseEquation(destination.equation) === true;
+  const sourceAsset = assetById.get(review.sourceAssetId);
+  if (sourceAsset === undefined) {
+    throw new Error(`missing_canvas_asset:${review.playId}/${review.sourceAssetId}`);
+  }
+  assertMatchstickAsset(sourceAsset, source, review.playId);
+  const sourcePieceIds = new Set(
+    review.destinations.map((destination) => destination.from),
+  );
+  if (sourcePieceIds.size !== 1) {
+    throw new Error(`matchstick_multiple_source_segments:${review.playId}`);
+  }
+  const resolvedDestinations = review.destinations.map((destination) => {
+    const segments = moveSegment(source, destination.from, destination.to);
+    return {
+      destination,
+      equation: matchstickEquationFromSegments(segments),
+      segments,
+    };
   });
+  const validDestinations = resolvedDestinations.filter(
+    (candidate) =>
+      candidate.equation !== null && parseEquation(candidate.equation) === true,
+  );
   if (
     validDestinations.length !== 1 ||
-    validDestinations[0]?.id !== review.answerDestinationId ||
+    validDestinations[0]?.destination.id !== review.answerDestinationId ||
     validDestinations[0]?.equation !== review.solvedEquation
   ) {
     throw new Error(`matchstick_solution_not_unique:${review.playId}`);
@@ -274,16 +422,24 @@ function assertMatchstickReview(
   if (solvedAsset === undefined) {
     throw new Error(`missing_canvas_asset:${review.playId}/${review.solvedAssetId}`);
   }
-  if (
-    !solvedAsset.semanticLabel
-      ?.toLowerCase()
-      .includes(review.solvedEquation.toLowerCase())
-  ) {
-    throw new Error(`matchstick_solved_asset_mismatch:${review.playId}`);
-  }
+  assertMatchstickAsset(solvedAsset, validDestinations[0]!.segments, review.playId);
   const revealTitle = revealTitleFrom(revealState, review.playId);
   if (!revealTitle.startsWith(review.solvedEquation)) {
     throw new Error(`review_reveal_mismatch:${review.playId}`);
+  }
+}
+
+function assertMatchstickAsset(
+  asset: CanvasAssetDocument,
+  segments: ReadonlySet<string>,
+  playId: string,
+): void {
+  if (asset.palette === undefined) {
+    throw new Error(`matchstick_asset_palette_missing:${playId}/${asset.id}`);
+  }
+  const expected = buildMatchstickCanvasAsset(asset.id, segments, asset.palette);
+  if (canonicalJson(asset) !== canonicalJson(expected)) {
+    throw new Error(`matchstick_asset_configuration_mismatch:${playId}/${asset.id}`);
   }
 }
 
