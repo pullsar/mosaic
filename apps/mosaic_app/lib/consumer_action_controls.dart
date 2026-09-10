@@ -7,6 +7,8 @@ import 'consumer_action_controller.dart';
 import 'consumer_api_client.dart';
 import 'consumer_feed.dart';
 import 'consumer_local_state.dart';
+import 'game_sound_controller.dart';
+import 'game_sound_controls.dart';
 
 typedef ConsumerShareCallback = FutureOr<void> Function(ConsumerFeedItem item);
 
@@ -18,6 +20,7 @@ final class ConsumerActionControls extends StatefulWidget {
     required this.controller,
     required this.onAdvance,
     this.onShare,
+    this.soundController,
     this.active = true,
     super.key,
   });
@@ -28,6 +31,7 @@ final class ConsumerActionControls extends StatefulWidget {
   final ConsumerActionController controller;
   final Future<bool> Function(ConsumerFeedAdvanceReason reason) onAdvance;
   final ConsumerShareCallback? onShare;
+  final GameSoundController? soundController;
   final bool active;
 
   @override
@@ -198,6 +202,19 @@ final class _ConsumerActionControlsState extends State<ConsumerActionControls> {
         ),
       ),
     );
+    if (widget.soundController != null) {
+      entries.add(
+        const PopupMenuItem<String>(
+          value: 'sound',
+          child: ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.volume_up_rounded),
+            title: Text('Sound'),
+          ),
+        ),
+      );
+    }
     if (state?.notInterested != true) {
       entries.add(
         const PopupMenuItem<String>(
@@ -262,6 +279,11 @@ final class _ConsumerActionControlsState extends State<ConsumerActionControls> {
   Future<void> _handleMenuAction(String action) async {
     if (action == 'more_like_this') {
       await _moreLikeThis();
+      return;
+    }
+    if (action == 'sound') {
+      final controller = widget.soundController;
+      if (controller != null) await showGameSoundControls(context, controller);
       return;
     }
     if (action == 'not_interested') {

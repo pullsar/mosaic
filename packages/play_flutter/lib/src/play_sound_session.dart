@@ -7,24 +7,28 @@ final class PlaySoundSession {
   final VoiceAudioEngine _engine;
   final int maxVoices;
   final Set<AudioVoice> _voices = <AudioVoice>{};
+  Future<void> _operations = Future<void>.value();
   bool _released = false;
 
-  Future<void> play(String assetId, {double gain = 1}) async {
+  Future<void> play(String assetId, {double gain = 1}) => _serialize(() async {
     if (_released ||
         _voices.length >= maxVoices ||
         !gain.isFinite ||
         gain < 0 ||
-        gain > 1)
+        gain > 1) {
       return;
+    }
     final voice = await _engine.startVoice(assetId, gain: gain);
     if (_released) {
       await _engine.stopVoice(voice);
       return;
     }
     _voices.add(voice);
-  }
+  });
 
-  Future<void> stopAll() async {
+  Future<void> stopAll() => _serialize(_stopAll);
+
+  Future<void> _stopAll() async {
     final voices = _voices.toList(growable: false);
     _voices.clear();
     for (final voice in voices) {
@@ -32,9 +36,15 @@ final class PlaySoundSession {
     }
   }
 
-  Future<void> release() async {
+  Future<void> release() => _serialize(() async {
     if (_released) return;
     _released = true;
-    await stopAll();
+    await _stopAll();
+  });
+
+  Future<void> _serialize(Future<void> Function() operation) {
+    final result = _operations.then((_) => operation());
+    _operations = result.then<void>((_) {}, onError: (_, _) {});
+    return result;
   }
 }

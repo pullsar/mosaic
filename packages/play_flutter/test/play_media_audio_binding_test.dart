@@ -67,6 +67,7 @@ void main() {
       videoResolver: MapPlayVideoAssetResolver(const {}),
       audioResolver: MapPlayAudioAssetResolver({'audio_1': audio}),
       audioEngine: _FakeAudioEngine(),
+      soundEnabled: false,
       mediaCoordinator: coordinator,
       videoControllerFactory: (_) =>
           throw StateError('Video controller should not be requested.'),
@@ -76,5 +77,6 @@ void main() {
     final resolved = routed as ResolvedPlayAudio;
     expect(resolved.ownerId, 'rev_1');
     expect(resolved.assetId, 'audio_1');
+    expect(resolved.soundEnabled, isFalse);
   });
 }

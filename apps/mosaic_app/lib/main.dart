@@ -20,6 +20,8 @@ import 'consumer_runtime.dart';
 import 'consumer_search.dart';
 import 'event_runtime_resources_factory.dart';
 import 'game_attempt_controller.dart';
+import 'game_sound_controller.dart';
+import 'game_sound_preferences.dart';
 import 'guest_engagement.dart';
 import 'guest_home.dart';
 import 'onboarding_localizations.dart';
@@ -70,6 +72,7 @@ final class _MosaicAppState extends State<MosaicApp> {
   late final AssetMetadataWarmController? _metadataWarmer;
   late final ConsumerRuntime _consumerRuntime;
   late final GuestEngagementController _guestEngagement;
+  late final GameSoundController? _gameSoundController;
   late final CachingPlayVisualAssetResolver _visualResolver;
   late final PlayVideoAssetResolver _videoResolver;
   late final PlayVideoPosterResolver? _videoPosterResolver;
@@ -143,6 +146,18 @@ final class _MosaicAppState extends State<MosaicApp> {
         operation: 'guest_engagement_storage',
       ),
     );
+    _gameSoundController = localState is GameSoundPreferencesStore
+        ? GameSoundController(
+            store: localState as GameSoundPreferencesStore,
+            onError: (error, stackTrace) => _reportEventRuntimeError(
+              error,
+              stackTrace,
+              operation: 'game_sound_preferences',
+            ),
+          )
+        : null;
+    _gameSoundController?.addListener(_onGameSoundChanged);
+    unawaited(_gameSoundController?.initialize() ?? Future<void>.value());
     unawaited(_guestEngagement.initialize());
     _visualPrefetch = PlayVisualPrefetchController(
       resolver: _visualResolver,
@@ -168,12 +183,18 @@ final class _MosaicAppState extends State<MosaicApp> {
     setState(() => _semanticResumeEpoch += 1);
   }
 
+  void _onGameSoundChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
     _cancelWarmWindow();
     _lifecycle.dispose();
     _actionController.dispose();
     _guestEngagement.dispose();
+    _gameSoundController?.removeListener(_onGameSoundChanged);
+    _gameSoundController?.dispose();
     _consumerRuntime.close();
     _assetDelivery?.close();
     unawaited(_disposeResources());
@@ -248,6 +269,7 @@ final class _MosaicAppState extends State<MosaicApp> {
           mediaCoordinator: _mediaCoordinator,
           videoControllerFactory: VideoPlayerPlayController.new,
           active: active,
+          soundEnabled: _gameSoundController?.preferences.masterMuted != true,
           semanticResumeEpoch: _semanticResumeEpoch,
           onVideoPlaybackEvent: videoDiagnostics.call,
         );
@@ -346,6 +368,7 @@ final class _MosaicAppState extends State<MosaicApp> {
             const SnackBar(content: Text('Share links are opening soon')),
           );
       },
+      soundController: _gameSoundController,
       active: active,
     );
   }

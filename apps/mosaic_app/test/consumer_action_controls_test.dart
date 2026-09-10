@@ -9,6 +9,8 @@ import 'package:mosaic_app/consumer_api_client.dart';
 import 'package:mosaic_app/consumer_feed.dart';
 import 'package:mosaic_app/consumer_local_state.dart';
 import 'package:mosaic_app/event_runtime_resources.dart';
+import 'package:mosaic_app/game_sound_controller.dart';
+import 'package:mosaic_app/game_sound_preferences.dart';
 import 'package:play_flutter/play_flutter.dart';
 import 'package:play_schema/play_schema.dart';
 
@@ -78,6 +80,17 @@ final class _MemoryState implements ConsumerLocalState {
       ..clear()
       ..addAll(topicIds);
   }
+}
+
+final class _MemorySoundStore implements GameSoundPreferencesStore {
+  GameSoundPreferences preferences = GameSoundPreferences();
+
+  @override
+  Future<GameSoundPreferences> readGameSoundPreferences() async => preferences;
+
+  @override
+  Future<void> writeGameSoundPreferences(GameSoundPreferences value) async =>
+      preferences = value;
 }
 
 final class _Harness {
@@ -156,6 +169,30 @@ void main() {
     await tester.tap(find.byKey(const ValueKey<String>('play-action-save')));
     await tester.pumpAndSettle();
     expect(harness.outbox.events.last.event, MosaicEventName.playSaved);
+  });
+
+  testWidgets('sound stays in More and opens its compact controls', (
+    tester,
+  ) async {
+    final harness = _Harness();
+    final soundController = GameSoundController(store: _MemorySoundStore());
+    addTearDown(harness.close);
+    addTearDown(soundController.dispose);
+    await soundController.initialize();
+
+    await tester.pumpWidget(_app(harness, soundController: soundController));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('game-sound-control')),
+      findsNothing,
+    );
+
+    await tester.tap(find.byKey(const ValueKey<String>('play-action-more')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Sound'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Mute'), findsOneWidget);
   });
 
   for (final viewportCase in _utilityViewportCases) {
@@ -319,12 +356,17 @@ void main() {
   });
 }
 
-Widget _app(_Harness harness, {bool active = true}) => MaterialApp(
+Widget _app(
+  _Harness harness, {
+  bool active = true,
+  GameSoundController? soundController,
+}) => MaterialApp(
   home: ConsumerActionControls(
     item: _item(),
     feedRequestId: 'feed_controls',
     controller: harness.controller,
     onAdvance: harness.advance,
+    soundController: soundController,
     active: active,
     child: const ColoredBox(color: Colors.black),
   ),

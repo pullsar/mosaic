@@ -72,6 +72,7 @@ final class ResolvedPlayAudio extends StatefulWidget {
     required this.engine,
     required this.coordinator,
     this.active = true,
+    this.soundEnabled = true,
     this.onError,
     super.key,
   });
@@ -82,6 +83,7 @@ final class ResolvedPlayAudio extends StatefulWidget {
   final AudioEngine engine;
   final ActiveMediaCoordinator coordinator;
   final bool active;
+  final bool soundEnabled;
   final PlayAudioErrorCallback? onError;
 
   @override
@@ -133,6 +135,7 @@ final class _ResolvedPlayAudioState extends State<ResolvedPlayAudio> {
         engine: widget.engine,
         coordinator: widget.coordinator,
         active: widget.active,
+        soundEnabled: widget.soundEnabled,
         onError: widget.onError,
       );
     },
@@ -151,6 +154,7 @@ final class OwnedPlayAudio extends StatefulWidget {
     required this.engine,
     required this.coordinator,
     this.active = true,
+    this.soundEnabled = true,
     this.onError,
     super.key,
   });
@@ -160,6 +164,7 @@ final class OwnedPlayAudio extends StatefulWidget {
   final AudioEngine engine;
   final ActiveMediaCoordinator coordinator;
   final bool active;
+  final bool soundEnabled;
   final PlayAudioErrorCallback? onError;
 
   @override
@@ -189,7 +194,8 @@ final class _OwnedPlayAudioState extends State<OwnedPlayAudio> {
         !identical(oldWidget.asset, widget.asset) ||
         !identical(oldWidget.engine, widget.engine) ||
         !identical(oldWidget.coordinator, widget.coordinator) ||
-        oldWidget.active != widget.active) {
+        oldWidget.active != widget.active ||
+        oldWidget.soundEnabled != widget.soundEnabled) {
       _scheduleReconcile();
     }
   }
@@ -233,7 +239,7 @@ final class _OwnedPlayAudioState extends State<OwnedPlayAudio> {
 
   Future<void> _reconcile(int generation) async {
     await _releaseCurrent();
-    if (!_isCurrent(generation) || !widget.active) {
+    if (!_isCurrent(generation) || !widget.active || !widget.soundEnabled) {
       _publishIdle(generation);
       return;
     }
@@ -257,7 +263,7 @@ final class _OwnedPlayAudioState extends State<OwnedPlayAudio> {
       // predecessor using the same logical asset ID is fully stopped and
       // released before a shared engine creates/reuses the successor source.
       await coordinator.activate(ownerId, handle);
-      if (!_isCurrent(generation) || !widget.active) {
+      if (!_isCurrent(generation) || !widget.active || !widget.soundEnabled) {
         await _releaseCurrent();
         return null;
       }
@@ -272,7 +278,7 @@ final class _OwnedPlayAudioState extends State<OwnedPlayAudio> {
       Error.throwWithStackTrace(error, stackTrace);
     }
 
-    if (!_isCurrent(generation) || !widget.active) {
+    if (!_isCurrent(generation) || !widget.active || !widget.soundEnabled) {
       await _releaseCurrent();
       return null;
     }
@@ -280,7 +286,9 @@ final class _OwnedPlayAudioState extends State<OwnedPlayAudio> {
   }
 
   Future<void> _play(int generation) async {
-    if (!_isCurrent(generation) || !widget.active) return;
+    if (!_isCurrent(generation) || !widget.active || !widget.soundEnabled) {
+      return;
+    }
     _publishLoading(generation);
 
     try {
@@ -300,7 +308,7 @@ final class _OwnedPlayAudioState extends State<OwnedPlayAudio> {
       }
 
       await coordinator.activate(ownerId, handle);
-      if (!_isCurrent(generation) || !widget.active) {
+      if (!_isCurrent(generation) || !widget.active || !widget.soundEnabled) {
         await _releaseCurrent();
         return;
       }
@@ -308,7 +316,7 @@ final class _OwnedPlayAudioState extends State<OwnedPlayAudio> {
       if (_played && !handle.paused) {
         await handle.pause();
         userPauseEpoch = handle.pauseEpoch;
-        if (!_isCurrent(generation) || !widget.active) {
+        if (!_isCurrent(generation) || !widget.active || !widget.soundEnabled) {
           await _releaseCurrent();
           return;
         }
@@ -321,7 +329,7 @@ final class _OwnedPlayAudioState extends State<OwnedPlayAudio> {
         _publishIdle(generation);
         return;
       }
-      if (!_isCurrent(generation) || !widget.active) {
+      if (!_isCurrent(generation) || !widget.active || !widget.soundEnabled) {
         await _releaseCurrent();
         return;
       }
@@ -434,6 +442,16 @@ final class _OwnedPlayAudioState extends State<OwnedPlayAudio> {
     if (!widget.active) return const SizedBox.shrink();
     if (_error != null) return const PlayAudioUnavailable();
     if (_loading) return const _AudioState(label: 'Loading audio');
+
+    if (!widget.soundEnabled) {
+      return Center(
+        child: FilledButton.tonalIcon(
+          onPressed: null,
+          icon: const Icon(Icons.volume_off_rounded),
+          label: const Text('Sound off'),
+        ),
+      );
+    }
 
     final semanticLabel = widget.asset.semanticLabel ?? 'Hear audio';
     return Center(
