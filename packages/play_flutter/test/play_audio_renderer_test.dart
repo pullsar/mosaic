@@ -52,6 +52,32 @@ final class _FakeAudioEngine implements AudioEngine {
   }
 }
 
+final class _VoiceEngine extends _FakeAudioEngine implements VoiceAudioEngine {
+  var nextVoiceId = 0;
+  final List<int> stoppedVoices = <int>[];
+
+  @override
+  Future<AudioVoice> startVoice(String assetId, {double gain = 1}) async {
+    events.add('voice:$assetId:$gain');
+    return AudioVoice(nextVoiceId++);
+  }
+
+  @override
+  Future<void> stopVoice(AudioVoice voice) async {
+    stoppedVoices.add(voice.id);
+  }
+
+  @override
+  Future<void> setVoiceGain(AudioVoice voice, double gain) async {}
+
+  @override
+  Future<void> fadeVoice(
+    AudioVoice voice,
+    double gain,
+    Duration duration,
+  ) async {}
+}
+
 final class _ReplacementHandle implements ManagedMediaHandle {
   var pauseCount = 0;
   var releaseCount = 0;
@@ -95,6 +121,24 @@ Future<void> _pumpAudio(
 }
 
 void main() {
+  test(
+    'sound session bounds voices and stops them exactly once on release',
+    () async {
+      final engine = _VoiceEngine();
+      final session = PlaySoundSession(engine, maxVoices: 2);
+
+      await session.play('tap');
+      await session.play('place');
+      await session.play('overflow');
+      await session.release();
+      await session.release();
+      await session.play('late');
+
+      expect(engine.events, ['voice:tap:1.0', 'voice:place:1.0']);
+      expect(engine.stoppedVoices, [0, 1]);
+    },
+  );
+
   test('audio assets require absolute HTTPS', () {
     expect(
       () => PlayAudioAsset(id: 'a', uri: Uri.parse('http://example.com/a.m4a')),
