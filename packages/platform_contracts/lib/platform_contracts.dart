@@ -28,8 +28,10 @@ abstract interface class FeatureFlags {
   Object? value(String key);
 }
 
+enum ShareDisposition { shared, dismissed, unavailable }
+
 abstract interface class ShareGateway {
-  Future<void> share(Uri canonicalPlayUri, {String? message});
+  Future<ShareDisposition> share(Uri canonicalPlayUri, {String? message});
 }
 
 abstract interface class UploadSession {
