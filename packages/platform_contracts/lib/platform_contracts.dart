@@ -9,6 +9,20 @@ abstract interface class AudioEngine {
   Map<String, num> get latencyMetrics;
 }
 
+/// Opaque voice identity. Widgets never receive native audio handles.
+final class AudioVoice {
+  const AudioVoice(this.id);
+  final int id;
+}
+
+/// Additive per-voice controls for a bounded active Play sound session.
+abstract interface class VoiceAudioEngine implements AudioEngine {
+  Future<AudioVoice> startVoice(String assetId, {double gain = 1});
+  Future<void> setVoiceGain(AudioVoice voice, double gain);
+  Future<void> fadeVoice(AudioVoice voice, double gain, Duration duration);
+  Future<void> stopVoice(AudioVoice voice);
+}
+
 abstract interface class FeatureFlags {
   bool isEnabled(String key, {bool fallback = false});
   Object? value(String key);
