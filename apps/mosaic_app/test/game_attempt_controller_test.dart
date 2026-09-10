@@ -86,4 +86,59 @@ void main() {
     controller.captureActionHandler()(const ChoiceAction('a'));
     expect(controller.session.ended, isTrue);
   });
+
+  test('recovery snapshot rebuilds a matching revision from actions', () {
+    final controller = GameAttemptController(
+      play: _play(),
+      idFactory: () => 'attempt-a',
+    );
+    controller.apply(const ChoiceAction('b'));
+
+    final snapshot = controller.encodeRecoverySnapshot(capabilityVersion: 1);
+    final restored = GameAttemptController.restoreRecoverySnapshot(
+      play: _play(),
+      encodedSnapshot: snapshot!,
+      capabilityVersion: 1,
+    );
+
+    expect(restored, isNotNull);
+    expect(restored!.attemptId, 'attempt-a');
+    expect(restored.mode, GameAttemptMode.first);
+    expect(restored.session.stateId, 'question');
+    expect(restored.session.attempts, 1);
+    expect(restored.actions, hasLength(1));
+  });
+
+  test('recovery rejects corrupt, mismatched, and oversized snapshots', () {
+    final controller = GameAttemptController(
+      play: _play(),
+      idFactory: () => 'attempt-a',
+    );
+    final snapshot = controller.encodeRecoverySnapshot(capabilityVersion: 1)!;
+
+    expect(
+      GameAttemptController.restoreRecoverySnapshot(
+        play: _play(),
+        encodedSnapshot: '{',
+        capabilityVersion: 1,
+      ),
+      isNull,
+    );
+    expect(
+      GameAttemptController.restoreRecoverySnapshot(
+        play: _play(),
+        encodedSnapshot: snapshot,
+        capabilityVersion: 2,
+      ),
+      isNull,
+    );
+    expect(
+      GameAttemptController.restoreRecoverySnapshot(
+        play: _play(),
+        encodedSnapshot: '${snapshot}x' * 70000,
+        capabilityVersion: 1,
+      ),
+      isNull,
+    );
+  });
 }

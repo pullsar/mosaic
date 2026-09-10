@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
 import 'package:event_delivery/event_delivery.dart';
 import 'package:flutter/widgets.dart';
 import 'package:play_engine/play_engine.dart';
@@ -34,6 +37,7 @@ final class GameAttemptController extends ChangeNotifier {
        _session = engine.start(play);
 
   static const int maxActions = 128;
+  static const int maxRecoveryBytes = 64 * 1024;
 
   final PlayEngine _engine;
   final AttemptIdFactory _idFactory;
@@ -50,6 +54,75 @@ final class GameAttemptController extends ChangeNotifier {
   PlayResolution? get lastResolution => _lastResolution;
   bool get completed => _session.ended;
   List<PlayAction> get actions => List<PlayAction>.unmodifiable(_actions);
+
+  String? encodeRecoverySnapshot({required int capabilityVersion}) {
+    if (completed || capabilityVersion < 1) return null;
+    final encoded = jsonEncode(<String, Object?>{
+      'version': 1,
+      'playId': _session.play.id,
+      'revisionId': _session.play.revisionId,
+      'playHash': _playHash(_session.play),
+      'capabilityVersion': capabilityVersion,
+      'attemptId': _attemptId,
+      'mode': _mode.wireName,
+      'presentationStateId': _session.stateId,
+      'actions': _actions.map(_encodeAction).toList(growable: false),
+    });
+    return utf8.encode(encoded).length <= maxRecoveryBytes ? encoded : null;
+  }
+
+  static GameAttemptController? restoreRecoverySnapshot({
+    required PlayDocument play,
+    required String encodedSnapshot,
+    required int capabilityVersion,
+  }) {
+    if (capabilityVersion < 1 ||
+        utf8.encode(encodedSnapshot).length > maxRecoveryBytes) {
+      return null;
+    }
+    try {
+      final decoded = jsonDecode(encodedSnapshot);
+      if (decoded is! Map) return null;
+      final snapshot = decoded.cast<String, Object?>();
+      if (snapshot['version'] != 1 ||
+          snapshot['playId'] != play.id ||
+          snapshot['revisionId'] != play.revisionId ||
+          snapshot['playHash'] != _playHash(play) ||
+          snapshot['capabilityVersion'] != capabilityVersion) {
+        return null;
+      }
+      final attemptId = snapshot['attemptId'];
+      final mode = _modeFromWire(snapshot['mode']);
+      final expectedStateId = snapshot['presentationStateId'];
+      final rawActions = snapshot['actions'];
+      if (attemptId is! String ||
+          attemptId.trim().isEmpty ||
+          attemptId.length > 200 ||
+          mode == null ||
+          expectedStateId is! String ||
+          rawActions is! List ||
+          rawActions.length > maxActions) {
+        return null;
+      }
+      final controller = GameAttemptController(
+        play: play,
+        mode: mode,
+        idFactory: () => attemptId,
+      );
+      for (final rawAction in rawActions) {
+        final action = _decodeAction(rawAction);
+        if (action == null || controller.completed) return null;
+        controller.apply(action);
+      }
+      if (controller.completed ||
+          controller.session.stateId != expectedStateId) {
+        return null;
+      }
+      return controller;
+    } on Object {
+      return null;
+    }
+  }
 
   ValueChanged<PlayAction> captureActionHandler({
     ValueChanged<PlayResolution>? onResolved,
@@ -100,6 +173,62 @@ final class GameAttemptController extends ChangeNotifier {
     }
     return value;
   }
+
+  static String _playHash(PlayDocument play) =>
+      sha256.convert(utf8.encode(jsonEncode(play.toJson()))).toString();
+
+  static Map<String, Object?> _encodeAction(PlayAction action) =>
+      switch (action) {
+        TapAction() => const <String, Object?>{'type': 'tap'},
+        ChoiceAction(:final optionId) => <String, Object?>{
+          'type': 'choice',
+          'optionId': optionId,
+        },
+        SequenceAction(:final values) => <String, Object?>{
+          'type': 'sequence',
+          'values': values,
+        },
+        DragAction(:final targetId) => <String, Object?>{
+          'type': 'drag',
+          'targetId': targetId,
+        },
+      };
+
+  static PlayAction? _decodeAction(Object? raw) {
+    if (raw is! Map) return null;
+    final action = raw.cast<String, Object?>();
+    return switch (action['type']) {
+      'tap' => action.length == 1 ? const TapAction() : null,
+      'choice' => _boundedActionText(action['optionId'], 'choice'),
+      'drag' => _boundedActionText(action['targetId'], 'drag'),
+      'sequence' => _sequenceAction(action['values']),
+      _ => null,
+    };
+  }
+
+  static PlayAction? _boundedActionText(Object? raw, String kind) {
+    if (raw is! String || raw.trim().isEmpty || raw.length > 200) return null;
+    return kind == 'choice' ? ChoiceAction(raw) : DragAction(raw);
+  }
+
+  static PlayAction? _sequenceAction(Object? raw) {
+    if (raw is! List || raw.isEmpty || raw.length > 16) return null;
+    final values = <String>[];
+    for (final value in raw) {
+      if (value is! String || value.trim().isEmpty || value.length > 200) {
+        return null;
+      }
+      values.add(value);
+    }
+    return SequenceAction(values);
+  }
+
+  static GameAttemptMode? _modeFromWire(Object? raw) => switch (raw) {
+    'first' => GameAttemptMode.first,
+    'practice' => GameAttemptMode.practice,
+    'challenge' => GameAttemptMode.challenge,
+    _ => null,
+  };
 }
 
 typedef GameAttemptBuilder =
