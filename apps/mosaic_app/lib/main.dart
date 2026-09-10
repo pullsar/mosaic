@@ -26,6 +26,7 @@ import 'guest_engagement.dart';
 import 'guest_home.dart';
 import 'onboarding_localizations.dart';
 import 'play_resolution_telemetry.dart';
+import 'saved_games.dart';
 
 const _apiBaseUrl = String.fromEnvironment('MOSAIC_API_BASE_URL');
 const _allowInsecureLocalApi = bool.fromEnvironment(
@@ -396,16 +397,23 @@ final class _MosaicAppState extends State<MosaicApp> {
           );
         });
       case ConsumerPlaySearchSelection():
-        await _openSearchPlay(context, selection.result);
+        await _openPlay(
+          context,
+          playId: selection.result.playId,
+          revisionId: selection.result.revisionId,
+          play: selection.result.play,
+        );
     }
   }
 
-  Future<void> _openSearchPlay(
-    BuildContext context,
-    ConsumerSearchPlayResult result,
-  ) {
+  Future<void> _openPlay(
+    BuildContext context, {
+    required String playId,
+    required String revisionId,
+    required PlayDocument play,
+  }) {
     final telemetry = _eventRuntime.telemetryForStandalonePlay(
-      playRevisionId: result.revisionId,
+      playRevisionId: revisionId,
     );
     return Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
@@ -416,9 +424,9 @@ final class _MosaicAppState extends State<MosaicApp> {
             children: <Widget>[
               _buildPlaySurface(
                 routeContext,
-                playId: result.playId,
-                revisionId: result.revisionId,
-                play: result.play,
+                playId: playId,
+                revisionId: revisionId,
+                play: play,
                 telemetry: telemetry,
                 active: true,
                 onDirectManipulationChanged: (_) {},
@@ -442,6 +450,37 @@ final class _MosaicAppState extends State<MosaicApp> {
       ),
     );
   }
+
+  Future<List<SavedGameEntry>> _loadSavedGames() async {
+    final recovered = await _consumerRuntime.recoverRecentFeed();
+    if (recovered == null) return const <SavedGameEntry>[];
+    final entries = <SavedGameEntry>[];
+    for (final item in recovered.items) {
+      final state = await _actionController.load(
+        playId: item.playId,
+        revisionId: item.revisionId,
+      );
+      if (state.saved && state.savedRevisionId == item.revisionId) {
+        entries.add(SavedGameEntry(item: item, updatedAt: state.updatedAt));
+      }
+    }
+    entries.sort((left, right) => right.updatedAt.compareTo(left.updatedAt));
+    return List<SavedGameEntry>.unmodifiable(entries);
+  }
+
+  Future<void> _openSaved(BuildContext context) => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (routeContext) => SavedGamesPage(
+        loadEntries: _loadSavedGames,
+        onOpen: (item) => _openPlay(
+          routeContext,
+          playId: item.playId,
+          revisionId: item.revisionId,
+          play: item.play,
+        ),
+      ),
+    ),
+  );
 
   void _recordFeedEvent(
     String event, {
@@ -521,6 +560,7 @@ final class _MosaicAppState extends State<MosaicApp> {
           directManipulationActive:
               _directManipulationActive || conversionPromptBlocked,
           onSearch: () => unawaited(_openSearch(homeContext)),
+          onSaved: () => unawaited(_openSaved(homeContext)),
           activeSearchLabel: scope?.label,
           onClearSearch: scope == null
               ? null

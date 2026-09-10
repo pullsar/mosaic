@@ -39,9 +39,10 @@ final class _AppOutbox implements EventOutbox {
 }
 
 final class _SeededAppState implements ConsumerLocalState {
-  _SeededAppState(this.cache);
+  _SeededAppState(this.cache, {this.saved = false});
 
   final ConsumerFeedCache cache;
+  final bool saved;
 
   @override
   Future<ConsumerPreferences> readPreferences() async => ConsumerPreferences();
@@ -77,7 +78,14 @@ final class _SeededAppState implements ConsumerLocalState {
 
   @override
   Future<ConsumerPlayActionState?> readPlayActionState(String playId) async =>
-      null;
+      saved
+      ? ConsumerPlayActionState(
+          playId: playId,
+          savedRevisionId: 'revision_app_share',
+          saved: true,
+          updatedAt: DateTime.utc(2026, 9, 11),
+        )
+      : null;
 
   @override
   Future<void> writePlayActionState(ConsumerPlayActionState state) async {}
@@ -186,6 +194,48 @@ void main() {
     await tester.tap(find.byKey(const ValueKey<String>('play-action-share')));
     await tester.pump();
     expect(find.text('Share links are opening soon'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+
+  testWidgets('Saved opens a retained local round', (tester) async {
+    final state = _SeededAppState(
+      ConsumerFeedCache(
+        requestId: 'request_app_saved',
+        items: <ConsumerFeedItem>[_seededItem()],
+        updatedAt: DateTime.now().toUtc(),
+      ),
+      saved: true,
+    );
+    final runtime = AppEventRuntime.create(
+      resources: AppEventResources(
+        outbox: _AppOutbox(),
+        consumerLocalState: state,
+        actorId: 'actor_app_saved',
+        actorAccessToken: 'A' * 43,
+        close: () async {},
+      ),
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(child: MosaicApp(eventRuntime: runtime)),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey<String>('guest-nav-saved')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Saved'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('saved-game:play_app_share')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('saved-game:play_app_share')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Pick one.'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();

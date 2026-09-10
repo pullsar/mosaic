@@ -12,6 +12,7 @@ final class GuestHome extends StatefulWidget {
     required this.engagement,
     required this.child,
     required this.onSearch,
+    this.onSaved,
     this.activeSearchLabel,
     this.onClearSearch,
     this.directManipulationActive = false,
@@ -24,6 +25,7 @@ final class GuestHome extends StatefulWidget {
   final GuestEngagementController engagement;
   final Widget child;
   final VoidCallback onSearch;
+  final VoidCallback? onSaved;
   final String? activeSearchLabel;
   final VoidCallback? onClearSearch;
   final bool directManipulationActive;
@@ -132,7 +134,7 @@ final class _GuestHomeState extends State<GuestHome> {
               ),
               Positioned.fromRect(
                 rect: composition.navigationRect,
-                child: const _GuestNavigation(),
+                child: _GuestNavigation(onSaved: widget.onSaved),
               ),
             ],
           ),
@@ -221,7 +223,9 @@ final class _GuestChrome extends StatelessWidget {
 }
 
 final class _GuestNavigation extends StatelessWidget {
-  const _GuestNavigation();
+  const _GuestNavigation({this.onSaved});
+
+  final VoidCallback? onSaved;
 
   static const _items = <_GuestNavigationItem>[
     _GuestNavigationItem('play', 'Play', Icons.play_circle_outline_rounded),
@@ -238,45 +242,50 @@ final class _GuestNavigation extends StatelessWidget {
       children: <Widget>[
         for (final item in _items)
           Expanded(
-            child: Semantics(
-              selected: item.id == 'play',
-              child: TextButton(
-                key: ValueKey<String>('guest-nav-${item.id}'),
-                onPressed: () {
-                  if (item.id == 'play') return;
-                  ScaffoldMessenger.of(context)
-                    ..hideCurrentSnackBar()
-                    ..showSnackBar(
-                      SnackBar(content: Text('${item.label} is coming soon.')),
-                    );
-                },
-                style: TextButton.styleFrom(
-                  foregroundColor: item.id == 'play'
-                      ? Colors.white
-                      : const Color(0xFFB9B9C0),
-                  minimumSize: const Size(48, 48),
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  shape: const RoundedRectangleBorder(),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: <Widget>[
-                    Icon(item.icon, size: 20),
-                    const SizedBox(height: 2),
-                    Text(
-                      item.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.fade,
-                      softWrap: false,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                      ),
+            child: Builder(
+              builder: (context) {
+                final enabled =
+                    item.id == 'play' ||
+                    (item.id == 'saved' && onSaved != null);
+                return Semantics(
+                  selected: item.id == 'play',
+                  child: TextButton(
+                    key: ValueKey<String>('guest-nav-${item.id}'),
+                    onPressed: enabled
+                        ? () {
+                            if (item.id == 'play') return;
+                            if (item.id == 'saved') onSaved?.call();
+                          }
+                        : null,
+                    style: TextButton.styleFrom(
+                      foregroundColor: item.id == 'play'
+                          ? Colors.white
+                          : const Color(0xFFB9B9C0),
+                      minimumSize: const Size(48, 48),
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      shape: const RoundedRectangleBorder(),
                     ),
-                  ],
-                ),
-              ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: <Widget>[
+                        Icon(item.icon, size: 20),
+                        const SizedBox(height: 2),
+                        Text(
+                          item.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.fade,
+                          softWrap: false,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
             ),
           ),
       ],
