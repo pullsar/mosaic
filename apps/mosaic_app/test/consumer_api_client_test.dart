@@ -369,4 +369,59 @@ void main() {
     expect(paths, <String>['/root/v1/topics']);
     expect(result, isA<ConsumerApiSuccess<List<ConsumerTopic>>>());
   });
+
+  test(
+    'public Play retrieval needs no actor identity and verifies exact IDs',
+    () async {
+      final requests = <http.Request>[];
+      final client = ConsumerApiClient(
+        baseUri: Uri.parse('https://api.example.test/root/'),
+        actorAccess: _actorAccess,
+        client: MockClient((request) async {
+          requests.add(request);
+          return http.Response(jsonEncode(_playJson()), 200);
+        }),
+      );
+
+      final result = await client.fetchPublicPlay(
+        playId: 'play_1',
+        revisionId: 'rev_1',
+        capabilities: PlayCapabilityEnvelope.m1(),
+      );
+
+      expect(
+        requests.single.url.path,
+        '/root/v1/public/plays/play_1/revisions/rev_1',
+      );
+      expect(requests.single.headers.containsKey('authorization'), isFalse);
+      expect(result, isA<ConsumerApiSuccess<ConsumerPublicPlay>>());
+      expect(
+        (result as ConsumerApiSuccess<ConsumerPublicPlay>).value.play.id,
+        'play_1',
+      );
+    },
+  );
+
+  test('public Play retrieval rejects an identifier mismatch', () async {
+    final client = ConsumerApiClient(
+      baseUri: Uri.parse('https://api.example.test/'),
+      actorAccess: _actorAccess,
+      client: MockClient(
+        (_) async =>
+            http.Response(jsonEncode(_playJson(id: 'other_play')), 200),
+      ),
+    );
+
+    final result = await client.fetchPublicPlay(
+      playId: 'play_1',
+      revisionId: 'rev_1',
+      capabilities: PlayCapabilityEnvelope.m1(),
+    );
+
+    expect(result, isA<ConsumerApiFailure<ConsumerPublicPlay>>());
+    expect(
+      (result as ConsumerApiFailure<ConsumerPublicPlay>).kind,
+      ConsumerApiFailureKind.malformedResponse,
+    );
+  });
 }

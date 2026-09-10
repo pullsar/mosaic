@@ -451,6 +451,19 @@ final class ConsumerFeedPage {
   }
 }
 
+/// An immutable published Play resolved from its public identity.
+final class ConsumerPublicPlay {
+  const ConsumerPublicPlay._({
+    required this.playId,
+    required this.revisionId,
+    required this.play,
+  });
+
+  final String playId;
+  final String revisionId;
+  final PlayDocument play;
+}
+
 final class ConsumerApiClient {
   ConsumerApiClient({
     required Uri baseUri,
@@ -756,6 +769,52 @@ final class ConsumerApiClient {
     }
   }
 
+  /// Fetches a catalog-published immutable Play without registering an actor.
+  Future<ConsumerApiResult<ConsumerPublicPlay>> fetchPublicPlay({
+    required String playId,
+    required String revisionId,
+    required PlayCapabilityEnvelope capabilities,
+  }) async {
+    final canonicalPlayId = _canonicalPublicIdentifier(playId, 'playId');
+    final canonicalRevisionId = _canonicalPublicIdentifier(
+      revisionId,
+      'revisionId',
+    );
+    final response = await _send(
+      () => _client.get(
+        _policy.resolve(
+          'v1/public/plays/${Uri.encodeComponent(canonicalPlayId)}/revisions/'
+          '${Uri.encodeComponent(canonicalRevisionId)}',
+        ),
+      ),
+    );
+    if (response == null) {
+      return const ConsumerApiFailure(ConsumerApiFailureKind.retryable);
+    }
+    if (response.statusCode != 200) return _failureForResponse(response);
+    try {
+      final play = _validatedPlayDocument(
+        _decodeResponseObject(response.body),
+        playId: canonicalPlayId,
+        revisionId: canonicalRevisionId,
+        compatibilityChecker: _compatibilityChecker,
+        capabilities: capabilities,
+      );
+      return ConsumerApiSuccess(
+        ConsumerPublicPlay._(
+          playId: canonicalPlayId,
+          revisionId: canonicalRevisionId,
+          play: play,
+        ),
+      );
+    } on Object {
+      return const ConsumerApiFailure(
+        ConsumerApiFailureKind.malformedResponse,
+        statusCode: 200,
+      );
+    }
+  }
+
   Uri _actionStateEndpoint(String playId) => _policy.resolve(
     'v1/actors/${Uri.encodeComponent(_actorAccess.actorId)}/actions/'
     '${Uri.encodeComponent(playId)}',
@@ -862,6 +921,18 @@ PlayDocument _validatedPlayDocument(
     );
   }
   return play;
+}
+
+String _canonicalPublicIdentifier(String value, String field) {
+  final normalized = value.trim();
+  if (!RegExp(r'^[A-Za-z0-9_-]{1,200}$').hasMatch(normalized)) {
+    throw ArgumentError.value(
+      value,
+      field,
+      'must be a bounded canonical identifier',
+    );
+  }
+  return normalized;
 }
 
 int _requiredBoundedInt(Object? value, String field, int min, int max) {
