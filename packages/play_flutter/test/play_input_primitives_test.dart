@@ -89,9 +89,7 @@ void main() {
       find.byKey(const ValueKey<String>('play-drag-object-motion')),
     );
     expect(lift.scale, 1.06);
-    final glow = tester.widget<AnimatedContainer>(
-      target,
-    );
+    final glow = tester.widget<AnimatedContainer>(target);
     final border = (glow.decoration! as BoxDecoration).border! as Border;
     expect(
       border.top.color,
@@ -333,6 +331,49 @@ void main() {
 
     await tester.tap(find.bySemanticsLabel('C4'));
     expect(sequences, hasLength(1));
+  });
+
+  testWidgets('piano depresses and emits one note on pointer down', (
+    tester,
+  ) async {
+    final notes = <String>[];
+    final sequences = <List<String>>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PlayPianoInput(
+            keys: const ['C4'],
+            sequenceLength: 1,
+            onNote: notes.add,
+            onSequence: sequences.add,
+          ),
+        ),
+      ),
+    );
+
+    final key = find.bySemanticsLabel('C4');
+    final gesture = await tester.startGesture(tester.getCenter(key));
+    await tester.pump();
+
+    expect(notes, ['C4']);
+    expect(sequences, [
+      <String>['C4'],
+    ]);
+    expect(
+      tester
+          .widget<AnimatedScale>(
+            find.byKey(const ValueKey<String>('play-piano-key:C4')),
+          )
+          .scale,
+      .97,
+    );
+
+    await gesture.up();
+    await tester.pump();
+    expect(notes, ['C4']);
+    expect(sequences, [
+      <String>['C4'],
+    ]);
   });
 
   testWidgets('piano keeps every key tappable in a compact 56px allocation', (

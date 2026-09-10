@@ -49,12 +49,19 @@ final class PlayPianoInput extends StatefulWidget {
     required this.keys,
     required this.sequenceLength,
     required this.onSequence,
+    this.onNote,
     super.key,
   });
 
   final List<String> keys;
   final int sequenceLength;
   final ValueChanged<List<String>> onSequence;
+
+  /// Runs at pointer-down for a physical key press, before score submission.
+  ///
+  /// A future sound session can use this to start a matching preloaded note
+  /// while the immutable [onSequence] path remains authoritative for scoring.
+  final ValueChanged<String>? onNote;
 
   @override
   State<PlayPianoInput> createState() => _PlayPianoInputState();
@@ -83,6 +90,7 @@ final class _PlayPianoInputState extends State<PlayPianoInput> {
   void _press(String note) {
     if (_locked) return;
     final completed = _sequence.length + 1 >= widget.sequenceLength;
+    widget.onNote?.call(note);
     setState(() {
       _sequence.add(note);
       _lastKey = note;
@@ -159,7 +167,7 @@ final class _PlayPianoInputState extends State<PlayPianoInput> {
   );
 }
 
-final class _PianoKey extends StatelessWidget {
+final class _PianoKey extends StatefulWidget {
   const _PianoKey({
     required this.note,
     required this.selected,
@@ -171,47 +179,97 @@ final class _PianoKey extends StatelessWidget {
   final VoidCallback? onPressed;
 
   @override
+  State<_PianoKey> createState() => _PianoKeyState();
+}
+
+final class _PianoKeyState extends State<_PianoKey> {
+  bool _pressed = false;
+  bool _activatedFromPointer = false;
+
+  void _activate() {
+    final callback = widget.onPressed;
+    if (callback == null) return;
+    callback();
+  }
+
+  void _onTapDown(TapDownDetails details) {
+    if (widget.onPressed == null) return;
+    _activatedFromPointer = true;
+    setState(() => _pressed = true);
+    _activate();
+  }
+
+  void _onTapUp(TapUpDetails details) {
+    if (mounted) setState(() => _pressed = false);
+  }
+
+  void _onTapCancel() {
+    _activatedFromPointer = false;
+    if (mounted) setState(() => _pressed = false);
+  }
+
+  void _onTap() {
+    if (_activatedFromPointer) {
+      _activatedFromPointer = false;
+      return;
+    }
+    _activate();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final sharp = note.contains('#') || note.contains('♯');
+    final sharp = widget.note.contains('#') || widget.note.contains('♯');
     final baseBackground = sharp ? colorScheme.onSurface : colorScheme.surface;
     final baseForeground = sharp ? colorScheme.surface : colorScheme.onSurface;
-    final background = selected ? colorScheme.primaryContainer : baseBackground;
-    final foreground = selected
+    final background = widget.selected
+        ? colorScheme.primaryContainer
+        : baseBackground;
+    final foreground = widget.selected
         ? colorScheme.onPrimaryContainer
         : baseForeground;
-    final display = _displayNote(note);
+    final display = _displayNote(widget.note);
+    final reduced = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 1),
       child: Semantics(
         button: true,
-        label: note,
+        label: widget.note,
         excludeSemantics: true,
-        child: Material(
-          color: background,
-          shape: RoundedRectangleBorder(
-            side: BorderSide(color: colorScheme.outlineVariant),
-            borderRadius: const BorderRadius.vertical(
-              bottom: Radius.circular(8),
+        child: AnimatedScale(
+          key: ValueKey<String>('play-piano-key:${widget.note}'),
+          scale: _pressed ? .97 : 1,
+          duration: reduced ? Duration.zero : MosaicVisualTokens.fastFeedback,
+          curve: Curves.easeOutCubic,
+          child: Material(
+            color: background,
+            shape: RoundedRectangleBorder(
+              side: BorderSide(color: colorScheme.outlineVariant),
+              borderRadius: const BorderRadius.vertical(
+                bottom: Radius.circular(8),
+              ),
             ),
-          ),
-          child: InkWell(
-            onTap: onPressed,
-            borderRadius: const BorderRadius.vertical(
-              bottom: Radius.circular(8),
-            ),
-            child: SizedBox(
-              width: 48,
-              child: Align(
-                alignment: Alignment.bottomCenter,
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Text(
-                    display,
-                    style: Theme.of(
-                      context,
-                    ).textTheme.labelLarge?.copyWith(color: foreground),
+            child: InkWell(
+              onTap: widget.onPressed == null ? null : _onTap,
+              onTapDown: _onTapDown,
+              onTapUp: _onTapUp,
+              onTapCancel: _onTapCancel,
+              borderRadius: const BorderRadius.vertical(
+                bottom: Radius.circular(8),
+              ),
+              child: SizedBox(
+                width: 48,
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Text(
+                      display,
+                      style: Theme.of(
+                        context,
+                      ).textTheme.labelLarge?.copyWith(color: foreground),
+                    ),
                   ),
                 ),
               ),
