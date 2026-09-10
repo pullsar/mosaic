@@ -244,3 +244,25 @@ Two baseline test attempts did not execute the requested tests:
 The checked-in server builder selects Flutter 3.44.7. A compatible isolated toolchain is required before implementation validation; the audit did not upgrade the user's global Flutter installation. No passing test, release-build, cognitive-benefit, or physical-performance claim is made.
 
 No owning issue is marked complete. This document changes design/planning state only.
+
+## Approved extension: music, sound effects, and visual themes
+
+The user approved this direction and requested implementation planning with music, SFX, and backgrounds treated as essential craft. Generated rounds should select from carefully curated theme groups, with an explicit user theme choice as an alternative to random selection.
+
+Use versioned **theme packs** containing compatible visual backgrounds/materials, an optional music bed, and short functional SFX. Start with four art directions: Paper Studio, Night Museum, Glass Garden, and Orbital. Quiet is a playback preference, not another art direction. These are production briefs; no licensed asset inventory is claimed to exist yet.
+
+Resolve random theme selection once at round preparation from an approved compatible pool. Freeze the chosen pack revision and variant in the attempt. A rebuild, reveal, save, or reconnect cannot reroll it. Explicit selection applies to the next fresh round; a current round can immediately mute audio but cannot silently change task-bearing artwork. A manually selected unavailable/incompatible theme falls back to an approved neutral treatment with concise recovery copy, without changing the saved preference.
+
+Separate **task media** (the melody to reproduce, a sound to identify, a change-detection scene) from **decorative treatment** (surrounding material, background bed, ordinary feedback). Task media is immutable and cannot be swapped by a theme or muted SFX preference. Task audio still requires explicit playback intent; inability to hear it must offer retry/alternate mode/exit rather than a falsely equivalent silent score. Exact replay and friend challenges preserve task media and any presentation differences that affect difficulty.
+
+Sound policy has distinct music and effects preferences plus an immediate master mute. Persist preferences locally, but keep audio activation permission ephemeral: restored preferences, feed entry, background resume, and a link opening must never start audio on their own. A deliberate Sound on action authorizes optional sound for the foreground session; separate Hear/Play it back actions authorize task audio. Mute, app interruption, route loss, or backgrounding cancels that authorization. Native platform audio-focus and interruption behavior must be handled by the existing platform boundary. No ambient audio continues across Plays or under other apps.
+
+Optional music is suppressed during pitch/rhythm tasks and perceptual exposure cues. Decorative effects are suppressed while those cues run; required task sounds remain unchanged. Elsewhere, short gain ramps reduce the music bed under narration or informative sounds. No wrong-answer alarm, victory fanfare, constant musical escalation, or sound attached to every chrome tap. Feedback sounds express contact, placement, resolution, and save only after the responsible local action succeeds.
+
+All voices for a Play belong to one managed session registered with the existing ActiveMediaCoordinator. Extend the current SoLoud adapter with voice-level operations; do not add another audio engine or independent music singleton. Legacy media remains supported. New session-backed audio widgets must not acquire competing coordinator handles. Initial theme-enabled families exclude video-clip compositions; mixed video/audio support requires a reviewed composite handle before those families become eligible.
+
+Start with one music bed, at most eight total active voices, and at most sixteen decoded sources/24 MiB PCM per active Play session. Do not decode a next-Play soundtrack while the current owner is active. Keep optional compressed warming within the existing asset window. Drop an expired decorative effect rather than playing it late after network recovery. Start with a 100 ms effect deadline and an 80 ms same-event debounce, adjustable only after device measurements. Task audio is never silently dropped by the optional-effects policy.
+
+Master curated media offline with consistent loudness and reviewed seam/crop/contrast behavior. Keep source recordings and licensing metadata, version processed derivatives, and verify true peak plus worst-case mixes. Timing-critical samples require exact onset and loop-boundary evidence; the current AAC-in-MP4 derivative cannot be assumed to provide sample-exact loops. Begin with finite beds and pitch-only reproduction. Gapless loops and rhythm scoring require the appropriate codec/adapter test gate first.
+
+Plans: [implementation sequence](../plans/2026-09-10-replayable-games.md), with separate plans for catalog repair, themes/audio, replay/Saved/sharing, and game capabilities/generation.
