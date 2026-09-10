@@ -33,8 +33,12 @@ test('route candidates have equal visible weight and no answer in semantics', ()
   assert.equal(paths.length, 5);
   assert.equal(new Set(paths.map((line) => line.width)).size, 1);
   assert.ok(paths.every((line) => line.tone === 'foreground'));
-  assert.doesNotMatch(asset.semanticLabel ?? '', /connects|from Start|to End/i);
-  for (const route of ['A:', 'B:', 'C:']) {
+  assert.equal(
+    asset.semanticLabel,
+    'Three route candidates: A rises, B stays level, C falls. Start and End are marked.',
+  );
+  assert.doesNotMatch(asset.semanticLabel ?? '', /coordinates|connects|\d{2}/i);
+  for (const route of ['A rises', 'B stays level', 'C falls']) {
     assert.ok(asset.semanticLabel?.includes(route));
   }
   const endpoints = asset.elements.filter((element) => element.type === 'circle');

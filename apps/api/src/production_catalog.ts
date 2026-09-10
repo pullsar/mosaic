@@ -441,7 +441,7 @@ const clarifiedCanvasAssets = [
   {
     ...routeV3Asset,
     id: 'mixli_canvas_orbit_v4',
-    semanticLabel: 'Coordinates are percent across, then percent down. Start: 18, 50. End: 82, 50. Route endpoints: A: 22, 45 and 78, 38. B: 18, 50 and 82, 50. C: 22, 56 and 68, 60.',
+    semanticLabel: 'Three route candidates: A rises, B stays level, C falls. Start and End are marked.',
     elements: routeV3Asset.elements.map((element) => {
       if (element.type === 'line') {
         return {...element, tone: 'foreground', width: 0.012,
