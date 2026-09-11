@@ -309,12 +309,15 @@ final class PlayDragTarget {
   final String? label;
 }
 
+enum PlayDragHandleStyle { rounded, matchstick }
+
 final class PlayDragInputSpec {
   const PlayDragInputSpec({
     required this.origin,
     required this.size,
     required this.targets,
     this.handleLabel = 'Move item',
+    this.handleStyle = PlayDragHandleStyle.rounded,
     this.showTargetHints = false,
   });
 
@@ -322,6 +325,7 @@ final class PlayDragInputSpec {
   final Size size;
   final List<PlayDragTarget> targets;
   final String handleLabel;
+  final PlayDragHandleStyle handleStyle;
   final bool showTargetHints;
 
   static PlayDragInputSpec? fromDefinition(PlayInputDefinition input) {
@@ -341,6 +345,12 @@ final class PlayDragInputSpec {
     final handleLabel = rawLabel is String && rawLabel.trim().isNotEmpty
         ? rawLabel.trim()
         : 'Move item';
+    final handleStyle = switch (input.properties['handleStyle']) {
+      null || 'rounded' => PlayDragHandleStyle.rounded,
+      'matchstick' => PlayDragHandleStyle.matchstick,
+      _ => null,
+    };
+    if (handleStyle == null) return null;
     final showTargetHints = input.properties['showTargetHints'] == true;
 
     return PlayDragInputSpec(
@@ -348,6 +358,7 @@ final class PlayDragInputSpec {
       size: size,
       targets: List<PlayDragTarget>.unmodifiable(targets),
       handleLabel: handleLabel,
+      handleStyle: handleStyle,
       showTargetHints: showTargetHints,
     );
   }
@@ -862,9 +873,15 @@ final class _PlayDragInputState extends State<PlayDragInput>
                       child: DecoratedBox(
                         key: const ValueKey<String>('play-drag-object'),
                         decoration: BoxDecoration(
-                          color: colorScheme.primaryContainer,
+                          color: widget.spec.handleStyle ==
+                                  PlayDragHandleStyle.matchstick
+                              ? const Color(0xFFC9783E)
+                              : colorScheme.primaryContainer,
                           border: Border.all(
-                            color: colorScheme.onPrimaryContainer,
+                            color: widget.spec.handleStyle ==
+                                    PlayDragHandleStyle.matchstick
+                                ? const Color(0xFF7A3E20)
+                                : colorScheme.onPrimaryContainer,
                             width: 1.5,
                           ),
                           borderRadius: BorderRadius.circular(
@@ -887,6 +904,27 @@ final class _PlayDragInputState extends State<PlayDragInput>
                                 ]
                               : const <BoxShadow>[],
                         ),
+                        child: widget.spec.handleStyle ==
+                                PlayDragHandleStyle.matchstick
+                            ? const Align(
+                                alignment: Alignment.topCenter,
+                                child: FractionallySizedBox(
+                                  widthFactor: .78,
+                                  heightFactor: .2,
+                                  child: DecoratedBox(
+                                    key: ValueKey<String>(
+                                      'play-drag-matchstick-head',
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Color(0xFF5D2518),
+                                      borderRadius: BorderRadius.vertical(
+                                        top: Radius.circular(999),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              )
+                            : null,
                       ),
                     ),
                   ),
@@ -904,6 +942,7 @@ bool _dragSpecsEquivalent(PlayDragInputSpec left, PlayDragInputSpec right) {
   if (left.origin != right.origin ||
       left.size != right.size ||
       left.handleLabel != right.handleLabel ||
+      left.handleStyle != right.handleStyle ||
       left.showTargetHints != right.showTargetHints ||
       left.targets.length != right.targets.length) {
     return false;

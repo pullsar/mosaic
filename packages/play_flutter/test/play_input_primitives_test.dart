@@ -53,6 +53,7 @@ void main() {
                 origin: const Offset(.1, .1),
                 size: const Size(.2, .1),
                 handleLabel: 'Move match',
+                handleStyle: PlayDragHandleStyle.matchstick,
                 showTargetHints: true,
                 targets: const [
                   PlayDragTarget(
@@ -73,6 +74,10 @@ void main() {
       ),
     );
     final object = find.byKey(const ValueKey<String>('play-drag-object'));
+    expect(
+      find.byKey(const ValueKey<String>('play-drag-matchstick-head')),
+      findsOneWidget,
+    );
     final target = find.byKey(
       const ValueKey<String>('play-drag-target-glow:target'),
     );
@@ -286,6 +291,25 @@ void main() {
     expect(spec, isNotNull);
     expect(spec!.keys, ['C4', 'E4', 'G4']);
     expect(spec.sequenceLength, 3);
+  });
+
+  test('drag spec preserves the authored matchstick appearance', () {
+    final spec = PlayDragInputSpec.fromDefinition(
+      PlayInputDefinition(
+        type: PlayInputType.drag,
+        properties: {
+          'dragOrigin': {'x': .2, 'y': .2},
+          'dragSize': {'width': .04, 'height': .16},
+          'targets': [
+            {'id': 'slot', 'x': .6, 'y': .2, 'width': .04, 'height': .16},
+          ],
+          'handleStyle': 'matchstick',
+        },
+      ),
+    );
+
+    expect(spec, isNotNull);
+    expect(spec!.handleStyle, PlayDragHandleStyle.matchstick);
   });
 
   test('piano spec fails closed on malformed authored keys', () {

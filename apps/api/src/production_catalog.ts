@@ -812,6 +812,7 @@ const moveOneMatch: StarterPlay = {
             {id: 'solution_a', x: 0.185, y: 0.29, width: 0.05, height: 0.14},
           ],
           handleLabel: 'Move match',
+          handleStyle: 'matchstick',
         },
         validation: {type: 'target_region', value: 'solution_a'},
         transition: {correct: 'reveal', incorrect: 'solve'},

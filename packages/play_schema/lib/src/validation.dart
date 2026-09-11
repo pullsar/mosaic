@@ -420,6 +420,19 @@ final class PlaySchemaValidator {
       );
     }
 
+    final handleStyle = state.input.properties['handleStyle'];
+    if (handleStyle != null &&
+        handleStyle != 'rounded' &&
+        handleStyle != 'matchstick') {
+      issues.add(
+        PlayValidationIssue(
+          code: 'drag_handle_style',
+          path: '$path.handleStyle',
+          message: 'drag handleStyle must be rounded or matchstick.',
+        ),
+      );
+    }
+
     final targetsRaw = state.input.properties['targets'];
     final parsedTargets = _targets(targetsRaw);
     if (parsedTargets == null || parsedTargets.isEmpty) {

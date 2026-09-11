@@ -287,6 +287,21 @@ void main() {
     expect(issues.any((issue) => issue.code == 'drag_target_overlap'), isTrue);
   });
 
+  test('drag publication validation rejects an unknown handle appearance', () {
+    final raw = _fixture('move_one_match.json');
+    final states = Map<String, Object?>.from(raw['states']! as Map);
+    final solve = Map<String, Object?>.from(states['solve']! as Map);
+    final input = Map<String, Object?>.from(solve['input']! as Map);
+    states['solve'] = {
+      ...solve,
+      'input': {...input, 'handleStyle': 'firework'},
+    };
+
+    final play = PlayDocument.fromJson({...raw, 'states': states});
+    final issues = const PlaySchemaValidator().validate(play);
+    expect(issues.any((issue) => issue.code == 'drag_handle_style'), isTrue);
+  });
+
   test(
     'drag publication validation requires validator target to be authored',
     () {
