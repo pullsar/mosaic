@@ -4,6 +4,9 @@ export interface MatchstickMoveSolution {
   readonly equation: string;
 }
 
+/** Changes whenever the independent proof algorithm's semantics change. */
+export const oneMoveMatchstickSolverVersion = 'one-move-matchstick-solver-v1';
+
 const digitSegments: Readonly<Record<string, readonly string[]>> = {
   '0': ['a', 'b', 'c', 'd', 'e', 'f'],
   '1': ['b', 'c'],

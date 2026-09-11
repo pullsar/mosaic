@@ -1,9 +1,13 @@
 import {createHash} from 'node:crypto';
 
+import type {CanvasAssetDocument, CanvasElement, CanvasPalette} from './canvas_asset.js';
+import type {EditorialDraft} from './game_editorial.js';
 import {
   enumerateOneMoveMatchstickSolutions,
+  knownMatchstickSegments,
   matchstickEquationFromSegments,
   matchstickSegmentsForEquation,
+  oneMoveMatchstickSolverVersion,
   type MatchstickMoveSolution,
 } from './game_solvers.js';
 
@@ -29,7 +33,27 @@ export interface OneMoveMatchstickDraft {
     readonly sourceCanvasAssetId: string;
     readonly solvedCanvasAssetId: string;
   };
+  /** Complete local composition for an editor to preview before approval. */
+  readonly canvasAssets: readonly CanvasAssetDocument[];
+  readonly document: OneMoveDraftDocument;
+  /** The exact evidence record that must be approved before publication. */
+  readonly editorial: EditorialDraft;
   readonly themePreference?: string;
+}
+
+export interface OneMoveDraftDocument {
+  readonly schemaVersion: 1;
+  readonly id: string;
+  readonly revisionId: string;
+  readonly format: 'solve';
+  readonly classification: 'challenge';
+  readonly topics: readonly string[];
+  readonly learningTopics: readonly string[];
+  readonly estimatedDurationSec: number;
+  readonly assets: readonly string[];
+  readonly sources: readonly unknown[];
+  readonly entryState: 'solve';
+  readonly states: Readonly<Record<string, unknown>>;
 }
 
 export interface OneMoveGenerationResult {
@@ -79,6 +103,7 @@ export function generateOneMoveMatchstickDrafts(
     });
     const themePreference = normalizeThemePreference(request.themePreference);
     const canonicalHash = createHash('sha256').update(canonical).digest('hex');
+    const renderable = buildRenderableDraft(candidate, canonicalHash);
     drafts.push(Object.freeze({
       family: 'one_move_matchstick',
       generatorVersion,
@@ -87,10 +112,7 @@ export function generateOneMoveMatchstickDrafts(
       solution: candidate.solution,
       structuralSignature: candidate.structuralSignature,
       canonicalHash,
-      media: Object.freeze({
-        sourceCanvasAssetId: `draft_matchsticks_${canonicalHash}_source`,
-        solvedCanvasAssetId: `draft_matchsticks_${canonicalHash}_solved`,
-      }),
+      ...renderable,
       ...(themePreference === undefined ? {} : {themePreference}),
     }));
   }
@@ -102,6 +124,194 @@ export function generateOneMoveMatchstickDrafts(
     drafts: Object.freeze(drafts),
     rejectionCounts: Object.freeze(rejections),
   });
+}
+
+const draftMatchstickPalette: CanvasPalette = Object.freeze({
+  background: '#FFF7ED',
+  foreground: '#5D2518',
+  accent: '#C9783E',
+  muted: '#7C6253',
+  surface: '#F4E4D4',
+});
+
+function buildRenderableDraft(
+  candidate: Candidate,
+  canonicalHash: string,
+): Pick<OneMoveMatchstickDraft, 'media' | 'canvasAssets' | 'document' | 'editorial'> {
+  const media = Object.freeze({
+    sourceCanvasAssetId: `draft_matchsticks_${canonicalHash}_source`,
+    solvedCanvasAssetId: `draft_matchsticks_${canonicalHash}_solved`,
+  });
+  const staticSource = new Set(candidate.sourceSegments);
+  staticSource.delete(candidate.solution.from);
+  const solved = new Set(staticSource);
+  solved.add(candidate.solution.to);
+  const sourceAsset = buildDraftMatchstickCanvas(
+    media.sourceCanvasAssetId,
+    staticSource,
+    'An incomplete matchstick equation.',
+  );
+  const solvedAsset = buildDraftMatchstickCanvas(
+    media.solvedCanvasAssetId,
+    solved,
+    'A solved matchstick equation.',
+  );
+  const pieceId = `match_${candidate.solution.from.replace('.', '_')}`;
+  const targetSegments = [
+    candidate.solution.to,
+    ...knownMatchstickSegments.filter(
+      (segment) =>
+        !staticSource.has(segment) &&
+        segment !== candidate.solution.to &&
+        segment !== candidate.solution.from,
+    ),
+  ].slice(0, 3);
+  const destinations = targetSegments.map((segment, index) => Object.freeze({
+    id: index === 0 ? 'solution' : `option_${index}`,
+    segment,
+  }));
+  const documentId = `draft_one_move_${canonicalHash}`;
+  const document: OneMoveDraftDocument = Object.freeze({
+    schemaVersion: 1,
+    id: documentId,
+    revisionId: `draft_${canonicalHash.slice(0, 12)}`,
+    format: 'solve',
+    classification: 'challenge',
+    topics: Object.freeze(['puzzles', 'logic']),
+    learningTopics: Object.freeze([]),
+    estimatedDurationSec: 20,
+    assets: Object.freeze([media.sourceCanvasAssetId, media.solvedCanvasAssetId]),
+    sources: Object.freeze([]),
+    entryState: 'solve',
+    states: Object.freeze({
+      solve: Object.freeze({
+        presentation: Object.freeze({
+          layers: Object.freeze([
+            Object.freeze({type: 'canvas', role: 'media', assetId: media.sourceCanvasAssetId}),
+            Object.freeze({
+              type: 'scene',
+              role: 'media',
+              scene: Object.freeze({
+                version: 1,
+                objects: Object.freeze([
+                  Object.freeze({
+                    id: pieceId,
+                    semanticLabel: 'Match',
+                    shape: 'matchstick',
+                    ...matchstickSceneLocation(candidate.solution.from),
+                    tone: 'accent',
+                    movable: true,
+                  }),
+                ]),
+                targets: Object.freeze(destinations.map((destination) => Object.freeze({
+                  id: destination.id,
+                  semanticLabel: 'Open space',
+                  ...matchstickSceneLocation(destination.segment),
+                }))),
+              }),
+            }),
+            Object.freeze({type: 'text', role: 'prompt', value: 'Move one match.'}),
+          ]),
+        }),
+        input: Object.freeze({type: 'piece_move'}),
+        validation: Object.freeze({
+          type: 'legal_piece_move',
+          value: Object.freeze(destinations.map((destination) => Object.freeze({
+            pieceId,
+            targetId: destination.id,
+            correct: destination.segment === candidate.solution.to,
+          }))),
+        }),
+        transition: Object.freeze({correct: 'reveal', incorrect: 'solve'}),
+      }),
+      reveal: Object.freeze({
+        presentation: Object.freeze({
+          layers: Object.freeze([
+            Object.freeze({type: 'canvas', role: 'media', assetId: media.solvedCanvasAssetId}),
+            Object.freeze({
+              type: 'text',
+              role: 'reveal_title',
+              value: `${candidate.solution.equation}. One match changes sides.`,
+            }),
+          ]),
+        }),
+        input: Object.freeze({type: 'tap', label: 'Done'}),
+        validation: Object.freeze({type: 'none'}),
+        transition: Object.freeze({default: '$end'}),
+      }),
+    }),
+  });
+  return Object.freeze({
+    media,
+    canvasAssets: Object.freeze([sourceAsset, solvedAsset]),
+    document,
+    editorial: Object.freeze({
+      draftHash: canonicalHash,
+      generatorVersion,
+      solverVersion: oneMoveMatchstickSolverVersion,
+      structuralSignature: candidate.structuralSignature,
+      mediaAssetIds: Object.freeze([media.sourceCanvasAssetId, media.solvedCanvasAssetId]),
+    }),
+  });
+}
+
+function buildDraftMatchstickCanvas(
+  id: string,
+  occupied: ReadonlySet<string>,
+  semanticLabel: string,
+): CanvasAssetDocument {
+  const elements = [...occupied]
+    .sort()
+    .map((segment) => matchstickCanvasLine(segment));
+  elements.push(
+    {type: 'line', x1: 0.62, y1: 0.47, x2: 0.7, y2: 0.47, width: 0.016, cap: 'round', tone: 'foreground'},
+    {type: 'line', x1: 0.62, y1: 0.53, x2: 0.7, y2: 0.53, width: 0.016, cap: 'round', tone: 'foreground'},
+  );
+  return Object.freeze({
+    schemaVersion: 1,
+    id,
+    semanticLabel,
+    elements: Object.freeze(elements),
+    palette: draftMatchstickPalette,
+  });
+}
+
+function matchstickCanvasLine(segment: string): CanvasElement {
+  const [slot, part] = segment.split('.');
+  const center = ({left: 0.16, right: 0.5, result: 0.82} as const)[slot ?? ''];
+  const line = (x1: number, y1: number, x2: number, y2: number): CanvasElement => ({
+    type: 'line', x1, y1, x2, y2, width: 0.016, cap: 'round', tone: 'foreground',
+  });
+  if (slot === 'operator' && part === 'horizontal') return line(0.3, 0.5, 0.38, 0.5);
+  if (slot === 'operator' && part === 'vertical') return line(0.34, 0.43, 0.34, 0.57);
+  if (center === undefined) throw new Error(`unknown_matchstick_segment:${segment}`);
+  if (part === 'a') return line(center - 0.055, 0.36, center + 0.055, 0.36);
+  if (part === 'b') return line(center + 0.055, 0.36, center + 0.055, 0.5);
+  if (part === 'c') return line(center + 0.055, 0.5, center + 0.055, 0.64);
+  if (part === 'd') return line(center - 0.055, 0.64, center + 0.055, 0.64);
+  if (part === 'e') return line(center - 0.055, 0.5, center - 0.055, 0.64);
+  if (part === 'f') return line(center - 0.055, 0.36, center - 0.055, 0.5);
+  if (part === 'g') return line(center - 0.055, 0.5, center + 0.055, 0.5);
+  throw new Error(`unknown_matchstick_segment:${segment}`);
+}
+
+function matchstickSceneLocation(segment: string): Record<string, number> {
+  const [slot, part] = segment.split('.');
+  if (slot === 'operator') {
+    if (part === 'horizontal') return {x: 0.29, y: 0.485, width: 0.1, height: 0.03};
+    if (part === 'vertical') return {x: 0.325, y: 0.43, width: 0.03, height: 0.14};
+    throw new Error(`unknown_matchstick_segment:${segment}`);
+  }
+  const center = ({left: 0.16, right: 0.5, result: 0.82} as const)[slot ?? ''];
+  if (center === undefined) throw new Error(`unknown_matchstick_segment:${segment}`);
+  if (part === 'a') return {x: center - 0.07, y: 0.345, width: 0.14, height: 0.03};
+  if (part === 'b') return {x: center + 0.04, y: 0.36, width: 0.03, height: 0.14};
+  if (part === 'c') return {x: center + 0.04, y: 0.5, width: 0.03, height: 0.14};
+  if (part === 'd') return {x: center - 0.07, y: 0.625, width: 0.14, height: 0.03};
+  if (part === 'e') return {x: center - 0.07, y: 0.5, width: 0.03, height: 0.14};
+  if (part === 'f') return {x: center - 0.07, y: 0.36, width: 0.03, height: 0.14};
+  if (part === 'g') return {x: center - 0.07, y: 0.485, width: 0.14, height: 0.03};
+  throw new Error(`unknown_matchstick_segment:${segment}`);
 }
 
 interface Candidate {
