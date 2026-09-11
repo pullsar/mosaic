@@ -16,6 +16,7 @@ final class PlayTimedCueInput extends StatefulWidget {
     required this.cueId,
     required this.ordinal,
     required this.onElapsed,
+    this.onProgress,
     super.key,
   });
 
@@ -23,6 +24,7 @@ final class PlayTimedCueInput extends StatefulWidget {
   final String cueId;
   final int ordinal;
   final VoidCallback onElapsed;
+  final ValueChanged<double>? onProgress;
 
   @override
   State<PlayTimedCueInput> createState() => _PlayTimedCueInputState();
@@ -71,16 +73,26 @@ final class _PlayTimedCueInputState extends State<PlayTimedCueInput>
       ..stop()
       ..duration = widget.duration
       ..value = 0;
+    _reportProgress(0);
     if (!(_reducedMotion ?? false)) {
       unawaited(_progress.forward());
     }
     _completion = Timer(widget.duration, () {
-      if (mounted) widget.onElapsed();
+      if (!mounted) return;
+      _reportProgress(1);
+      widget.onElapsed();
     });
   }
 
   void _rebuild() {
+    _reportProgress(_progress.value);
     if (mounted) setState(() {});
+  }
+
+  void _reportProgress(double value) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) widget.onProgress?.call(value);
+    });
   }
 
   @override

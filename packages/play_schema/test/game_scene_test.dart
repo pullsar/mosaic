@@ -105,6 +105,73 @@ void main() {
     );
   });
 
+  test('scene samples a bounded cue at its authored timeline position', () {
+    final scene = GameSceneDefinition.fromJson({
+      'version': 1,
+      'objects': [
+        {
+          'id': 'coin',
+          'semanticLabel': 'Coin',
+          'shape': 'circle',
+          'x': .1,
+          'y': .3,
+          'width': .1,
+          'height': .1,
+        },
+      ],
+      'targets': const [],
+      'cues': [
+        {
+          'id': 'coin_path',
+          'objectId': 'coin',
+          'durationMs': 1000,
+          'keyframes': [
+            {'timeMs': 0, 'x': .1, 'y': .3, 'width': .1, 'height': .1},
+            {'timeMs': 1000, 'x': .7, 'y': .3, 'width': .1, 'height': .1},
+          ],
+        },
+      ],
+    });
+
+    final cue = scene.cueById('coin_path');
+    expect(cue, isNotNull);
+    expect(cue!.sample(.5).x, closeTo(.4, .0001));
+    expect(cue.sample(double.nan).x, .1);
+    expect(scene.toJson()['cues'], isA<List<Object?>>());
+  });
+
+  test('scene rejects cue frames that cannot form a deterministic path', () {
+    expect(
+      () => GameSceneDefinition.fromJson({
+        'version': 1,
+        'objects': [
+          {
+            'id': 'coin',
+            'semanticLabel': 'Coin',
+            'shape': 'circle',
+            'x': .1,
+            'y': .3,
+            'width': .1,
+            'height': .1,
+          },
+        ],
+        'targets': const [],
+        'cues': [
+          {
+            'id': 'coin_path',
+            'objectId': 'coin',
+            'durationMs': 1000,
+            'keyframes': [
+              {'timeMs': 0, 'x': .1, 'y': .3, 'width': .1, 'height': .1},
+              {'timeMs': 0, 'x': .7, 'y': .3, 'width': .1, 'height': .1},
+            ],
+          },
+        ],
+      }),
+      throwsFormatException,
+    );
+  });
+
   test('scene layer retains typed scene data in the Play document', () {
     final play = PlayDocument.fromJson({
       'schemaVersion': 1,

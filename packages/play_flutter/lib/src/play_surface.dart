@@ -58,6 +58,7 @@ final class PlaySurface extends StatefulWidget {
 final class _PlaySurfaceState extends State<PlaySurface> {
   static const _engine = PlayEngine();
   PlaySession? _ownedSession;
+  final _cueProgress = ValueNotifier<_ActiveCueProgress?>(null);
 
   bool get _isControlled => widget.session != null;
 
@@ -82,11 +83,19 @@ final class _PlaySurfaceState extends State<PlaySurface> {
         (oldWidget.play.id != widget.play.id ||
             oldWidget.play.revisionId != widget.play.revisionId)) {
       _ownedSession = _engine.start(widget.play);
+      _cueProgress.value = null;
     }
   }
 
   void _apply(PlayAction action) {
     if (_session.ended) return;
+    if (action is TimedCueAction) {
+      final activeCue = _cueProgress.value;
+      if (activeCue?.cueId == action.cueId &&
+          activeCue?.ordinal == action.ordinal) {
+        _cueProgress.value = null;
+      }
+    }
     final delegated = widget.onAction;
     if (delegated != null) {
       delegated(action);
@@ -95,6 +104,26 @@ final class _PlaySurfaceState extends State<PlaySurface> {
     final result = _engine.apply(_session, action);
     setState(() => _ownedSession = result.session);
     widget.onResolved?.call(result);
+  }
+
+  void _updateCueProgress(String cueId, int ordinal, double progress) {
+    if (_session.ended || !progress.isFinite) return;
+    final spec = _safeTimedCueSpec(
+      _session.state.input,
+      _session.state.validation,
+    );
+    if (spec == null || spec.cueId != cueId || spec.ordinal != ordinal) return;
+    _cueProgress.value = _ActiveCueProgress(
+      cueId: cueId,
+      ordinal: ordinal,
+      value: progress.clamp(0.0, 1.0).toDouble(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _cueProgress.dispose();
+    super.dispose();
   }
 
   @override
@@ -125,6 +154,7 @@ final class _PlaySurfaceState extends State<PlaySurface> {
         // A direct terminal drag keeps the placed object from its final input.
         inputEpoch: _session.attempts - (isDragInput && _session.ended ? 1 : 0),
         onAction: _apply,
+        onCueProgress: _updateCueProgress,
         onDirectManipulationChanged: widget.onDirectManipulationChanged,
       );
       final dragPresentation = IgnorePointer(
@@ -168,19 +198,35 @@ final class _PlaySurfaceState extends State<PlaySurface> {
                                     slot.layer.scene != null
                                 ? IgnorePointer(
                                     ignoring: _session.ended,
-                                    child: PlaySceneRenderer(
-                                      scene: slot.layer.scene!,
-                                      placements: _session.piecePlacements,
-                                      onPieceMove: (pieceId, targetId) =>
-                                          _apply(
-                                            PieceMoveAction(
-                                              pieceId: pieceId,
-                                              targetId: targetId,
-                                            ),
-                                          ),
-                                      onDirectManipulationChanged:
-                                          widget.onDirectManipulationChanged,
-                                    ),
+                                    child:
+                                        ValueListenableBuilder<
+                                          _ActiveCueProgress?
+                                        >(
+                                          valueListenable: _cueProgress,
+                                          builder:
+                                              (
+                                                context,
+                                                activeCue,
+                                                child,
+                                              ) => PlaySceneRenderer(
+                                                scene: slot.layer.scene!,
+                                                cueId: activeCue?.cueId,
+                                                cueProgress:
+                                                    activeCue?.value ?? 0,
+                                                placements:
+                                                    _session.piecePlacements,
+                                                onPieceMove:
+                                                    (pieceId, targetId) =>
+                                                        _apply(
+                                                          PieceMoveAction(
+                                                            pieceId: pieceId,
+                                                            targetId: targetId,
+                                                          ),
+                                                        ),
+                                                onDirectManipulationChanged: widget
+                                                    .onDirectManipulationChanged,
+                                              ),
+                                        ),
                                   )
                                 : _buildMedia(context, slot.layer),
                           ),
@@ -242,6 +288,18 @@ final class _PlaySurfaceState extends State<PlaySurface> {
     }
     return result;
   }
+}
+
+final class _ActiveCueProgress {
+  const _ActiveCueProgress({
+    required this.cueId,
+    required this.ordinal,
+    required this.value,
+  });
+
+  final String cueId;
+  final int ordinal;
+  final double value;
 }
 
 /// A frozen, low-cost visual treatment selected when the immutable Play was
@@ -696,6 +754,7 @@ final class _InputOverlay extends StatelessWidget {
     required this.validation,
     required this.inputEpoch,
     required this.onAction,
+    this.onCueProgress,
     this.onDirectManipulationChanged,
   });
 
@@ -703,6 +762,8 @@ final class _InputOverlay extends StatelessWidget {
   final PlayValidationDefinition validation;
   final int inputEpoch;
   final ValueChanged<PlayAction> onAction;
+  final void Function(String cueId, int ordinal, double progress)?
+  onCueProgress;
   final ValueChanged<bool>? onDirectManipulationChanged;
 
   @override
@@ -833,6 +894,8 @@ final class _InputOverlay extends StatelessWidget {
             duration: spec.duration,
             cueId: spec.cueId,
             ordinal: spec.ordinal,
+            onProgress: (progress) =>
+                onCueProgress?.call(spec.cueId, spec.ordinal, progress),
             onElapsed: () => onAction(
               TimedCueAction(cueId: spec.cueId, ordinal: spec.ordinal),
             ),

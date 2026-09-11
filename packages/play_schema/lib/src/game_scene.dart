@@ -41,6 +41,9 @@ enum GameSceneShape { roundedRect, circle, matchstick }
 
 enum GameSceneTone { foreground, muted, accent, surface }
 
+const _maxSceneCueDurationMs = 12000;
+const _maxSceneCueKeyframes = 128;
+
 final class GameSceneRect {
   const GameSceneRect({
     required this.x,
@@ -163,12 +166,126 @@ final class GameSceneTarget {
   };
 }
 
+final class GameSceneCueKeyframe {
+  const GameSceneCueKeyframe({required this.timeMs, required this.rect});
+
+  final int timeMs;
+  final GameSceneRect rect;
+
+  factory GameSceneCueKeyframe.fromJson(
+    Map<String, Object?> json,
+    String field,
+  ) {
+    final timeMs = json['timeMs'];
+    if (timeMs is! int || timeMs < 0 || timeMs > _maxSceneCueDurationMs) {
+      throw FormatException(
+        '$field.timeMs must be a bounded millisecond offset.',
+      );
+    }
+    return GameSceneCueKeyframe(
+      timeMs: timeMs,
+      rect: GameSceneRect.fromJson(json, field),
+    );
+  }
+
+  Map<String, Object?> toJson() => {'timeMs': timeMs, ...rect.toJson()};
+}
+
+final class GameSceneCue {
+  GameSceneCue({
+    required this.id,
+    required this.objectId,
+    required this.durationMs,
+    required List<GameSceneCueKeyframe> keyframes,
+  }) : keyframes = List.unmodifiable(keyframes) {
+    if (durationMs < 1 || durationMs > _maxSceneCueDurationMs) {
+      throw ArgumentError(
+        'Cue duration must be 1-$_maxSceneCueDurationMs milliseconds.',
+      );
+    }
+    if (this.keyframes.length < 2 ||
+        this.keyframes.length > _maxSceneCueKeyframes ||
+        this.keyframes.first.timeMs != 0 ||
+        this.keyframes.last.timeMs != durationMs) {
+      throw ArgumentError(
+        'Cue keyframes must start at zero and end at duration.',
+      );
+    }
+    for (var index = 1; index < this.keyframes.length; index += 1) {
+      if (this.keyframes[index].timeMs <= this.keyframes[index - 1].timeMs) {
+        throw ArgumentError('Cue keyframes must be strictly time ordered.');
+      }
+    }
+  }
+
+  final String id;
+  final String objectId;
+  final int durationMs;
+  final List<GameSceneCueKeyframe> keyframes;
+
+  factory GameSceneCue.fromJson(Map<String, Object?> json, int index) {
+    final durationMs = json['durationMs'];
+    final rawKeyframes = json['keyframes'];
+    if (durationMs is! int || rawKeyframes is! List) {
+      throw FormatException('cues[$index] requires durationMs and keyframes.');
+    }
+    try {
+      return GameSceneCue(
+        id: _sceneId(json['id'], 'cues[$index].id'),
+        objectId: _sceneId(json['objectId'], 'cues[$index].objectId'),
+        durationMs: durationMs,
+        keyframes: List.generate(
+          rawKeyframes.length,
+          (keyframeIndex) => GameSceneCueKeyframe.fromJson(
+            _sceneMap(
+              rawKeyframes[keyframeIndex],
+              'cues[$index].keyframes[$keyframeIndex]',
+            ),
+            'cues[$index].keyframes[$keyframeIndex]',
+          ),
+        ),
+      );
+    } on ArgumentError catch (error) {
+      throw FormatException(error.message);
+    }
+  }
+
+  GameSceneRect sample(double progress) {
+    if (!progress.isFinite) return keyframes.first.rect;
+    final elapsedMs = (progress.clamp(0, 1) * durationMs).round();
+    final after = keyframes.indexWhere(
+      (keyframe) => keyframe.timeMs >= elapsedMs,
+    );
+    if (after <= 0) return keyframes.first.rect;
+    if (after == -1) return keyframes.last.rect;
+    final end = keyframes[after];
+    final start = keyframes[after - 1];
+    final portion = (elapsedMs - start.timeMs) / (end.timeMs - start.timeMs);
+    return GameSceneRect(
+      x: start.rect.x + (end.rect.x - start.rect.x) * portion,
+      y: start.rect.y + (end.rect.y - start.rect.y) * portion,
+      width: start.rect.width + (end.rect.width - start.rect.width) * portion,
+      height:
+          start.rect.height + (end.rect.height - start.rect.height) * portion,
+    );
+  }
+
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'objectId': objectId,
+    'durationMs': durationMs,
+    'keyframes': keyframes.map((keyframe) => keyframe.toJson()).toList(),
+  };
+}
+
 final class GameSceneDefinition {
   GameSceneDefinition({
     required List<GameSceneObject> objects,
     required List<GameSceneTarget> targets,
+    List<GameSceneCue> cues = const [],
   }) : objects = List.unmodifiable(objects),
-       targets = List.unmodifiable(targets) {
+       targets = List.unmodifiable(targets),
+       cues = List.unmodifiable(cues) {
     if (objects.length > 12 || targets.length > 12 || objects.isEmpty) {
       throw ArgumentError(
         'Scenes require 1–12 objects and at most 12 targets.',
@@ -180,10 +297,24 @@ final class GameSceneDefinition {
         'Scene object and target identifiers must be unique.',
       );
     }
+    if (this.cues.map((cue) => cue.id).toSet().length != this.cues.length ||
+        this.cues.map((cue) => cue.objectId).toSet().length !=
+            this.cues.length ||
+        this.cues.length > objects.length ||
+        this.cues.fold<int>(0, (total, cue) => total + cue.keyframes.length) >
+            _maxSceneCueKeyframes ||
+        this.cues.any(
+          (cue) => !this.objects.any((object) => object.id == cue.objectId),
+        )) {
+      throw ArgumentError(
+        'Scene cues require unique IDs, real objects, and bounded keyframes.',
+      );
+    }
   }
 
   final List<GameSceneObject> objects;
   final List<GameSceneTarget> targets;
+  final List<GameSceneCue> cues;
 
   factory GameSceneDefinition.fromJson(Map<String, Object?> json) {
     if (json['version'] != 1)
@@ -193,6 +324,11 @@ final class GameSceneDefinition {
     if (objects is! List || targets is! List)
       throw const FormatException('Scene requires objects and targets.');
     try {
+      final rawCues = json['cues'];
+      if (rawCues != null && rawCues is! List) {
+        throw const FormatException('Scene cues must be an array.');
+      }
+      final cueList = rawCues as List?;
       final scene = GameSceneDefinition(
         objects: List.generate(
           objects.length,
@@ -208,6 +344,15 @@ final class GameSceneDefinition {
             index,
           ),
         ),
+        cues: cueList == null
+            ? const []
+            : List.generate(
+                cueList.length,
+                (index) => GameSceneCue.fromJson(
+                  _sceneMap(cueList[index], 'cues[$index]'),
+                  index,
+                ),
+              ),
       );
       if (utf8.encode(jsonEncode(scene.toJson())).length > 64 * 1024) {
         throw const FormatException('Scene exceeds 64 KiB.');
@@ -222,5 +367,14 @@ final class GameSceneDefinition {
     'version': 1,
     'objects': objects.map((object) => object.toJson()).toList(),
     'targets': targets.map((target) => target.toJson()).toList(),
+    if (cues.isNotEmpty) 'cues': cues.map((cue) => cue.toJson()).toList(),
   };
+
+  GameSceneCue? cueById(String? id) {
+    if (id == null) return null;
+    for (final cue in cues) {
+      if (cue.id == id) return cue;
+    }
+    return null;
+  }
 }

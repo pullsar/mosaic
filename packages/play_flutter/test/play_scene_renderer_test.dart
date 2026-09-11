@@ -96,6 +96,60 @@ void main() {
     );
   });
 
+  testWidgets('scene renders an active cue at its sampled position', (
+    tester,
+  ) async {
+    final moves = <(String, String)>[];
+    final scene = GameSceneDefinition.fromJson({
+      'version': 1,
+      'objects': [
+        {
+          'id': 'coin',
+          'semanticLabel': 'Coin',
+          'shape': 'circle',
+          'x': .1,
+          'y': .3,
+          'width': .1,
+          'height': .1,
+          'movable': true,
+        },
+      ],
+      'targets': const [],
+      'cues': [
+        {
+          'id': 'coin_path',
+          'objectId': 'coin',
+          'durationMs': 1000,
+          'keyframes': [
+            {'timeMs': 0, 'x': .1, 'y': .3, 'width': .1, 'height': .1},
+            {'timeMs': 1000, 'x': .7, 'y': .3, 'width': .1, 'height': .1},
+          ],
+        },
+      ],
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox.square(
+          dimension: 300,
+          child: PlaySceneRenderer(
+            scene: scene,
+            cueId: 'coin_path',
+            cueProgress: .5,
+            onPieceMove: (piece, target) => moves.add((piece, target)),
+          ),
+        ),
+      ),
+    );
+
+    final position = tester.widget<AnimatedPositioned>(
+      find.byKey(const ValueKey<String>('scene-object:coin')),
+    );
+    final sceneBounds = tester.getSize(find.byType(PlaySceneRenderer));
+    expect(position.left, closeTo(sceneBounds.width * .4, .01));
+    await tester.tap(find.bySemanticsLabel('Coin'));
+    expect(moves, isEmpty);
+  });
+
   testWidgets('scene puts a horizontal matchstick head at its end', (
     tester,
   ) async {

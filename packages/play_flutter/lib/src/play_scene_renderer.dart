@@ -11,6 +11,8 @@ final class PlaySceneRenderer extends StatefulWidget {
     required this.onPieceMove,
     this.placements = const {},
     this.onDirectManipulationChanged,
+    this.cueId,
+    this.cueProgress = 0,
     super.key,
   });
 
@@ -18,6 +20,8 @@ final class PlaySceneRenderer extends StatefulWidget {
   final Map<String, String> placements;
   final void Function(String pieceId, String targetId) onPieceMove;
   final ValueChanged<bool>? onDirectManipulationChanged;
+  final String? cueId;
+  final double cueProgress;
 
   @override
   State<PlaySceneRenderer> createState() => _PlaySceneRendererState();
@@ -210,13 +214,19 @@ final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
     ColorScheme colors,
     bool reduced,
   ) {
+    final cue = widget.scene.cueById(widget.cueId);
+    final activeCue = cue?.objectId == object.id ? cue : null;
     final targetId = widget.placements[object.id];
     final target = targetId == null
         ? null
         : widget.scene.targets
               .where((entry) => entry.id == targetId)
               .firstOrNull;
-    final rect = target?.rect ?? object.rect;
+    final safeProgress = widget.cueProgress.isFinite
+        ? widget.cueProgress.clamp(0.0, 1.0).toDouble()
+        : 0.0;
+    final rect = activeCue?.sample(safeProgress) ?? target?.rect ?? object.rect;
+    final movable = object.movable && activeCue == null;
     final selected = object.id == _selectedId;
     final isMatchstick = object.shape == GameSceneShape.matchstick;
     final horizontalMatchstick = isMatchstick && rect.width > rect.height;
@@ -230,32 +240,34 @@ final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
           };
     return AnimatedPositioned(
       key: ValueKey<String>('scene-object:${object.id}'),
-      duration: reduced ? Duration.zero : const Duration(milliseconds: 180),
+      duration: reduced || activeCue != null
+          ? Duration.zero
+          : const Duration(milliseconds: 180),
       curve: Curves.easeOutBack,
       left: rect.x * width,
       top: rect.y * height,
       width: rect.width * width,
       height: rect.height * height,
       child: Focus(
-        canRequestFocus: object.movable,
-        skipTraversal: !object.movable,
-        onKeyEvent: object.movable
+        canRequestFocus: movable,
+        skipTraversal: !movable,
+        onKeyEvent: movable
             ? (_, event) => _onActivate(event, () => _tapObject(object))
             : null,
         child: Semantics(
-          button: object.movable,
+          button: movable,
           label: object.semanticLabel,
           selected: selected,
-          onTap: object.movable ? () => _tapObject(object) : null,
+          onTap: movable ? () => _tapObject(object) : null,
           child: GestureDetector(
-            onTap: object.movable ? () => _tapObject(object) : null,
-            onPanDown: object.movable ? (_) => _beginDrag(object) : null,
-            onPanStart: object.movable ? (_) => _beginDrag(object) : null,
-            onPanUpdate: object.movable
+            onTap: movable ? () => _tapObject(object) : null,
+            onPanDown: movable ? (_) => _beginDrag(object) : null,
+            onPanStart: movable ? (_) => _beginDrag(object) : null,
+            onPanUpdate: movable
                 ? (details) => _updateDrag(details, object, width, height)
                 : null,
-            onPanEnd: object.movable ? (_) => _finishDrag() : null,
-            onPanCancel: object.movable ? _releaseDirectManipulation : null,
+            onPanEnd: movable ? (_) => _finishDrag() : null,
+            onPanCancel: movable ? _releaseDirectManipulation : null,
             child: AnimatedSlide(
               duration: reduced
                   ? Duration.zero

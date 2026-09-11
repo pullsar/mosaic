@@ -146,6 +146,48 @@ PlayDocument _timedCuePlay() => PlayDocument.fromJson({
     'cue': {
       'presentation': {
         'layers': [
+          {
+            'type': 'scene',
+            'role': 'media',
+            'scene': {
+              'version': 1,
+              'objects': [
+                {
+                  'id': 'coin',
+                  'semanticLabel': 'Coin',
+                  'shape': 'circle',
+                  'x': .1,
+                  'y': .3,
+                  'width': .1,
+                  'height': .1,
+                },
+              ],
+              'targets': const <Object?>[],
+              'cues': [
+                {
+                  'id': 'observe_1',
+                  'objectId': 'coin',
+                  'durationMs': 300,
+                  'keyframes': [
+                    {
+                      'timeMs': 0,
+                      'x': .1,
+                      'y': .3,
+                      'width': .1,
+                      'height': .1,
+                    },
+                    {
+                      'timeMs': 300,
+                      'x': .7,
+                      'y': .3,
+                      'width': .1,
+                      'height': .1,
+                    },
+                  ],
+                },
+              ],
+            },
+          },
           {'type': 'text', 'role': 'prompt', 'value': 'Look closer.'},
         ],
       },
@@ -193,6 +235,24 @@ void main() {
     expect(find.text('Pick one.'), findsOneWidget);
   });
 
+  testWidgets('timed cue samples its matching scene trajectory', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(home: Scaffold(body: PlaySurface(play: _timedCuePlay()))),
+    );
+
+    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump();
+
+    final position = tester.widget<AnimatedPositioned>(
+      find.byKey(const ValueKey<String>('scene-object:coin')),
+    );
+    final bounds = tester.getSize(find.byType(PlaySceneRenderer));
+    expect(position.left, greaterThan(bounds.width * .15));
+    expect(position.left, lessThan(bounds.width * .65));
+  });
+
   testWidgets('timed cue stops motion when reduced motion changes', (
     tester,
   ) async {
@@ -223,6 +283,30 @@ void main() {
       find.byType(LinearProgressIndicator),
     );
     expect(reduced.value, 1);
+  });
+
+  testWidgets('timed cue reports bounded visual progress before completion', (
+    tester,
+  ) async {
+    final progress = <double>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: PlayTimedCueInput(
+            duration: const Duration(milliseconds: 300),
+            cueId: 'observe_1',
+            ordinal: 1,
+            onElapsed: () {},
+            onProgress: progress.add,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(progress.first, 0);
+    expect(progress.last, inInclusiveRange(0.35, 0.45));
   });
 
   testWidgets('fades a new stage state without duplicating the stage', (
