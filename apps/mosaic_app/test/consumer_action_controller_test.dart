@@ -411,4 +411,29 @@ void main() {
       );
     },
   );
+
+  test(
+    'loads persisted game family pins before a control inspects them',
+    () async {
+      final outbox = _MemoryOutbox();
+      final state = _MemoryState()
+        ..pinnedFamilies.addAll(<String>['echo-architect', 'sleight']);
+      final runtime = _runtime(outbox, state);
+      addTearDown(runtime.close);
+      final controller = ConsumerActionController(
+        eventRuntime: runtime,
+        localState: state,
+      );
+      addTearDown(controller.dispose);
+
+      expect(controller.isGameFamilyPinned('echo-architect'), isFalse);
+      await controller.loadPinnedGameFamilies();
+
+      expect(controller.pinnedGameFamilyIds, <String>[
+        'echo-architect',
+        'sleight',
+      ]);
+      expect(controller.isGameFamilyPinned('echo-architect'), isTrue);
+    },
+  );
 }

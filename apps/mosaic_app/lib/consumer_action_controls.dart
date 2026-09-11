@@ -76,6 +76,7 @@ final class _ConsumerActionControlsState extends State<ConsumerActionControls> {
       playId: widget.item.playId,
       revisionId: widget.item.revisionId,
     );
+    await widget.controller.loadPinnedGameFamilies();
   }
 
   void _onControllerChanged() {

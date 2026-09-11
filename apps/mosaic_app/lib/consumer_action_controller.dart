@@ -77,6 +77,13 @@ final class ConsumerActionController {
 
   bool get areGamePinsBusy => _pinsBusy;
 
+  /// Loads the persisted family order before consumer controls inspect it.
+  Future<void> loadPinnedGameFamilies() async {
+    _ensureOpen();
+    await _loadPinnedFamilies();
+    _notify();
+  }
+
   bool isItemEligible({
     required String playId,
     required Iterable<String> topicIds,
