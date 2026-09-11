@@ -55,6 +55,10 @@ test('curated Echo audio is source-immutable and queued for the ordinary worker'
       assert.ok(published.size > 0);
     }
   } finally {
+    await pool.query(
+      'delete from media_assets where id = any($1::text[])',
+      [echoArchitectAudioAssets.map((asset) => asset.assetId)],
+    );
     await rm(sourceRoot, {recursive: true, force: true});
     await pool.end();
   }

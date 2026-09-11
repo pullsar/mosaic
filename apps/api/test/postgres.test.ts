@@ -263,6 +263,12 @@ test('PostgreSQL media lifecycle is immutable, leased and stale-worker safe', {s
 test('search, profile, actions, canvas, image, actor access, consumer and media migrations roll back in order and cleanly reapply', {skip: !databaseUrl}, async () => {
   await runMigration('up');
 
+  // The game-family migrations follow consumer search. Remove them first so
+  // the checks below continue to exercise each historical rollback boundary.
+  for (let index = 0; index < 3; index += 1) {
+    await runMigration('down');
+  }
+
   await runMigration('down');
   const searchDownPool = new Pool({connectionString: databaseUrl});
   try {
