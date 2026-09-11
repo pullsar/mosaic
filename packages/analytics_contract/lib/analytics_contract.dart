@@ -14,6 +14,7 @@ abstract final class MosaicEventName {
   static const topicMuted = 'topic_muted';
   static const topicUnmuted = 'topic_unmuted';
   static const playReported = 'play_reported';
+  static const gamePinsChanged = 'game_pins_changed';
   static const searchSubmitted = 'search_submitted';
   static const searchResultSelected = 'search_result_selected';
   static const searchAbandoned = 'search_abandoned';

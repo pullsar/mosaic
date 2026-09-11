@@ -80,6 +80,12 @@ final class _MemoryState implements ConsumerLocalState {
       ..clear()
       ..addAll(topicIds);
   }
+
+  @override
+  Future<List<String>> readPinnedGameFamilyIds() async => const <String>[];
+
+  @override
+  Future<void> writePinnedGameFamilyIds(Iterable<String> familyIds) async {}
 }
 
 final class _MemorySoundStore implements GameSoundPreferencesStore {

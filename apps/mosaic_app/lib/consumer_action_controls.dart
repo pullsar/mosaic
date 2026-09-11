@@ -216,6 +216,24 @@ final class _ConsumerActionControlsState extends State<ConsumerActionControls> {
         ),
       );
     }
+    final familyId = widget.item.play.gameFamily?.id;
+    if (familyId != null) {
+      final pinned = widget.controller.isGameFamilyPinned(familyId);
+      entries.add(
+        PopupMenuItem<String>(
+          value: 'game_pin:$familyId',
+          enabled:
+              !widget.controller.areGamePinsBusy &&
+              (pinned || widget.controller.pinnedGameFamilyIds.length < 6),
+          child: ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(pinned ? Icons.push_pin : Icons.push_pin_outlined),
+            title: Text(pinned ? 'Unpin game' : 'Pin game'),
+          ),
+        ),
+      );
+    }
     if (state?.notInterested != true) {
       entries.add(
         const PopupMenuItem<String>(
@@ -304,6 +322,16 @@ final class _ConsumerActionControlsState extends State<ConsumerActionControls> {
     }
     if (action == 'report') {
       await _showReportReasons();
+      return;
+    }
+    if (action.startsWith('game_pin:')) {
+      final familyId = action.substring('game_pin:'.length);
+      await widget.controller.setGameFamilyPinned(
+        familyId: familyId,
+        pinned: !widget.controller.isGameFamilyPinned(familyId),
+        feedRequestId: widget.feedRequestId,
+        playRevisionId: widget.item.revisionId,
+      );
       return;
     }
     final separator = action.indexOf(':');

@@ -84,6 +84,12 @@ final class _MemoryConsumerState implements ConsumerLocalState {
 
   @override
   Future<void> writeMutedTopicIds(Iterable<String> topicIds) async {}
+
+  @override
+  Future<List<String>> readPinnedGameFamilyIds() async => const <String>[];
+
+  @override
+  Future<void> writePinnedGameFamilyIds(Iterable<String> familyIds) async {}
 }
 
 typedef _FeedResponder =

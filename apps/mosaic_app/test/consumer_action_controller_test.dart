@@ -53,6 +53,7 @@ final class _MemoryOutbox implements EventOutbox {
 final class _MemoryState implements ConsumerLocalState {
   final actions = <String, ConsumerPlayActionState>{};
   final mutedTopics = <String>{};
+  final pinnedFamilies = <String>[];
   Object? writeActionError;
   Object? writeMutedError;
 
@@ -101,6 +102,17 @@ final class _MemoryState implements ConsumerLocalState {
     mutedTopics
       ..clear()
       ..addAll(topicIds);
+  }
+
+  @override
+  Future<List<String>> readPinnedGameFamilyIds() async =>
+      List<String>.unmodifiable(pinnedFamilies);
+
+  @override
+  Future<void> writePinnedGameFamilyIds(Iterable<String> familyIds) async {
+    pinnedFamilies
+      ..clear()
+      ..addAll(familyIds);
   }
 }
 
@@ -344,4 +356,59 @@ void main() {
     expect(controller.stateFor('play_0'), isNull);
     expect(controller.stateFor('play_64'), isNotNull);
   });
+
+  test(
+    'game family pins use one ordered durable event and retain all six',
+    () async {
+      final outbox = _MemoryOutbox();
+      final state = _MemoryState();
+      final runtime = _runtime(outbox, state);
+      addTearDown(runtime.close);
+      var eventId = 0;
+      final controller = ConsumerActionController(
+        eventRuntime: runtime,
+        localState: state,
+        eventIdFactory: () => 'pins_${eventId++}',
+      );
+      addTearDown(controller.dispose);
+
+      for (var index = 0; index < 6; index += 1) {
+        expect(
+          await controller.setGameFamilyPinned(
+            familyId: 'family_$index',
+            pinned: true,
+            feedRequestId: 'feed_a',
+            playRevisionId: 'rev_a',
+          ),
+          isTrue,
+        );
+      }
+      expect(
+        await controller.setGameFamilyPinned(
+          familyId: 'family_6',
+          pinned: true,
+          feedRequestId: 'feed_a',
+          playRevisionId: 'rev_a',
+        ),
+        isFalse,
+      );
+      expect(controller.pinnedGameFamilyIds, [
+        'family_0',
+        'family_1',
+        'family_2',
+        'family_3',
+        'family_4',
+        'family_5',
+      ]);
+      expect(state.pinnedFamilies, controller.pinnedGameFamilyIds);
+      expect(
+        outbox.events.last.envelope.event,
+        MosaicEventName.gamePinsChanged,
+      );
+      expect(
+        outbox.events.last.envelope.payload['familyIds'],
+        controller.pinnedGameFamilyIds,
+      );
+    },
+  );
 }

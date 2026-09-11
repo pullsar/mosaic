@@ -51,8 +51,11 @@ final class ConsumerActionController {
   final Set<String> _busyPlayIds = <String>{};
   final Set<String> _busyTopicIds = <String>{};
   final Set<String> _mutedTopicIds = <String>{};
+  final List<String> _pinnedFamilyIds = <String>[];
   final Set<void Function()> _listeners = <void Function()>{};
   bool _mutedTopicsLoaded = false;
+  bool _pinnedFamiliesLoaded = false;
+  bool _pinsBusy = false;
   bool _closed = false;
 
   ConsumerPlayActionState? stateFor(String playId) => _states[playId.trim()];
@@ -65,6 +68,14 @@ final class ConsumerActionController {
 
   List<String> get mutedTopicIds =>
       List<String>.unmodifiable(_mutedTopicIds.toList()..sort());
+
+  List<String> get pinnedGameFamilyIds =>
+      List<String>.unmodifiable(_pinnedFamilyIds);
+
+  bool isGameFamilyPinned(String familyId) =>
+      _pinnedFamilyIds.contains(familyId.trim());
+
+  bool get areGamePinsBusy => _pinsBusy;
 
   bool isItemEligible({
     required String playId,
@@ -296,6 +307,68 @@ final class ConsumerActionController {
     }
   }
 
+  /// Applies one complete ordered pin list. Pinning has no ranking meaning.
+  Future<bool> setGameFamilyPinned({
+    required String familyId,
+    required bool pinned,
+    required String feedRequestId,
+    required String playRevisionId,
+  }) async {
+    _ensureOpen();
+    await _loadPinnedFamilies();
+    final id = _text(familyId, 'familyId');
+    final wasPinned = _pinnedFamilyIds.contains(id);
+    if (wasPinned == pinned) return true;
+    if (_pinsBusy || pinned && _pinnedFamilyIds.length >= 6) return false;
+    final before = List<String>.of(_pinnedFamilyIds);
+    if (pinned) {
+      _pinnedFamilyIds.add(id);
+    } else {
+      _pinnedFamilyIds.remove(id);
+    }
+    _pinsBusy = true;
+    _notify();
+    final now = _clock().toUtc();
+    try {
+      await _eventRuntime.resources.outbox.enqueue(
+        MosaicEventEnvelope(
+          eventId: _eventId(),
+          event: MosaicEventName.gamePinsChanged,
+          occurredAt: now,
+          actorId: _eventRuntime.resources.actorId,
+          sessionId: _eventRuntime.sessionId,
+          feedRequestId: _text(feedRequestId, 'feedRequestId'),
+          playRevisionId: _text(playRevisionId, 'playRevisionId'),
+          payload: <String, Object?>{
+            'familyIds': List<String>.unmodifiable(_pinnedFamilyIds),
+          },
+        ),
+        priority: EventPriority.normal,
+        createdAt: now,
+      );
+      _eventRuntime.requestDrain();
+    } on Object catch (error, stackTrace) {
+      _pinnedFamilyIds
+        ..clear()
+        ..addAll(before);
+      _report(
+        error,
+        stackTrace,
+        operation: 'consumer_action_game_pins_enqueue',
+      );
+      return false;
+    } finally {
+      _pinsBusy = false;
+      _notify();
+    }
+    try {
+      await _localState.writePinnedGameFamilyIds(_pinnedFamilyIds);
+    } on Object catch (error, stackTrace) {
+      _report(error, stackTrace, operation: 'consumer_action_game_pins_cache');
+    }
+    return true;
+  }
+
   Future<bool> _applyOneShotPlayAction({
     required ConsumerPlayActionState current,
     required String revisionId,
@@ -365,6 +438,15 @@ final class ConsumerActionController {
       ..clear()
       ..addAll(topics.map((topic) => _text(topic, 'topicId')));
     _mutedTopicsLoaded = true;
+  }
+
+  Future<void> _loadPinnedFamilies() async {
+    if (_pinnedFamiliesLoaded) return;
+    final families = await _localState.readPinnedGameFamilyIds();
+    _pinnedFamilyIds
+      ..clear()
+      ..addAll(families.map((family) => _text(family, 'familyId')));
+    _pinnedFamiliesLoaded = true;
   }
 
   Future<void> _seedFromRemote(String playId, String revisionId) async {
@@ -444,6 +526,7 @@ final class ConsumerActionController {
     _busyPlayIds.clear();
     _busyTopicIds.clear();
     _mutedTopicIds.clear();
+    _pinnedFamilyIds.clear();
   }
 
   String _eventId() => _text(_eventIdFactory(), 'eventId');
