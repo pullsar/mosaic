@@ -12,6 +12,11 @@ import {
   evaluateConstellationRound,
   type ConstellationTrajectory,
 } from './constellation_solver.js';
+import {
+  solveCounterexample,
+  type CounterexampleClaim,
+  type CounterexampleTile,
+} from './counterexample_solver.js';
 
 export interface StarterPlayIntegrityDocument {
   readonly id?: unknown;
@@ -28,6 +33,10 @@ export interface StarterPlayIntegrityInput {
   readonly revisionId: string;
   readonly document: StarterPlayIntegrityDocument;
 }
+
+type CounterexampleVisualTile = CounterexampleTile & {
+  readonly x: number;
+};
 
 export type CatalogIntegrityReview =
   | {
@@ -94,6 +103,17 @@ export type CatalogIntegrityReview =
       readonly durationMs: number;
       readonly trajectory: ConstellationTrajectory;
       readonly targetObjectIds: readonly string[];
+      readonly revealStartsWith: string;
+    }
+  | {
+      readonly kind: 'counterexample';
+      readonly playId: string;
+      readonly revisionId: string;
+      readonly prompt: string;
+      readonly claim: CounterexampleClaim;
+      readonly tiles: readonly CounterexampleVisualTile[];
+      readonly sourceAssetId: string;
+      readonly solvedAssetId: string;
       readonly revealStartsWith: string;
     };
 
@@ -324,7 +344,75 @@ export function assertProductionCatalogIntegrity(
       case 'constellation':
         assertConstellationReview(review, play.document, entryState, states);
         break;
+      case 'counterexample':
+        assertCounterexampleReview(review, entryState, states, assetById);
+        break;
     }
+  }
+}
+
+function assertCounterexampleReview(
+  review: Extract<CatalogIntegrityReview, {kind: 'counterexample'}>,
+  entryState: Record<string, unknown>,
+  states: Record<string, unknown>,
+  assetById: ReadonlyMap<string, CanvasAssetDocument>,
+): void {
+  assertPrompt(review, entryState);
+  const solution = solveCounterexample(review.claim, review.tiles);
+  const source = assetById.get(review.sourceAssetId);
+  const solved = assetById.get(review.solvedAssetId);
+  if (source === undefined || solved === undefined) {
+    throw new Error(`counterexample_asset_missing:${review.playId}`);
+  }
+  const sourceLayers = presentationLayers(entryState, review.playId);
+  if (!sourceLayers.some((layer) => layer.type === 'canvas' && layer.assetId === review.sourceAssetId)) {
+    throw new Error(`counterexample_source_mismatch:${review.playId}`);
+  }
+  const input = record(entryState.input, `${review.playId}.input`);
+  const options = optionIdsFrom(input, review.playId);
+  const validation = record(entryState.validation, `${review.playId}.validation`);
+  if (
+    input.type !== 'single_choice' ||
+    options.length !== review.tiles.length + 1 ||
+    !review.tiles.every((tile) => options.includes(tile.id)) ||
+    !options.includes('insufficient') ||
+    validation.type !== 'equals' ||
+    validation.value !== solution.answerId ||
+    record(entryState.transition, `${review.playId}.transition`).correct !== 'reveal' ||
+    record(entryState.transition, `${review.playId}.transition`).incorrect !== 'choose'
+  ) {
+    throw new Error(`counterexample_choice_mismatch:${review.playId}`);
+  }
+  if (
+    !source.elements.some((element) => element.type === 'label' && element.text === 'A') ||
+    !source.elements.some((element) => element.type === 'label' && element.text === 'B') ||
+    !source.elements.some((element) => element.type === 'label' && element.text === 'C') ||
+    !review.tiles.every((tile) => {
+      const tone = tile.color === 'red' ? 'accent' : tile.color === 'blue' ? 'muted' : 'surface';
+      return tile.shape === 'round'
+        ? source.elements.some(
+            (element) => element.type === 'circle' && element.x === tile.x &&
+              element.y === .42 && element.tone === tone,
+          )
+        : source.elements.some(
+            (element) => element.type === 'rect' && element.x === tile.x - .07 &&
+              element.y === .35 && element.tone === tone,
+          );
+    })
+  ) {
+    throw new Error(`counterexample_visual_clue_mismatch:${review.playId}`);
+  }
+  const reveal = record(states.reveal, `${review.playId}.reveal`);
+  if (
+    !presentationLayers(reveal, review.playId).some(
+      (layer) => layer.type === 'canvas' && layer.assetId === review.solvedAssetId,
+    ) ||
+    !revealTitleFrom(reveal, review.playId).startsWith(review.revealStartsWith) ||
+    !solved.elements.some(
+      (element) => element.type === 'label' && element.text.includes('breaks it'),
+    )
+  ) {
+    throw new Error(`counterexample_reveal_mismatch:${review.playId}`);
   }
 }
 

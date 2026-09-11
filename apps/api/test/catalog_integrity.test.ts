@@ -312,3 +312,36 @@ test('catalog integrity rejects duplicate review identities', () => {
     /duplicate_review_identity/,
   );
 });
+
+test('the reasoning pack contains six independently reviewed Counterexample rounds', () => {
+  const reviews = productionCatalogIntegrityFixture.reviews.filter(
+    (review) => review.kind === 'counterexample',
+  );
+
+  assert.equal(reviews.length, 6);
+  assert.equal(new Set(reviews.map((review) => review.playId)).size, 6);
+  assert.ok(reviews.some((review) => review.tiles.every(
+    (tile) => tile.color !== review.claim.color || tile.shape === review.claim.shape,
+  )));
+});
+
+test('catalog integrity rejects a Counterexample validation disconnected from its evidence', () => {
+  const altered = JSON.parse(JSON.stringify(productionCatalogIntegrityFixture)) as {
+    reviews: Array<{
+      kind: string;
+      playId: string;
+      claim?: {color: string; shape: string};
+    }>;
+  };
+  const review = altered.reviews.find(
+    (candidate) => candidate.kind === 'counterexample',
+  )!;
+  review.claim = {color: 'blue', shape: 'round'};
+
+  assert.throws(
+    () => assertProductionCatalogIntegrity(
+      altered as unknown as typeof productionCatalogIntegrityFixture,
+    ),
+    /counterexample_choice_mismatch/,
+  );
+});

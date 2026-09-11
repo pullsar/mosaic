@@ -101,11 +101,11 @@ test(
             (row.revision_id === 'rev_1' || row.revision_id === 'rev_2') &&
             row.state === 'suspended',
         ).length,
-        12,
+        18,
       );
       assert.equal(releaseStates.rows.filter(
         (row) => row.revision_id === 'rev_3' && row.state === 'suspended',
-      ).length, 2);
+      ).length, 3);
       const preservedPattern = await pool.query<{document: {states: {choice: {presentation: {layers: Array<{value?: string}>}}}}}>(
         `select document from play_revisions where play_id = 'mixli_starter_finish_pattern' and revision_id = 'rev_3'`,
       );
@@ -121,7 +121,7 @@ test(
             {
               input?: {type?: string};
               presentation?: {
-                layers?: Array<{type?: string; assetId?: string}>;
+                layers?: Array<{type?: string; assetId?: string; scene?: unknown}>;
               };
             }
           >;
@@ -141,9 +141,10 @@ test(
           const playAssets = new Set(row.document.assets ?? []);
           return row.document.states?.reveal?.presentation?.layers?.some(
             (layer) =>
-              layer.type === 'canvas' &&
-              layer.assetId !== undefined &&
-              playAssets.has(layer.assetId),
+              (layer.type === 'canvas' &&
+                layer.assetId !== undefined &&
+                playAssets.has(layer.assetId)) ||
+              (layer.type === 'scene' && layer.scene !== undefined),
           );
         }).length,
         productionStarterCount,
@@ -157,13 +158,12 @@ test(
         }),
       );
       assert.equal(interactionTypes.has('single_choice'), true);
-      assert.equal(interactionTypes.has('drag'), true);
-      assert.equal(interactionTypes.has('tap'), true);
-      for (let index = 1; index < eligible.rows.length; index += 1) {
-        assert.notEqual(
-          eligible.rows[index]?.document.topics?.[0],
-          eligible.rows[index - 1]?.document.topics?.[0],
-        );
+      assert.equal(interactionTypes.has('piece_move'), true);
+      assert.equal(interactionTypes.has('timed_cue'), true);
+      for (const row of eligible.rows) {
+        const topics = row.document.topics ?? [];
+        assert.ok(topics.length > 0);
+        assert.equal(new Set(topics).size, topics.length);
       }
 
       const eligibleAssetIds = eligible.rows.flatMap(

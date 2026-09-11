@@ -16,9 +16,14 @@ import type {
   ConstellationRect,
   ConstellationTrajectory,
 } from './constellation_solver.js';
+import {
+  solveCounterexample,
+  type CounterexampleClaim,
+  type CounterexampleTile,
+} from './counterexample_solver.js';
 
 export const productionStarterPrefix = 'mixli_starter_';
-export const productionStarterCount = 29;
+export const productionStarterCount = 35;
 
 export interface ProductionCatalogStatus {
   eligiblePlays: number;
@@ -353,6 +358,17 @@ interface ConstellationRoundSpec {
   readonly durationMs: number;
   readonly targetObjectIds: readonly string[];
   readonly delta: Readonly<{x: number; y: number}>;
+}
+
+interface CounterexampleTileSpec extends CounterexampleTile {
+  readonly x: number;
+}
+
+interface CounterexampleRoundSpec {
+  readonly id: string;
+  readonly topics: readonly [string, string];
+  readonly claim: CounterexampleClaim;
+  readonly tiles: readonly CounterexampleTileSpec[];
 }
 
 const additionalMatchstickRoundSpecs: readonly MatchstickRoundSpec[] = [
@@ -804,12 +820,124 @@ const quietSwitchCanvasAssets = [
   ]),
 ] as const;
 
+const counterexamplePalette = {
+  background: '#161A26',
+  foreground: '#F9F4EA',
+  accent: '#F15B68',
+  muted: '#6FA8E6',
+  surface: '#F2C84B',
+} as const;
+
+const counterexampleRoundSpecs: readonly CounterexampleRoundSpec[] = [
+  {
+    id: 'mixli_starter_counterexample_one',
+    topics: ['reasoning', 'observation'],
+    claim: {color: 'red', shape: 'round'},
+    tiles: [
+      {id: 'a', color: 'red', shape: 'round', x: .22},
+      {id: 'b', color: 'red', shape: 'square', x: .5},
+      {id: 'c', color: 'blue', shape: 'square', x: .78},
+    ],
+  },
+  {
+    id: 'mixli_starter_counterexample_two',
+    topics: ['logic', 'observation'],
+    claim: {color: 'blue', shape: 'square'},
+    tiles: [
+      {id: 'a', color: 'blue', shape: 'square', x: .22},
+      {id: 'b', color: 'blue', shape: 'round', x: .5},
+      {id: 'c', color: 'gold', shape: 'square', x: .78},
+    ],
+  },
+  {
+    id: 'mixli_starter_counterexample_three',
+    topics: ['attention', 'reasoning'],
+    claim: {color: 'gold', shape: 'round'},
+    tiles: [
+      {id: 'a', color: 'gold', shape: 'round', x: .22},
+      {id: 'b', color: 'red', shape: 'square', x: .5},
+      {id: 'c', color: 'gold', shape: 'square', x: .78},
+    ],
+  },
+  {
+    id: 'mixli_starter_counterexample_four',
+    topics: ['patterns', 'reasoning'],
+    claim: {color: 'red', shape: 'square'},
+    tiles: [
+      {id: 'a', color: 'red', shape: 'square', x: .22},
+      {id: 'b', color: 'red', shape: 'round', x: .5},
+      {id: 'c', color: 'blue', shape: 'round', x: .78},
+    ],
+  },
+  {
+    id: 'mixli_starter_counterexample_five',
+    topics: ['focus', 'reasoning'],
+    claim: {color: 'blue', shape: 'round'},
+    tiles: [
+      {id: 'a', color: 'blue', shape: 'round', x: .22},
+      {id: 'b', color: 'gold', shape: 'square', x: .5},
+      {id: 'c', color: 'red', shape: 'round', x: .78},
+    ],
+  },
+  {
+    id: 'mixli_starter_counterexample_six',
+    topics: ['puzzles', 'reasoning'],
+    claim: {color: 'gold', shape: 'square'},
+    tiles: [
+      {id: 'a', color: 'gold', shape: 'square', x: .22},
+      {id: 'b', color: 'gold', shape: 'round', x: .5},
+      {id: 'c', color: 'blue', shape: 'square', x: .78},
+    ],
+  },
+];
+
+function counterexampleTone(tile: CounterexampleTile): 'accent' | 'muted' | 'surface' {
+  return tile.color === 'red' ? 'accent' : tile.color === 'blue' ? 'muted' : 'surface';
+}
+
+function counterexampleAsset(
+  spec: CounterexampleRoundSpec,
+  solved: boolean,
+): Record<string, unknown> {
+  const solution = solveCounterexample(spec.claim, spec.tiles);
+  const answerText = solution.answerId === 'insufficient'
+    ? 'No tile breaks it.'
+    : `Tile ${solution.answerId.toUpperCase()} breaks it.`;
+  return {
+    schemaVersion: 1,
+    id: `${spec.id}_${solved ? 'solved' : 'source'}_canvas`,
+    semanticLabel: 'Three colored shape tiles labelled A, B, and C.',
+    elements: [
+      ...spec.tiles.flatMap((tile) => [
+        {
+          type: 'rect', x: tile.x - .12, y: .28, width: .24, height: .32,
+          radius: .045, fill: false, tone: 'foreground',
+        },
+        tile.shape === 'round'
+          ? {type: 'circle', x: tile.x, y: .42, radius: .075, fill: true, tone: counterexampleTone(tile)}
+          : {type: 'rect', x: tile.x - .07, y: .35, width: .14, height: .14, radius: .028, fill: true, tone: counterexampleTone(tile)},
+        {type: 'label', x: tile.x, y: .55, text: tile.id.toUpperCase(), scale: .055, tone: 'foreground'},
+      ]),
+      ...(solved ? [
+        {type: 'label', x: .5, y: .76, text: answerText, scale: .055, tone: 'foreground'},
+      ] : []),
+    ],
+    palette: counterexamplePalette,
+  };
+}
+
+const counterexampleCanvasAssets = counterexampleRoundSpecs.flatMap((spec) => [
+  counterexampleAsset(spec, false),
+  counterexampleAsset(spec, true),
+]);
+
 const canvasAssets = [
   ...legacyCanvasAssets,
   ...releaseCanvasAssets,
   ...verifiedCanvasAssets,
   ...clarifiedCanvasAssets,
   ...quietSwitchCanvasAssets,
+  ...counterexampleCanvasAssets,
 ] as const;
 
 const legacyChoiceSpecs: readonly ChoiceSpec[] = [
@@ -1903,8 +2031,60 @@ function constellationScene(
   };
 }
 
+function counterexampleRound(spec: CounterexampleRoundSpec): StarterPlay {
+  const solution = solveCounterexample(spec.claim, spec.tiles);
+  const sourceAssetId = `${spec.id}_source_canvas`;
+  const solvedAssetId = `${spec.id}_solved_canvas`;
+  const claim = `Every ${spec.claim.color} tile is ${spec.claim.shape}.`;
+  const reveal = solution.answerId === 'insufficient'
+    ? 'No shown tile breaks the claim.'
+    : `Tile ${solution.answerId.toUpperCase()} breaks the claim.`;
+  return {
+    id: spec.id,
+    revisionId: 'rev_1',
+    topics: spec.topics,
+    document: {
+      schemaVersion: 1,
+      id: spec.id,
+      revisionId: 'rev_1',
+      format: 'solve',
+      classification: 'challenge',
+      topics: spec.topics,
+      learningTopics: [],
+      estimatedDurationSec: 15,
+      assets: [sourceAssetId, solvedAssetId],
+      sources: [],
+      entryState: 'choose',
+      states: {
+        choose: {
+          presentation: {layers: [
+            {type: 'canvas', role: 'media', assetId: sourceAssetId},
+            {type: 'text', role: 'prompt', value: claim},
+          ]},
+          input: {type: 'single_choice', options: [
+            ...spec.tiles.map((tile) => ({id: tile.id, label: `Tile ${tile.id.toUpperCase()}`})),
+            {id: 'insufficient', label: 'No counterexample'},
+          ]},
+          validation: {type: 'equals', value: solution.answerId},
+          transition: {correct: 'reveal', incorrect: 'choose'},
+        },
+        reveal: {
+          presentation: {layers: [
+            {type: 'canvas', role: 'media', assetId: solvedAssetId},
+            {type: 'text', role: 'reveal_title', value: reveal},
+          ]},
+          input: {type: 'tap', label: 'Done'},
+          validation: {type: 'none'},
+          transition: {default: '$end'},
+        },
+      },
+    },
+  };
+}
+
 const sleightRounds = sleightRoundSpecs.map(sleightRound);
 const constellationRounds = constellationRoundSpecs.map(constellationRound);
+const counterexampleRounds = counterexampleRoundSpecs.map(counterexampleRound);
 
 const releaseV3StarterPlays: readonly StarterPlay[] = [
   moveOneMatchV3,
@@ -1942,6 +2122,7 @@ const starterPlays = [
   ...additionalQuietSwitchV2,
   ...sleightRounds,
   ...constellationRounds,
+  ...counterexampleRounds,
 ] as const;
 
 const historicalStarterPlays = [
@@ -2095,6 +2276,19 @@ const starterIntegrityReviews: readonly CatalogIntegrityReview[] = [
     trajectory: constellationTrajectory(spec),
     targetObjectIds: spec.targetObjectIds,
     revealStartsWith: 'Marked:',
+  })),
+  ...counterexampleRoundSpecs.map((spec) => ({
+    kind: 'counterexample' as const,
+    playId: spec.id,
+    revisionId: 'rev_1',
+    prompt: `Every ${spec.claim.color} tile is ${spec.claim.shape}.`,
+    claim: spec.claim,
+    tiles: spec.tiles,
+    sourceAssetId: `${spec.id}_source_canvas`,
+    solvedAssetId: `${spec.id}_solved_canvas`,
+    revealStartsWith: solveCounterexample(spec.claim, spec.tiles).answerId === 'insufficient'
+      ? 'No shown tile'
+      : 'Tile ',
   })),
 ] as const;
 
