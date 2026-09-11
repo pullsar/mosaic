@@ -25,6 +25,7 @@ test('One Move generation is byte-stable and independently solver-checked', () =
   equal(first.drafts.length, 3);
   equal(new Set(first.drafts.map((draft) => draft.structuralSignature)).size, 3);
   for (const draft of first.drafts) {
+    equal(draft.generatorVersion, 'one-move-matchstick-v2');
     deepEqual(
       enumerateOneMoveMatchstickSolutions(new Set(draft.sourceSegments)),
       [draft.solution],

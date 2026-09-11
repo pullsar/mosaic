@@ -11,7 +11,7 @@ import {
   type MatchstickMoveSolution,
 } from './game_solvers.js';
 
-const generatorVersion = 'one-move-matchstick-v1';
+const generatorVersion = 'one-move-matchstick-v2';
 const maximumDrafts = 24;
 const maximumCandidateChecksPerDraft = 200;
 const generatedThemeIds = [
