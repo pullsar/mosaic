@@ -410,6 +410,52 @@ void main() {
     );
   });
 
+  test('exact set validation requires unique authored options', () {
+    PlayDocument document(List<String> answer) => PlayDocument.fromJson({
+      'schemaVersion': 1,
+      'id': 'exact_set',
+      'revisionId': 'rev_1',
+      'format': 'guess',
+      'classification': 'challenge',
+      'topics': <String>[],
+      'learningTopics': <String>[],
+      'estimatedDurationSec': 10,
+      'assets': <String>[],
+      'sources': <Object>[],
+      'entryState': 'choose',
+      'states': {
+        'choose': {
+          'presentation': {
+            'layers': [
+              {'type': 'text', 'role': 'prompt', 'value': 'Pick two.'},
+            ],
+          },
+          'input': {
+            'type': 'multiple_choice',
+            'options': [
+              {'id': 'beacon', 'label': 'Beacon'},
+              {'id': 'orbit', 'label': 'Orbit'},
+              {'id': 'comet', 'label': 'Comet'},
+            ],
+          },
+          'validation': {'type': 'set_equality', 'value': answer},
+          'transition': {'correct': r'$end', 'incorrect': r'$end'},
+        },
+      },
+    });
+
+    expect(
+      const PlaySchemaValidator().validate(document(['beacon', 'orbit'])),
+      isEmpty,
+    );
+    expect(
+      const PlaySchemaValidator()
+          .validate(document(['beacon', 'beacon', 'missing']))
+          .map((issue) => issue.code),
+      contains('set_equality_options'),
+    );
+  });
+
   test('enforces prompt copy budget', () {
     final raw = _fixture('where_is_this.json');
     final states = Map<String, Object?>.from(raw['states']! as Map);

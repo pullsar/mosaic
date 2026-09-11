@@ -122,7 +122,7 @@ final class PlaySchemaValidator {
         );
       }
 
-      _validateValidator(stateId, state.validation, issues);
+      _validateValidator(stateId, state, issues);
       _validateInput(stateId, state, issues);
 
       for (final layer in state.presentation) {
@@ -284,9 +284,10 @@ final class PlaySchemaValidator {
 
   void _validateValidator(
     String stateId,
-    PlayValidationDefinition validation,
+    PlayStateDefinition state,
     List<PlayValidationIssue> issues,
   ) {
+    final validation = state.validation;
     final path = 'states.$stateId.validation.value';
     if (validation.type == PlayValidatorType.equals &&
         validation.value == null) {
@@ -313,6 +314,30 @@ final class PlaySchemaValidator {
             code: 'validator_value',
             path: path,
             message: 'ordered_sequence requires 1–16 non-empty string values.',
+          ),
+        );
+      }
+      return;
+    }
+
+    if (validation.type == PlayValidatorType.setEquality) {
+      final value = validation.value;
+      final ids = state.input.options.map((option) => option.id).toSet();
+      final valid =
+          state.input.type == PlayInputType.multipleChoice &&
+          value is List &&
+          value.isNotEmpty &&
+          value.length <= 24 &&
+          value.every((item) => item is String && item.trim().isNotEmpty) &&
+          value.toSet().length == value.length &&
+          value.every((item) => ids.contains(item));
+      if (!valid) {
+        issues.add(
+          PlayValidationIssue(
+            code: 'set_equality_options',
+            path: path,
+            message:
+                'set_equality requires 1–24 unique visible multiple-choice option ids.',
           ),
         );
       }
