@@ -1,3 +1,5 @@
+import 'game_scene.dart';
+
 enum PlayFormat { guess, choose, solve, play, discover }
 
 enum PlayClassification { fact, opinion, preference, fantasy, challenge }
@@ -122,6 +124,7 @@ final class PresentationLayer {
     this.role,
     this.value,
     this.assetId,
+    this.scene,
     Map<String, Object?> properties = const {},
   }) : properties = _freezeJsonMap(properties);
 
@@ -129,6 +132,7 @@ final class PresentationLayer {
   final String? role;
   final String? value;
   final String? assetId;
+  final GameSceneDefinition? scene;
   final Map<String, Object?> properties;
 
   factory PresentationLayer.fromJson(Map<String, Object?> json) {
@@ -136,12 +140,16 @@ final class PresentationLayer {
       ..remove('type')
       ..remove('role')
       ..remove('value')
-      ..remove('assetId');
+      ..remove('assetId')
+      ..remove('scene');
     return PresentationLayer(
       type: json['type'] as String,
       role: json['role'] as String?,
       value: json['value'] as String?,
       assetId: json['assetId'] as String?,
+      scene: json['scene'] == null
+          ? null
+          : GameSceneDefinition.fromJson(_map(json['scene'], 'scene')),
       properties: properties,
     );
   }
@@ -152,6 +160,7 @@ final class PresentationLayer {
     if (role != null) 'role': role,
     if (value != null) 'value': value,
     if (assetId != null) 'assetId': assetId,
+    if (scene != null) 'scene': scene!.toJson(),
   };
 }
 

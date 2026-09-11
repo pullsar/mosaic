@@ -124,6 +124,25 @@ final class PlaySchemaValidator {
       _validateInput(stateId, state, issues);
 
       for (final layer in state.presentation) {
+        if (layer.type == 'scene' &&
+            (layer.role != 'media' || layer.scene == null)) {
+          issues.add(
+            PlayValidationIssue(
+              code: 'scene_layer',
+              path: 'states.$stateId.presentation',
+              message: 'scene layers require media role and a bounded scene.',
+            ),
+          );
+        }
+        if (layer.type != 'scene' && layer.scene != null) {
+          issues.add(
+            PlayValidationIssue(
+              code: 'scene_layer_type',
+              path: 'states.$stateId.presentation',
+              message: 'Only scene layers may define scene data.',
+            ),
+          );
+        }
         if (layer.assetId != null && !play.assets.contains(layer.assetId)) {
           issues.add(
             PlayValidationIssue(
