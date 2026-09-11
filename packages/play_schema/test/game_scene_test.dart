@@ -57,6 +57,28 @@ void main() {
     expect(scene.toJson()['objects'], [containsPair('shape', 'matchstick')]);
   });
 
+  test('scene retains the bounded cup appearance', () {
+    final scene = GameSceneDefinition.fromJson({
+      'version': 1,
+      'objects': [
+        {
+          'id': 'cup',
+          'semanticLabel': 'Cup',
+          'shape': 'cup',
+          'x': .2,
+          'y': .3,
+          'width': .16,
+          'height': .28,
+          'tone': 'surface',
+        },
+      ],
+      'targets': const [],
+    });
+
+    expect(scene.objects.single.shape, GameSceneShape.cup);
+    expect(scene.toJson()['objects'], [containsPair('shape', 'cup')]);
+  });
+
   test('scene rejects duplicate identities and off-stage geometry', () {
     expect(
       () => GameSceneDefinition.fromJson({

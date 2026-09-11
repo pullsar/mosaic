@@ -231,6 +231,7 @@ final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
     final movable = object.movable && activeCue == null;
     final selected = object.id == _selectedId;
     final isMatchstick = object.shape == GameSceneShape.matchstick;
+    final isCup = object.shape == GameSceneShape.cup;
     final horizontalMatchstick = isMatchstick && rect.width > rect.height;
     final color = isMatchstick
         ? const Color(0xFFC9783E)
@@ -290,12 +291,13 @@ final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
                 scale: selected ? 1.08 : 1,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: color,
+                    color: isCup ? colors.primaryContainer : color,
                     shape: object.shape == GameSceneShape.circle
                         ? BoxShape.circle
                         : BoxShape.rectangle,
                     borderRadius:
                         object.shape == GameSceneShape.roundedRect ||
+                            isCup ||
                             isMatchstick
                         ? BorderRadius.circular(999)
                         : null,
@@ -304,8 +306,10 @@ final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
                             color: const Color(0xFF7A3E20),
                             width: 1.25,
                           )
+                        : isCup
+                        ? Border.all(color: colors.primary, width: 1.5)
                         : null,
-                    boxShadow: selected || isMatchstick
+                    boxShadow: selected || isMatchstick || isCup
                         ? [
                             BoxShadow(
                               color: colors.shadow.withValues(alpha: .22),
@@ -340,6 +344,8 @@ final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
                             ),
                           ),
                         )
+                      : isCup
+                      ? _SceneCup(colors: colors)
                       : null,
                 ),
               ),
@@ -349,4 +355,73 @@ final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
       ),
     );
   }
+}
+
+final class _SceneCup extends StatelessWidget {
+  const _SceneCup({required this.colors});
+
+  final ColorScheme colors;
+
+  @override
+  Widget build(BuildContext context) => Stack(
+    children: [
+      Align(
+        alignment: Alignment.topCenter,
+        child: FractionallySizedBox(
+          widthFactor: .86,
+          heightFactor: .2,
+          child: DecoratedBox(
+            key: const ValueKey<String>('scene-cup-rim'),
+            decoration: BoxDecoration(
+              color: colors.primary,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: colors.onPrimary.withValues(alpha: .36),
+              ),
+            ),
+          ),
+        ),
+      ),
+      Align(
+        alignment: Alignment.topCenter,
+        child: FractionallySizedBox(
+          widthFactor: .58,
+          heightFactor: .1,
+          child: DecoratedBox(
+            key: const ValueKey<String>('scene-cup-well'),
+            decoration: BoxDecoration(
+              color: colors.surfaceContainerLowest,
+              borderRadius: BorderRadius.circular(999),
+            ),
+          ),
+        ),
+      ),
+      Align(
+        alignment: const Alignment(0, .45),
+        child: FractionallySizedBox(
+          widthFactor: .16,
+          heightFactor: .44,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: colors.onPrimaryContainer.withValues(alpha: .12),
+              borderRadius: BorderRadius.circular(999),
+            ),
+          ),
+        ),
+      ),
+      Align(
+        alignment: Alignment.bottomCenter,
+        child: FractionallySizedBox(
+          widthFactor: .62,
+          heightFactor: .08,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: colors.primary.withValues(alpha: .42),
+              borderRadius: BorderRadius.circular(999),
+            ),
+          ),
+        ),
+      ),
+    ],
+  );
 }

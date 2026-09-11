@@ -96,6 +96,41 @@ void main() {
     );
   });
 
+  testWidgets('scene renders a cup with a rim and recessed well', (
+    tester,
+  ) async {
+    final scene = GameSceneDefinition.fromJson({
+      'version': 1,
+      'objects': [
+        {
+          'id': 'cup',
+          'semanticLabel': 'Cup',
+          'shape': 'cup',
+          'x': .2,
+          'y': .3,
+          'width': .16,
+          'height': .28,
+          'tone': 'surface',
+        },
+      ],
+      'targets': const [],
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox.square(
+          dimension: 300,
+          child: PlaySceneRenderer(scene: scene, onPieceMove: (_, _) {}),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey<String>('scene-cup-rim')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('scene-cup-well')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('scene renders an active cue at its sampled position', (
     tester,
   ) async {

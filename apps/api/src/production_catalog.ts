@@ -1691,10 +1691,10 @@ function sleightScene(spec: SleightRoundSpec, cueId: string, final: boolean): Re
     addFrame(event.atMs);
   }
   addFrame(spec.durationMs);
-  const object = (id: string, label: string, rect: Record<string, number>, shape: 'circle' | 'rounded_rect', tone: string) => ({id, semanticLabel: label, shape, ...rect, tone});
+  const object = (id: string, label: string, rect: Record<string, number>, shape: 'circle' | 'rounded_rect' | 'cup', tone: string) => ({id, semanticLabel: label, shape, ...rect, tone});
   const objects = [
     object('coin', 'Coin', coinFrames[final ? coinFrames.length - 1 : 0]!, 'circle', 'accent'),
-    ...spec.trajectory.cupIds.map((cupId) => object(cupId, 'Cup', cupFrames.get(cupId)![final ? cupFrames.get(cupId)!.length - 1 : 0]!, 'rounded_rect', 'surface')),
+    ...spec.trajectory.cupIds.map((cupId) => object(cupId, 'Cup', cupFrames.get(cupId)![final ? cupFrames.get(cupId)!.length - 1 : 0]!, 'cup', 'surface')),
   ];
   return {version: 1, objects, targets: [], ...(final ? {} : {cues: [
     {id: cueId, objectId: 'coin', durationMs: spec.durationMs, keyframes: coinFrames},

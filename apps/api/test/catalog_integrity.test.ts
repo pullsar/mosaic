@@ -139,6 +139,23 @@ test('the timed pack contains six independently reviewed Sleight rounds', () => 
   );
 });
 
+test('Sleight rounds use the bounded cup scene primitive', () => {
+  const play = productionCatalogIntegrityFixture.plays.find(
+    (candidate) => candidate.id === 'mixli_starter_sleight_one',
+  )!;
+  const states = play.document.states as Record<string, {
+    presentation: {layers: Array<{type: string; scene?: {objects: Array<{id: string; shape: string}>}}>};
+  }>;
+  const scene = states.observe!.presentation.layers.find(
+    (layer) => layer.type === 'scene',
+  )!.scene!;
+
+  assert.deepEqual(
+    scene.objects.filter((object) => object.id !== 'coin').map((object) => object.shape),
+    ['cup', 'cup', 'cup'],
+  );
+});
+
 test('moving a piece preserves count and the original configuration', () => {
   const before = new Set(['a', 'b']);
 
