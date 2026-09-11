@@ -130,7 +130,64 @@ PlayCanvasAsset _continuousCanvas() => PlayCanvasAsset(
   ],
 );
 
+PlayDocument _timedCuePlay() => PlayDocument.fromJson({
+  'schemaVersion': 1,
+  'id': 'timed_cue',
+  'revisionId': 'timed_cue_rev_1',
+  'format': 'guess',
+  'classification': 'challenge',
+  'topics': ['observation'],
+  'learningTopics': <String>[],
+  'estimatedDurationSec': 8,
+  'assets': <String>[],
+  'sources': <Object>[],
+  'entryState': 'cue',
+  'states': {
+    'cue': {
+      'presentation': {
+        'layers': [
+          {'type': 'text', 'role': 'prompt', 'value': 'Look closer.'},
+        ],
+      },
+      'input': {'type': 'timed_cue', 'durationMs': 300},
+      'validation': {'type': 'none'},
+      'transition': {'default': 'choose'},
+    },
+    'choose': {
+      'presentation': {
+        'layers': [
+          {'type': 'text', 'role': 'prompt', 'value': 'Pick one.'},
+        ],
+      },
+      'input': {'type': 'tap', 'label': 'Done'},
+      'validation': {'type': 'none'},
+      'transition': {'default': r'$end'},
+    },
+  },
+});
+
 void main() {
+  testWidgets('timed cue advances through an explicit engine action', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: PlaySurface(play: _timedCuePlay())),
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('play-timed-cue')),
+      findsOneWidget,
+    );
+    expect(find.text('Look closer.'), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump();
+
+    expect(find.text('Pick one.'), findsOneWidget);
+  });
+
   testWidgets('fades a new stage state without duplicating the stage', (
     tester,
   ) async {

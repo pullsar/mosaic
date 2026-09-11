@@ -96,6 +96,32 @@ PlayDocument _scenePlay() => PlayDocument.fromJson({
   },
 });
 
+PlayDocument _timedCuePlay() => PlayDocument.fromJson({
+  'schemaVersion': 1,
+  'id': 'timed_cue',
+  'revisionId': 'rev_1',
+  'format': 'guess',
+  'classification': 'challenge',
+  'topics': <String>[],
+  'learningTopics': <String>[],
+  'estimatedDurationSec': 10,
+  'assets': <String>[],
+  'sources': <Object>[],
+  'entryState': 'cue',
+  'states': {
+    'cue': {
+      'presentation': {
+        'layers': [
+          {'type': 'text', 'role': 'prompt', 'value': 'Look closer.'},
+        ],
+      },
+      'input': {'type': 'timed_cue', 'durationMs': 300},
+      'validation': {'type': 'none'},
+      'transition': {'default': 'cue'},
+    },
+  },
+});
+
 void main() {
   test('a recovered run replays with a fresh ID', () {
     final first = GameAttemptController(play: _play());
@@ -231,6 +257,20 @@ void main() {
     expect(restored, isNotNull);
     expect(restored!.session.piecePlacements, {'piece': 'slot'});
     expect(restored.completed, isFalse);
+  });
+
+  test('recovery snapshot preserves an authored timed cue action', () {
+    final controller = GameAttemptController(play: _timedCuePlay());
+    controller.apply(const TimedCueAction());
+    final restored = GameAttemptController.restoreRecoverySnapshot(
+      play: _timedCuePlay(),
+      encodedSnapshot: controller.encodeRecoverySnapshot(capabilityVersion: 1)!,
+      capabilityVersion: 1,
+    );
+
+    expect(restored, isNotNull);
+    expect(restored!.actions, [isA<TimedCueAction>()]);
+    expect(restored.session.attempts, 1);
   });
 
   test('recovery rejects corrupt, mismatched, and oversized snapshots', () {

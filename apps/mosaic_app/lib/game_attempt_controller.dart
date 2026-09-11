@@ -216,18 +216,23 @@ final class GameAttemptController extends ChangeNotifier {
           'pieceId': pieceId,
           'targetId': targetId,
         },
+        TimedCueAction() => const <String, Object?>{'type': 'timed_cue'},
       };
 
   static PlayAction? _decodeAction(Object? raw) {
     if (raw is! Map) return null;
     final action = raw.cast<String, Object?>();
-    if (action['type'] == 'tap' && action.length != 1) return null;
+    if ((action['type'] == 'tap' || action['type'] == 'timed_cue') &&
+        action.length != 1)
+      return null;
     if (action['type'] != 'tap' &&
+        action['type'] != 'timed_cue' &&
         action['type'] != 'piece_move' &&
         action.length != 2)
       return null;
     return switch (action['type']) {
       'tap' => action.length == 1 ? const TapAction() : null,
+      'timed_cue' => action.length == 1 ? const TimedCueAction() : null,
       'choice' => _boundedActionText(action['optionId'], 'choice'),
       'drag' => _boundedActionText(action['targetId'], 'drag'),
       'sequence' => _sequenceAction(action['values']),
@@ -289,6 +294,7 @@ final class GameAttemptController extends ChangeNotifier {
       PieceMoveAction(:final pieceId, :final targetId) =>
         input.type == PlayInputType.pieceMove &&
             _sceneAllowsMove(_session.state.presentation, pieceId, targetId),
+      TimedCueAction() => input.type == PlayInputType.timedCue,
       SequenceAction(:final values) =>
         input.type == PlayInputType.pianoKey &&
             values.every(

@@ -328,8 +328,38 @@ final class PlaySchemaValidator {
         _validateDragInput(stateId, state, issues);
       case PlayInputType.pieceMove:
         _validatePieceMoveInput(stateId, state, issues);
+      case PlayInputType.timedCue:
+        _validateTimedCueInput(stateId, state, issues);
       default:
         break;
+    }
+  }
+
+  void _validateTimedCueInput(
+    String stateId,
+    PlayStateDefinition state,
+    List<PlayValidationIssue> issues,
+  ) {
+    final path = 'states.$stateId.input';
+    final durationMs = state.input.properties['durationMs'];
+    if (durationMs is! int || durationMs < 300 || durationMs > 10000) {
+      issues.add(
+        PlayValidationIssue(
+          code: 'timed_cue_duration',
+          path: '$path.durationMs',
+          message:
+              'timed_cue requires a duration from 300 to 10000 milliseconds.',
+        ),
+      );
+    }
+    if (state.validation.type != PlayValidatorType.none) {
+      issues.add(
+        PlayValidationIssue(
+          code: 'timed_cue_validator',
+          path: 'states.$stateId.validation.type',
+          message: 'timed_cue requires none validation.',
+        ),
+      );
     }
   }
 

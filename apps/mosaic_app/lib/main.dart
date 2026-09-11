@@ -905,6 +905,7 @@ PlayCapabilityEnvelope consumerCapabilitiesForAssetDelivery(
       'piano_key',
       'drag',
       'piece_move',
+      'timed_cue',
     },
     validatorTypes: const {
       'none',

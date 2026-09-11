@@ -27,7 +27,10 @@ void main() {
     expect(m1.inputTypes, containsAll(m0.inputTypes));
     expect(m1.validatorTypes, containsAll(m0.validatorTypes));
     expect(m1.presentationTypes, containsAll(['canvas', 'scene']));
-    expect(m1.inputTypes, containsAll(['piano_key', 'drag', 'piece_move']));
+    expect(
+      m1.inputTypes,
+      containsAll(['piano_key', 'drag', 'piece_move', 'timed_cue']),
+    );
     expect(
       m1.validatorTypes,
       containsAll(['ordered_sequence', 'target_region', 'legal_piece_move']),

@@ -8,6 +8,99 @@ import 'package:play_schema/play_schema.dart';
 
 import 'visual_tokens.dart';
 
+/// A small, bounded visual beat. Completion is reported to the deterministic
+/// engine by the owning surface; this widget never changes Play state itself.
+final class PlayTimedCueInput extends StatefulWidget {
+  const PlayTimedCueInput({
+    required this.duration,
+    required this.onElapsed,
+    super.key,
+  });
+
+  final Duration duration;
+  final VoidCallback onElapsed;
+
+  @override
+  State<PlayTimedCueInput> createState() => _PlayTimedCueInputState();
+}
+
+final class _PlayTimedCueInputState extends State<PlayTimedCueInput>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _progress;
+  Timer? _completion;
+  bool _started = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _progress = AnimationController(vsync: this)..addListener(_rebuild);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_started) _start();
+  }
+
+  @override
+  void didUpdateWidget(covariant PlayTimedCueInput oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.duration != widget.duration) _start();
+  }
+
+  void _start() {
+    _started = true;
+    _completion?.cancel();
+    _progress
+      ..stop()
+      ..duration = widget.duration
+      ..value = 0;
+    if (!(MediaQuery.maybeOf(context)?.disableAnimations ?? false)) {
+      unawaited(_progress.forward());
+    }
+    _completion = Timer(widget.duration, () {
+      if (mounted) widget.onElapsed();
+    });
+  }
+
+  void _rebuild() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _completion?.cancel();
+    _progress
+      ..removeListener(_rebuild)
+      ..dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final reduced = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    return Semantics(
+      label: 'Brief cue',
+      liveRegion: true,
+      child: RepaintBoundary(
+        child: SizedBox(
+          key: const ValueKey<String>('play-timed-cue'),
+          width: 64,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(99),
+            child: LinearProgressIndicator(
+              value: reduced ? 1 : _progress.value,
+              minHeight: 4,
+              color: Theme.of(context).colorScheme.primary,
+              backgroundColor: MosaicVisualTokens.controlSurface,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 final class PlayPianoInputSpec {
   const PlayPianoInputSpec({required this.keys, required this.sequenceLength});
 

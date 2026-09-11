@@ -31,6 +31,11 @@ final class PieceMoveAction extends PlayAction {
   final String targetId;
 }
 
+/// Emitted by a bounded presentation timer; the engine does not own a clock.
+final class TimedCueAction extends PlayAction {
+  const TimedCueAction();
+}
+
 final class PlaySession {
   const PlaySession({
     required this.play,
@@ -154,6 +159,7 @@ final class PlayEngine {
     SequenceAction(:final values) => values,
     DragAction(:final targetId) => targetId,
     PieceMoveAction() => null,
+    TimedCueAction() => null,
   };
 
   void _assertCompatible(PlayInputType input, PlayAction action) {
@@ -164,6 +170,7 @@ final class PlayEngine {
         action is SequenceAction || action is ChoiceAction,
       PlayInputType.drag => action is DragAction,
       PlayInputType.pieceMove => action is PieceMoveAction,
+      PlayInputType.timedCue => action is TimedCueAction,
       _ => false,
     };
     if (!compatible) {

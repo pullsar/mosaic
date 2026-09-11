@@ -650,6 +650,21 @@ bool _dragRectsOverlap(PlayNormalizedRect left, PlayNormalizedRect right) =>
     left.y < right.y + right.height &&
     left.y + left.height > right.y;
 
+Duration? _safeTimedCueDuration(
+  PlayInputDefinition input,
+  PlayValidationDefinition validation,
+) {
+  if (input.type != PlayInputType.timedCue ||
+      validation.type != PlayValidatorType.none) {
+    return null;
+  }
+  final durationMs = input.properties['durationMs'];
+  if (durationMs is! int || durationMs < 300 || durationMs > 10000) {
+    return null;
+  }
+  return Duration(milliseconds: durationMs);
+}
+
 final class _InputOverlay extends StatelessWidget {
   const _InputOverlay({
     required this.input,
@@ -776,6 +791,24 @@ final class _InputOverlay extends StatelessWidget {
         spec: spec,
         onTarget: (targetId) => onAction(DragAction(targetId)),
         onManipulationChanged: onDirectManipulationChanged,
+      );
+    }
+
+    if (input.type == PlayInputType.timedCue) {
+      final duration = _safeTimedCueDuration(input, validation);
+      if (duration == null) {
+        return const PlayInputUnavailable(type: 'timed_cue');
+      }
+      return Align(
+        alignment: AlignmentDirectional.centerEnd,
+        child: Padding(
+          padding: const EdgeInsetsDirectional.fromSTEB(20, 8, 20, 8),
+          child: PlayTimedCueInput(
+            key: ValueKey<String>('timed-cue:$inputEpoch'),
+            duration: duration,
+            onElapsed: () => onAction(const TimedCueAction()),
+          ),
+        ),
       );
     }
 

@@ -302,7 +302,10 @@ function assertQuietSwitchReview(
   const entryValidation = record(entryState.validation, `${review.playId}.validation`);
   const entryTransition = record(entryState.transition, `${review.playId}.transition`);
   if (
-    entryInput.type !== 'tap' ||
+    entryInput.type !== 'timed_cue' ||
+    !Number.isInteger(entryInput.durationMs) ||
+    (entryInput.durationMs as number) < 300 ||
+    (entryInput.durationMs as number) > 10000 ||
     entryValidation.type !== 'none' ||
     entryTransition.default !== 'choose'
   ) {

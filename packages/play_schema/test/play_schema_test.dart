@@ -287,6 +287,37 @@ void main() {
     expect(issues.any((issue) => issue.code == 'drag_target_overlap'), isTrue);
   });
 
+  test('timed cue requires a bounded duration and none validation', () {
+    final raw = _fixture('compat/v1_baseline_guess.json');
+    final states = Map<String, Object?>.from(raw['states']! as Map);
+    final guess = Map<String, Object?>.from(states['guess']! as Map);
+    states['guess'] = {
+      ...guess,
+      'input': {'type': 'timed_cue', 'durationMs': 1200},
+      'validation': {'type': 'none'},
+      'transition': {'default': r'$end'},
+    };
+
+    final valid = PlayDocument.fromJson({...raw, 'states': states});
+    expect(const PlaySchemaValidator().validate(valid), isEmpty);
+
+    final invalid = PlayDocument.fromJson({
+      ...raw,
+      'states': {
+        ...states,
+        'guess': {
+          ...states['guess']! as Map<String, Object?>,
+          'input': {'type': 'timed_cue', 'durationMs': 100},
+          'validation': {'type': 'equals', 'value': 'anything'},
+        },
+      },
+    });
+    final codes = const PlaySchemaValidator()
+        .validate(invalid)
+        .map((issue) => issue.code);
+    expect(codes, containsAll(['timed_cue_duration', 'timed_cue_validator']));
+  });
+
   test('drag publication validation rejects an unknown handle appearance', () {
     final raw = _fixture('move_one_match.json');
     final states = Map<String, Object?>.from(raw['states']! as Map);

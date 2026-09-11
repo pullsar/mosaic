@@ -1423,6 +1423,8 @@ const moveOneMatchV3: StarterPlay = {
   },
 };
 
+const quietSwitchCueDurationMs = 2200;
+
 const quietSwitchV1: StarterPlay = {
   id: 'mixli_starter_quiet_switch',
   revisionId: 'rev_1',
@@ -1487,17 +1489,59 @@ const quietSwitchV1: StarterPlay = {
   },
 };
 
-function additionalQuietSwitchPlay(spec: QuietSwitchSpec): StarterPlay {
+const quietSwitchV1States = quietSwitchV1.document.states as Record<string, unknown>;
+
+const quietSwitchV2: StarterPlay = {
+  id: 'mixli_starter_quiet_switch',
+  revisionId: 'rev_2',
+  topics: ['observation', 'design'],
+  document: {
+    schemaVersion: 1,
+    id: 'mixli_starter_quiet_switch',
+    revisionId: 'rev_2',
+    format: 'guess',
+    classification: 'challenge',
+    topics: ['observation', 'design'],
+    learningTopics: [],
+    estimatedDurationSec: 15,
+    assets: [
+      'mixli_canvas_quiet_switch_before_v1',
+      'mixli_canvas_quiet_switch_after_v1',
+    ],
+    sources: [],
+    entryState: 'observe',
+    states: {
+      observe: {
+        presentation: {
+          layers: [
+            {type: 'canvas', role: 'media', assetId: 'mixli_canvas_quiet_switch_before_v1'},
+            {type: 'text', role: 'prompt', value: 'Look closer.'},
+          ],
+        },
+        input: {type: 'timed_cue', durationMs: quietSwitchCueDurationMs},
+        validation: {type: 'none'},
+        transition: {default: 'choose'},
+      },
+      choose: quietSwitchV1States['choose'],
+      reveal: quietSwitchV1States['reveal'],
+    },
+  },
+};
+
+function additionalQuietSwitchPlay(
+  spec: QuietSwitchSpec,
+  revisionId: 'rev_1' | 'rev_2',
+): StarterPlay {
   const sourceAssetId = `mixli_canvas_${spec.assetStem}_before_v1`;
   const choiceAssetId = `mixli_canvas_${spec.assetStem}_after_v1`;
   return {
     id: spec.id,
-    revisionId: 'rev_1',
+    revisionId,
     topics: spec.topics,
     document: {
       schemaVersion: 1,
       id: spec.id,
-      revisionId: 'rev_1',
+      revisionId,
       format: 'guess',
       classification: 'challenge',
       topics: [...spec.topics],
@@ -1511,10 +1555,12 @@ function additionalQuietSwitchPlay(spec: QuietSwitchSpec): StarterPlay {
           presentation: {
             layers: [
               {type: 'canvas', role: 'media', assetId: sourceAssetId},
-              {type: 'text', role: 'prompt', value: 'Remember the scene.'},
+              {type: 'text', role: 'prompt', value: revisionId === 'rev_2' ? 'Look closer.' : 'Remember the scene.'},
             ],
           },
-          input: {type: 'tap', label: 'Ready'},
+          input: revisionId === 'rev_2'
+            ? {type: 'timed_cue', durationMs: quietSwitchCueDurationMs}
+            : {type: 'tap', label: 'Ready'},
           validation: {type: 'none'},
           transition: {default: 'choose'},
         },
@@ -1551,8 +1597,11 @@ function additionalQuietSwitchPlay(spec: QuietSwitchSpec): StarterPlay {
   };
 }
 
-const additionalQuietSwitchPlays = additionalQuietSwitchSpecs.map(
-  additionalQuietSwitchPlay,
+const additionalQuietSwitchV1 = additionalQuietSwitchSpecs.map((spec) =>
+  additionalQuietSwitchPlay(spec, 'rev_1'),
+);
+const additionalQuietSwitchV2 = additionalQuietSwitchSpecs.map((spec) =>
+  additionalQuietSwitchPlay(spec, 'rev_2'),
 );
 
 const releaseV3StarterPlays: readonly StarterPlay[] = [
@@ -1587,8 +1636,8 @@ const starterPlays = [
             ) ??
             play,
       ),
-  quietSwitchV1,
-  ...additionalQuietSwitchPlays,
+  quietSwitchV2,
+  ...additionalQuietSwitchV2,
 ] as const;
 
 const historicalStarterPlays = [
@@ -1597,6 +1646,8 @@ const historicalStarterPlays = [
   ...releaseV3StarterPlays.filter(
     (play) => clarifiedPlayIds.has(play.id) || play.id === moveOneMatchV3.id,
   ),
+  quietSwitchV1,
+  ...additionalQuietSwitchV1,
 ] as const;
 
 const allStarterPlays = [...historicalStarterPlays, ...starterPlays] as const;
@@ -1698,8 +1749,8 @@ const starterIntegrityReviews: readonly CatalogIntegrityReview[] = [
   {
     kind: 'quiet_switch',
     playId: 'mixli_starter_quiet_switch',
-    revisionId: 'rev_1',
-    prompt: 'Remember the room.',
+    revisionId: 'rev_2',
+    prompt: 'Look closer.',
     sourceAssetId: 'mixli_canvas_quiet_switch_before_v1',
     choiceAssetId: 'mixli_canvas_quiet_switch_after_v1',
     choicePrompt: 'What changed?',
@@ -1710,8 +1761,8 @@ const starterIntegrityReviews: readonly CatalogIntegrityReview[] = [
   ...additionalQuietSwitchSpecs.map((spec) => ({
     kind: 'quiet_switch' as const,
     playId: spec.id,
-    revisionId: 'rev_1',
-    prompt: 'Remember the scene.',
+    revisionId: 'rev_2',
+    prompt: 'Look closer.',
     sourceAssetId: `mixli_canvas_${spec.assetStem}_before_v1`,
     choiceAssetId: `mixli_canvas_${spec.assetStem}_after_v1`,
     choicePrompt: 'What changed?',

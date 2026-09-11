@@ -16,6 +16,7 @@ enum PlayInputType {
   rhythmTap,
   pianoKey,
   pieceMove,
+  timedCue,
   mapPoint,
   recordAudio,
 }

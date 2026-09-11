@@ -53,7 +53,14 @@ final class PlayCapabilityEnvelope {
       'canvas',
       'scene',
     },
-    inputTypes: {'tap', 'single_choice', 'piano_key', 'drag', 'piece_move'},
+    inputTypes: {
+      'tap',
+      'single_choice',
+      'piano_key',
+      'drag',
+      'piece_move',
+      'timed_cue',
+    },
     validatorTypes: {
       'none',
       'equals',

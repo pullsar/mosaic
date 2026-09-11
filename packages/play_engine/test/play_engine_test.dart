@@ -15,6 +15,10 @@ PlayDocument fixture(String name) {
 PlayDocument playWithValidation({
   required String inputType,
   required Map<String, Object?> validation,
+  Map<String, String> transition = const {
+    'correct': r'$end',
+    'incorrect': r'$end',
+  },
 }) => PlayDocument.fromJson({
   'schemaVersion': 1,
   'id': 'malformed_validator',
@@ -36,7 +40,7 @@ PlayDocument playWithValidation({
       },
       'input': {'type': inputType},
       'validation': validation,
-      'transition': {'correct': r'$end', 'incorrect': r'$end'},
+      'transition': transition,
     },
   },
 });
@@ -98,6 +102,23 @@ void main() {
     expect(result.wasCorrect, isFalse);
     expect(result.outcome, 'incorrect');
     expect(result.session.stateId, 'solve');
+  });
+
+  test('timed cue advances only from its explicit presentation action', () {
+    final play = playWithValidation(
+      inputType: 'timed_cue',
+      validation: {'type': 'none'},
+      transition: {'default': r'$end'},
+    );
+    final session = engine.start(play);
+
+    final result = engine.apply(session, const TimedCueAction());
+    expect(result.outcome, 'default');
+    expect(result.session.ended, isTrue);
+    expect(
+      () => engine.apply(session, const TapAction()),
+      throwsA(isA<StateError>()),
+    );
   });
 
   test('piece moves retain the engine-owned resulting configuration', () {
