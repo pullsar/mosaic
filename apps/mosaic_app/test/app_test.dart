@@ -1,8 +1,12 @@
+import 'dart:convert';
+
 import 'package:analytics_contract/analytics_contract.dart';
 import 'package:event_delivery/event_delivery.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:mosaic_app/app_event_runtime.dart';
 import 'package:mosaic_app/consumer_api_client.dart';
 import 'package:mosaic_app/consumer_local_state.dart';
@@ -162,6 +166,45 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets(
+    'an exact public route resolves its shared Play without actor registration',
+    (tester) async {
+      final paths = <String>[];
+      final api = ConsumerApiClient(
+        baseUri: Uri.parse('https://api.example.test/'),
+        actorAccess: ActorAccessIdentity(
+          actorId: 'actor_shared_route',
+          accessToken: 'B' * 43,
+        ),
+        client: MockClient((request) async {
+          paths.add(request.url.path);
+          return http.Response(
+            jsonEncode(<String, Object?>{
+              ..._seededItem().validatedDocumentJson,
+            }),
+            200,
+          );
+        }),
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MosaicApp(
+            consumerApi: api,
+            initialRoute: '/p/play_app_share/revision_app_share',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(paths, <String>[
+        '/v1/public/plays/play_app_share/revisions/revision_app_share',
+      ]);
+      expect(find.byKey(const ValueKey<String>('shared-play')), findsOneWidget);
+      expect(find.text('Pick one.'), findsOneWidget);
+    },
+  );
 
   testWidgets('real guest feed exposes exact Save Share More utilities', (
     tester,

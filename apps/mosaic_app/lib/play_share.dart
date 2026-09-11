@@ -43,7 +43,24 @@ abstract final class PlayShareLink {
         value.userInfo.isNotEmpty) {
       return null;
     }
-    final segments = value.pathSegments;
+    return _parseSegments(value.pathSegments);
+  }
+
+  /// Parses a platform-delivered route name, which intentionally has no host.
+  static PlayShareTarget? parsePath(String value) {
+    final route = Uri.tryParse(value);
+    if (route == null ||
+        route.scheme.isNotEmpty ||
+        route.host.isNotEmpty ||
+        route.userInfo.isNotEmpty ||
+        route.hasQuery ||
+        route.fragment.isNotEmpty) {
+      return null;
+    }
+    return _parseSegments(route.pathSegments);
+  }
+
+  static PlayShareTarget? _parseSegments(List<String> segments) {
     if (segments.length != 3 || segments[0] != 'p') return null;
     try {
       return PlayShareTarget(

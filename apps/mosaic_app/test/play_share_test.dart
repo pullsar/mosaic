@@ -47,4 +47,15 @@ void main() {
       isNull,
     );
   });
+
+  test('parses an exact share route delivered without an origin', () {
+    expect(
+      PlayShareLink.parsePath('/p/quiet_switch/rev_1'),
+      const PlayShareTarget(playId: 'quiet_switch', revisionId: 'rev_1'),
+    );
+    expect(
+      PlayShareLink.parsePath('https://mixli.app/p/quiet_switch/rev_1'),
+      isNull,
+    );
+  });
 }
