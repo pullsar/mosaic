@@ -815,6 +815,41 @@ final class ConsumerApiClient {
     }
   }
 
+  Future<PlayDocument?> fetchNextGameRound({
+    required PlayDocument current,
+    required PlayCapabilityEnvelope capabilities,
+  }) async {
+    if (current.gameFamily == null) return null;
+    final response = await _send(
+      () => _client.post(
+        _policy.resolve(
+          'v1/plays/${Uri.encodeComponent(current.id)}/revisions/'
+          '${Uri.encodeComponent(current.revisionId)}/next-round',
+        ),
+        headers: const {'content-type': 'application/json'},
+        body: jsonEncode(capabilities.toJson()),
+      ),
+    );
+    if (response == null || response.statusCode != 200) return null;
+    try {
+      final json = _decodeResponseObject(response.body);
+      final next = _validatedPlayDocument(
+        json,
+        playId: _requiredJsonString(json, 'id', 200),
+        revisionId: _requiredJsonString(json, 'revisionId', 200),
+        compatibilityChecker: _compatibilityChecker,
+        capabilities: capabilities,
+      );
+      if (next.id == current.id ||
+          next.gameFamily?.id != current.gameFamily!.id ||
+          next.gameFamily?.revisionId != current.gameFamily!.revisionId)
+        return null;
+      return next;
+    } on Object {
+      return null;
+    }
+  }
+
   Uri _actionStateEndpoint(String playId) => _policy.resolve(
     'v1/actors/${Uri.encodeComponent(_actorAccess.actorId)}/actions/'
     '${Uri.encodeComponent(playId)}',

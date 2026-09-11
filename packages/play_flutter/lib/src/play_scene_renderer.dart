@@ -603,7 +603,7 @@ final class _SceneOrb extends StatelessWidget {
           child: DecoratedBox(
             key: ValueKey<String>('scene-orb-highlight:$id'),
             decoration: BoxDecoration(
-              color: colors.surface.withValues(alpha: .72),
+              color: colors.onSurface.withValues(alpha: .72),
               shape: BoxShape.circle,
             ),
           ),
@@ -616,7 +616,7 @@ final class _SceneOrb extends StatelessWidget {
           heightFactor: .2,
           child: DecoratedBox(
             decoration: BoxDecoration(
-              color: colors.onSurface.withValues(alpha: .16),
+              color: colors.surface.withValues(alpha: .16),
               shape: BoxShape.circle,
             ),
           ),

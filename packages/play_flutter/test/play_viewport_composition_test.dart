@@ -49,6 +49,28 @@ const _viewportCases = <_ViewportCase>[
 ];
 
 void main() {
+  test(
+    'wide phones keep a centered stage and thumb-reachable utility dock',
+    () {
+      for (final width in [412.0, 430.0, 480.0]) {
+        final composition = PlayViewportComposition.fromConstraints(
+          BoxConstraints.tightFor(width: width, height: 932),
+          safeInsets: const EdgeInsets.only(top: 48, bottom: 24),
+        );
+        expect(
+          composition.utilityPlacement,
+          PlayUtilityPlacement.horizontalDock,
+        );
+        expect(composition.stageRect.center.dx, width / 2);
+        expect(composition.stageRect.width, width);
+        expect(
+          composition.utilityRect.top,
+          greaterThan(composition.stageRect.bottom),
+        );
+      }
+    },
+  );
+
   group('PlayViewportComposition.fromConstraints', () {
     for (final viewportCase in _viewportCases) {
       test('${viewportCase.name} keeps every region usable and in bounds', () {

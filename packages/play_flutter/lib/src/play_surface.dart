@@ -21,6 +21,7 @@ final class PlaySurface extends StatefulWidget {
     this.mediaBuilder,
     this.onResolved,
     this.terminal,
+    this.resolvedFeedback,
     this.onDirectManipulationChanged,
     super.key,
   }) : session = null,
@@ -32,6 +33,7 @@ final class PlaySurface extends StatefulWidget {
     this.mediaBuilder,
     this.onResolved,
     this.terminal,
+    this.resolvedFeedback,
     this.onDirectManipulationChanged,
     super.key,
   }) : play = session.play,
@@ -44,6 +46,9 @@ final class PlaySurface extends StatefulWidget {
   final PlayMediaBuilder? mediaBuilder;
   final ValueChanged<PlayResolution>? onResolved;
   final Widget? terminal;
+
+  /// Presentation supplied by a continuous round owner during a final reveal.
+  final Widget? resolvedFeedback;
 
   /// True while a direct-manipulation primitive owns a drag gesture.
   ///
@@ -148,6 +153,8 @@ final class _PlaySurfaceState extends State<PlaySurface> {
       final isDragInput = state.input.type == PlayInputType.drag;
       final isPieceMoveInput = state.input.type == PlayInputType.pieceMove;
       final usesCanvasStage = media.any((layer) => layer.type == 'canvas');
+      Widget alignScene(Widget child) =>
+          usesCanvasStage ? PlayCanvasStage(child: child) : child;
       final input = _InputOverlay(
         input: state.input,
         validation: state.validation,
@@ -165,102 +172,137 @@ final class _PlaySurfaceState extends State<PlaySurface> {
         ),
       );
 
-      return ColoredBox(
-        color: MosaicVisualTokens.surface,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            _PlayThemeBackdrop(presentation: widget.play.presentation),
-            Positioned.fromRect(
-              rect: composition.promptRect,
-              child: SizedBox.expand(
-                key: const ValueKey<String>('play-prompt'),
-                child: _TextOverlay(layers: text),
+      // Play backgrounds are authored independently of the surrounding app.
+      // Keep their objects and controls on that same palette in either OS mode.
+      final appTheme = Theme.of(context);
+      final palette = _playColorScheme(widget.play.presentation);
+      return Theme(
+        data: appTheme.copyWith(
+          colorScheme: palette,
+          textTheme: appTheme.textTheme.apply(
+            bodyColor: palette.onSurface,
+            displayColor: palette.onSurface,
+          ),
+          iconTheme: appTheme.iconTheme.copyWith(color: palette.onSurface),
+          // The round owner coordinates optional scoring audio. Native button
+          // clicks would otherwise double it and bypass the Sound preference.
+          filledButtonTheme: FilledButtonThemeData(
+            style: (appTheme.filledButtonTheme.style ?? const ButtonStyle())
+                .copyWith(enableFeedback: false),
+          ),
+          textButtonTheme: TextButtonThemeData(
+            style: (appTheme.textButtonTheme.style ?? const ButtonStyle())
+                .copyWith(enableFeedback: false),
+          ),
+          iconButtonTheme: IconButtonThemeData(
+            style: (appTheme.iconButtonTheme.style ?? const ButtonStyle())
+                .copyWith(enableFeedback: false),
+          ),
+        ),
+        child: ColoredBox(
+          color: MosaicVisualTokens.surface,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              _PlayThemeBackdrop(presentation: widget.play.presentation),
+              Positioned.fromRect(
+                rect: composition.promptRect,
+                child: SizedBox.expand(
+                  key: const ValueKey<String>('play-prompt'),
+                  child: _TextOverlay(layers: text),
+                ),
               ),
-            ),
-            Positioned.fromRect(
-              rect: composition.stageRect,
-              child: _StageFeedback(
-                resolved: _session.ended,
-                animateScale: !isDragInput,
-                child: _StageStateTransition(
-                  stateId: _session.stateId,
-                  child: SizedBox.expand(
-                    key: const ValueKey<String>('play-stage'),
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        for (final slot in mediaSlots)
-                          KeyedSubtree(
-                            key: ValueKey<String>(slot.key),
-                            child:
-                                slot.layer.type == 'scene' &&
-                                    slot.layer.scene != null
-                                ? IgnorePointer(
-                                    ignoring: _session.ended,
-                                    child:
-                                        ValueListenableBuilder<
-                                          _ActiveCueProgress?
-                                        >(
-                                          valueListenable: _cueProgress,
-                                          builder:
-                                              (
-                                                context,
-                                                activeCue,
-                                                child,
-                                              ) => PlaySceneRenderer(
-                                                scene: slot.layer.scene!,
-                                                cueId: activeCue?.cueId,
-                                                cueProgress:
-                                                    activeCue?.value ?? 0,
-                                                placements:
-                                                    _session.piecePlacements,
-                                                onPieceMove:
-                                                    (pieceId, targetId) =>
-                                                        _apply(
+              Positioned.fromRect(
+                rect: composition.stageRect,
+                child: _StageFeedback(
+                  resolved: _session.ended || widget.resolvedFeedback != null,
+                  animateScale: !isDragInput,
+                  child: _StageStateTransition(
+                    stateId: _session.stateId,
+                    child: SizedBox.expand(
+                      key: const ValueKey<String>('play-stage'),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          for (final slot in mediaSlots)
+                            KeyedSubtree(
+                              key: ValueKey<String>(slot.key),
+                              child:
+                                  slot.layer.type == 'scene' &&
+                                      slot.layer.scene != null
+                                  ? alignScene(
+                                      IgnorePointer(
+                                        ignoring: _session.ended,
+                                        child:
+                                            ValueListenableBuilder<
+                                              _ActiveCueProgress?
+                                            >(
+                                              valueListenable: _cueProgress,
+                                              builder:
+                                                  (
+                                                    context,
+                                                    activeCue,
+                                                    child,
+                                                  ) => PlaySceneRenderer(
+                                                    scene: slot.layer.scene!,
+                                                    cueId: activeCue?.cueId,
+                                                    cueProgress:
+                                                        activeCue?.value ?? 0,
+                                                    placements: _session
+                                                        .piecePlacements,
+                                                    onPieceMove:
+                                                        (
+                                                          pieceId,
+                                                          targetId,
+                                                        ) => _apply(
                                                           PieceMoveAction(
                                                             pieceId: pieceId,
                                                             targetId: targetId,
                                                           ),
                                                         ),
-                                                onDirectManipulationChanged: widget
-                                                    .onDirectManipulationChanged,
-                                              ),
-                                        ),
-                                  )
-                                : _buildMedia(context, slot.layer),
-                          ),
-                        if (isDragInput)
-                          if (usesCanvasStage)
-                            PlayCanvasStage(child: dragPresentation)
-                          else
-                            dragPresentation,
-                      ],
+                                                    onDirectManipulationChanged:
+                                                        widget
+                                                            .onDirectManipulationChanged,
+                                                  ),
+                                            ),
+                                      ),
+                                    )
+                                  : _buildMedia(context, slot.layer),
+                            ),
+                          if (isDragInput)
+                            if (usesCanvasStage)
+                              PlayCanvasStage(child: dragPresentation)
+                            else
+                              dragPresentation,
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-            Positioned.fromRect(
-              rect: composition.inputRect,
-              child: SizedBox.expand(
-                key: const ValueKey<String>('play-input'),
-                child: _session.ended
-                    ? _terminalOrEmpty(widget.terminal)
-                    : isDragInput || isPieceMoveInput
-                    ? const SizedBox.shrink()
-                    : input,
-              ),
-            ),
-            Positioned.fromRect(
-              rect: composition.utilityRect,
-              child: const IgnorePointer(
+              Positioned.fromRect(
+                rect: composition.inputRect,
                 child: SizedBox.expand(
-                  key: ValueKey<String>('play-utilities-region'),
+                  key: const ValueKey<String>('play-input'),
+                  child:
+                      widget.resolvedFeedback ??
+                      (_session.ended
+                          ? _terminalOrEmpty(widget.terminal)
+                          : isDragInput || isPieceMoveInput
+                          ? const SizedBox.shrink()
+                          : input),
                 ),
               ),
-            ),
-          ],
+              Positioned.fromRect(
+                rect: composition.utilityRect,
+                child: const IgnorePointer(
+                  child: SizedBox.expand(
+                    key: ValueKey<String>('play-utilities-region'),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       );
     },
@@ -339,6 +381,58 @@ Color? _themeSurface(PlayPresentationReference reference) => switch ((
   ('orbital', 'theme_1', 'onyx-orbit') => const Color(0xFF0B1020),
   _ => null,
 };
+
+ColorScheme _playColorScheme(PlayPresentationReference? reference) {
+  final background = reference == null
+      ? MosaicVisualTokens.surface
+      : _themeSurface(reference) ?? MosaicVisualTokens.surface;
+  final (accent, material) = switch ((
+    reference?.themeId,
+    reference?.themeRevisionId,
+    reference?.variantId,
+  )) {
+    ('paper-studio', 'theme_1', 'felt-ivory') => (
+      const Color(0xFFE8C591),
+      const Color(0xFF594331),
+    ),
+    ('night-museum', 'theme_1', 'ceramic-night') => (
+      const Color(0xFFC2B7EC),
+      const Color(0xFF39334F),
+    ),
+    ('glass-garden', 'theme_1', 'mineral-mist') => (
+      const Color(0xFF9CDDD0),
+      const Color(0xFF24504E),
+    ),
+    ('orbital', 'theme_1', 'onyx-orbit') => (
+      const Color(0xFFADCFFF),
+      const Color(0xFF283B58),
+    ),
+    _ => (const Color(0xFF9CDDD0), const Color(0xFF284742)),
+  };
+  return ColorScheme.dark(
+    surface: background,
+    onSurface: const Color(0xFFF4F1E9),
+    onSurfaceVariant: const Color(0xFFBDC7C8),
+    surfaceContainerHighest: Color.alphaBlend(
+      accent.withValues(alpha: .18),
+      background,
+    ),
+    primary: accent,
+    onPrimary: background,
+    primaryContainer: material,
+    onPrimaryContainer: const Color(0xFFF4F1E9),
+    secondary: accent,
+    onSecondary: background,
+    secondaryContainer: material,
+    onSecondaryContainer: const Color(0xFFF4F1E9),
+    tertiary: const Color(0xFFEDCA87),
+    onTertiary: const Color(0xFF302411),
+    tertiaryContainer: const Color(0xFF6C512B),
+    onTertiaryContainer: const Color(0xFFFFE6AE),
+    outline: const Color(0xFF929E9F),
+    outlineVariant: const Color(0xFF7F9295),
+  );
+}
 
 final class _StageFeedback extends StatelessWidget {
   const _StageFeedback({

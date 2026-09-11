@@ -19,6 +19,7 @@ import 'consumer_api_client.dart';
 import 'consumer_feed.dart';
 import 'consumer_runtime.dart';
 import 'consumer_search.dart';
+import 'continuous_game_host.dart';
 import 'event_runtime_resources_factory.dart';
 import 'game_attempt_controller.dart';
 import 'game_sound_controller.dart';
@@ -294,13 +295,38 @@ final class _MosaicAppState extends State<MosaicApp> {
     required bool active,
     required ValueChanged<bool> onDirectManipulationChanged,
     VoidCallback? onMeaningfulInteraction,
+    Widget Function(BuildContext, PlayDocument, Widget)? decorate,
   }) {
-    return GameAttemptHost(
+    return ContinuousGameHost(
       key: ValueKey<String>('attempt:$playId:$revisionId'),
       play: play,
-      builder: (context, attempt) {
+      active: active,
+      effectsEnabled:
+          _gameSoundController?.preferences.effectsEnabled == true &&
+          _gameSoundController?.preferences.masterMuted != true,
+      prepareNext: (current) async {
+        final next = await _consumerApi?.fetchNextGameRound(
+          current: current,
+          capabilities: _consumerRuntime.capabilities,
+        );
+        if (next == null) return null;
+        // The one successor uses the existing bounded metadata warmer.
+        await _metadataWarmer?.warm(buildAssetWarmPlan([next]));
+        return next;
+      },
+      builder: (context, attempt, feedback) {
+        final current = attempt.session.play;
+        final roundWasResolved = attempt.roundResolved;
+        final playId = current.id;
+        final revisionId = current.revisionId;
+        final roundTelemetry =
+            current.id == play.id && current.revisionId == play.revisionId
+            ? telemetry
+            : _eventRuntime.telemetryForStandalonePlay(
+                playRevisionId: revisionId,
+              );
         final videoDiagnostics = PlayVideoDiagnosticObserver(
-          telemetry: telemetry,
+          telemetry: roundTelemetry,
           runtimeDiagnostics: const FlutterRuntimeDiagnostics(),
         );
         final media = PlayMediaLayerBuilder(
@@ -322,7 +348,7 @@ final class _MosaicAppState extends State<MosaicApp> {
           semanticResumeEpoch: _semanticResumeEpoch,
           onVideoPlaybackEvent: videoDiagnostics.call,
         );
-        return MixliAuthoredPlayDirection(
+        final surface = MixliAuthoredPlayDirection(
           child: PlaySurface.controlled(
             key: ValueKey<String>(
               'play:$playId:$revisionId:${attempt.attemptId}',
@@ -332,11 +358,11 @@ final class _MosaicAppState extends State<MosaicApp> {
               onResolved: (resolution) {
                 onMeaningfulInteraction?.call();
                 recordPlayResolutionTelemetry(
-                  telemetry,
+                  roundTelemetry,
                   playId: playId,
                   outcome: resolution.outcome,
                   attempts: resolution.session.attempts,
-                  completed: resolution.session.ended,
+                  completed: attempt.roundResolved && !roundWasResolved,
                   correct: resolution.wasCorrect,
                   attemptId: attempt.attemptId,
                   attemptMode: attempt.mode.wireName,
@@ -344,6 +370,7 @@ final class _MosaicAppState extends State<MosaicApp> {
               },
             ),
             mediaBuilder: media.call,
+            resolvedFeedback: feedback,
             terminal: Align(
               alignment: AlignmentDirectional.centerEnd,
               child: Padding(
@@ -358,6 +385,7 @@ final class _MosaicAppState extends State<MosaicApp> {
             onDirectManipulationChanged: onDirectManipulationChanged,
           ),
         );
+        return decorate?.call(context, current, surface) ?? surface;
       },
     );
   }
@@ -391,7 +419,7 @@ final class _MosaicAppState extends State<MosaicApp> {
       feedRequestId: feedRequestId,
       playRevisionId: item.revisionId,
     );
-    final surface = _buildPlaySurface(
+    return _buildPlaySurface(
       context,
       playId: item.playId,
       revisionId: item.revisionId,
@@ -401,16 +429,27 @@ final class _MosaicAppState extends State<MosaicApp> {
       onDirectManipulationChanged: onDirectManipulationChanged,
       onMeaningfulInteraction: () =>
           _recordMeaningfulInteraction(item.playId, item.revisionId),
-    );
-    return ConsumerActionControls(
-      child: surface,
-      item: item,
-      feedRequestId: feedRequestId,
-      controller: _actionController,
-      onAdvance: _feedController.advance,
-      onShare: _sharePlay,
-      soundController: _gameSoundController,
-      active: active,
+      decorate: (context, current, surface) => ConsumerActionControls(
+        child: surface,
+        item: current.id == item.playId && current.revisionId == item.revisionId
+            ? item
+            : ConsumerFeedItem.fromJson(
+                {
+                  'playId': current.id,
+                  'revisionId': current.revisionId,
+                  'sourceBucket': 'curated_fallback',
+                  'document': current.toJson(),
+                },
+                compatibilityChecker: const PlayCompatibilityChecker(),
+                capabilities: _consumerRuntime.capabilities,
+              ),
+        feedRequestId: feedRequestId,
+        controller: _actionController,
+        onAdvance: _feedController.advance,
+        onShare: _sharePlay,
+        soundController: _gameSoundController,
+        active: active,
+      ),
     );
   }
 

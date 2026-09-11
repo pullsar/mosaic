@@ -128,6 +128,44 @@ PlayDocument _timedCuePlay() => PlayDocument.fromJson({
 });
 
 void main() {
+  test('final confirmation resolves once and fresh rounds fence old input', () {
+    final first = _play().toJson();
+    first['gameFamily'] = {'id': 'one-move', 'revisionId': 'rev_1'};
+    final states = first['states'] as Map;
+    (states['question'] as Map)['transition'] = {
+      'correct': 'result',
+      'incorrect': 'question',
+    };
+    states['result'] = {
+      'presentation': {
+        'layers': [
+          {'type': 'text', 'role': 'reveal_title', 'value': 'Balanced.'},
+        ],
+      },
+      'input': {'type': 'tap', 'label': 'Done'},
+      'validation': {'type': 'none'},
+      'transition': {'default': r'$end'},
+    };
+    final controller = GameAttemptController(
+      play: PlayDocument.fromJson(first),
+    );
+    controller.apply(const ChoiceAction('b'));
+    expect(controller.roundResolved, isFalse);
+    controller.apply(const ChoiceAction('a'));
+    expect(controller.roundResolved, isTrue);
+    expect(controller.roundsCompleted, 1);
+    expect(controller.correctRounds, 1);
+    final stale = controller.captureActionHandler();
+    final next = PlayDocument.fromJson({...first, 'id': 'another_round'});
+    controller.advanceTo(next);
+    stale(const TapAction());
+    expect(controller.session.play.id, 'another_round');
+    expect(controller.session.attempts, 0);
+    expect(controller.roundResolved, isFalse);
+    expect(controller.roundsCompleted, 1);
+    expect(() => controller.advanceTo(next), throwsStateError);
+    controller.dispose();
+  });
   test('a recovered run replays with a fresh ID', () {
     final first = GameAttemptController(play: _play());
     final restored = GameAttemptController.restoreRecoverySnapshot(

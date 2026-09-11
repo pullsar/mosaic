@@ -9,6 +9,7 @@ import {
   verifyProductionCatalog,
 } from '../src/production_catalog.js';
 import {echoArchitectAudioAssets} from '../src/curated_audio.js';
+import {PostgresRepository} from '../src/repository.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 
@@ -80,6 +81,15 @@ test(
       assert.deepEqual(second, first);
       assert.deepEqual(afterRetry.rows, beforeRetry.rows);
       assert.deepEqual(await verifyProductionCatalog(pool), first);
+      const rounds = await new PostgresRepository(pool).getNextGameRoundCandidates(
+        'mixli_starter_move_one_match', 'rev_4',
+      ) as Array<{id: string; revisionId: string; gameFamily: {id: string; revisionId: string}}>;
+      assert.ok(rounds.length > 0 && rounds.length <= 64);
+      assert.ok(rounds.every((round) => round.id !== 'mixli_starter_move_one_match' &&
+        round.gameFamily.id === 'one-move' && round.gameFamily.revisionId === 'rev_1'));
+      const eligibleRoundKeys = new Set(productionCatalogIntegrityFixture.plays
+        .map((play) => `${play.id}/${play.revisionId}`));
+      assert.ok(rounds.every((round) => eligibleRoundKeys.has(`${round.id}/${round.revisionId}`)));
 
       const releaseStates = await pool.query<{
         play_id: string;

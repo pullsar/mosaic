@@ -447,14 +447,15 @@ final class _PianoKeyState extends State<_PianoKey> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final sharp = widget.note.contains('#') || widget.note.contains('♯');
-    final baseBackground = sharp ? colorScheme.onSurface : colorScheme.surface;
-    final baseForeground = sharp ? colorScheme.surface : colorScheme.onSurface;
-    final background = widget.selected
-        ? colorScheme.primaryContainer
-        : baseBackground;
-    final foreground = widget.selected
-        ? colorScheme.onPrimaryContainer
-        : baseForeground;
+    // Piano material is intrinsic to the instrument, not the app brightness.
+    final baseBackground = sharp
+        ? MosaicVisualTokens.pianoAccidental
+        : MosaicVisualTokens.pianoNatural;
+    final baseForeground = sharp
+        ? MosaicVisualTokens.pianoNatural
+        : MosaicVisualTokens.pianoAccidental;
+    final background = widget.selected ? colorScheme.primary : baseBackground;
+    final foreground = widget.selected ? colorScheme.onPrimary : baseForeground;
     final display = _displayNote(widget.note);
     final reduced = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
 
@@ -478,6 +479,7 @@ final class _PianoKeyState extends State<_PianoKey> {
               ),
             ),
             child: InkWell(
+              enableFeedback: false,
               onTap: widget.onPressed == null ? null : _onTap,
               onTapDown: _onTapDown,
               onTapUp: _onTapUp,

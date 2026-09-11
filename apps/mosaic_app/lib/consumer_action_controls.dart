@@ -127,7 +127,7 @@ final class _ConsumerActionControlsState extends State<ConsumerActionControls> {
     required bool busy,
     required Axis axis,
   }) => Material(
-    color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.86),
+    color: MosaicVisualTokens.utilitySurface,
     borderRadius: BorderRadius.circular(28),
     clipBehavior: Clip.antiAlias,
     child: Semantics(
@@ -140,6 +140,9 @@ final class _ConsumerActionControlsState extends State<ConsumerActionControls> {
           IconButton(
             key: const ValueKey<String>('play-action-save'),
             tooltip: state?.saved == true ? 'Unsave' : 'Save',
+            color: state?.saved == true
+                ? MosaicVisualTokens.foreground
+                : MosaicVisualTokens.secondary,
             onPressed: busy ? null : _toggleSave,
             icon: Icon(
               state?.saved == true ? Icons.bookmark : Icons.bookmark_border,
@@ -149,13 +152,17 @@ final class _ConsumerActionControlsState extends State<ConsumerActionControls> {
             IconButton(
               key: const ValueKey<String>('play-action-share'),
               tooltip: 'Share',
+              color: MosaicVisualTokens.secondary,
               onPressed: _share,
               icon: const Icon(Icons.ios_share_outlined),
             ),
           PopupMenuButton<String>(
             key: const ValueKey<String>('play-action-more'),
             tooltip: 'More',
-            icon: const Icon(Icons.more_horiz),
+            icon: const Icon(
+              Icons.more_horiz,
+              color: MosaicVisualTokens.secondary,
+            ),
             onSelected: _handleMenuAction,
             itemBuilder: _menuItems,
           ),

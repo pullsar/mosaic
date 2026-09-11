@@ -61,6 +61,30 @@ const capabilities = {
   platformFlags: [],
 };
 
+test('next round is a different compatible published family revision', async () => {
+  const repo = new MemoryRepository();
+  const raw = JSON.parse(await readFile(
+    '../../packages/play_schema/fixtures/where_is_this.json', 'utf8',
+  )) as Record<string, unknown>;
+  const first = {...raw, gameFamily: {id: 'observation', revisionId: 'rev_1'}};
+  const next = {...first, id: 'next_round'};
+  repo.publicPlays.set(`${raw.id}/${raw.revisionId}`, first);
+  const app = buildApp({repository: Object.assign(repo, {
+    async getNextGameRoundCandidates() { return [first, next]; },
+  }), logLevel: 'silent'});
+  const url = `/v1/plays/${raw.id}/revisions/${raw.revisionId}/next-round`;
+  const result = await app.inject({method: 'POST', url, payload: capabilities});
+  assert.equal(result.statusCode, 200);
+  assert.deepEqual(result.json(), next);
+  const unsupported = await app.inject({method: 'POST', url,
+    payload: {...capabilities, presentationTypes: ['text']}});
+  assert.equal(unsupported.statusCode, 204);
+  const hidden = await app.inject({method: 'POST',
+    url: '/v1/plays/private/revisions/rev_1/next-round', payload: capabilities});
+  assert.equal(hidden.statusCode, 404);
+  await app.close();
+});
+
 test('actor ownership protects registration, binding and idempotent events', async () => {
   const repo = new MemoryRepository();
   const app = buildApp({repository: repo, logLevel: 'silent'});

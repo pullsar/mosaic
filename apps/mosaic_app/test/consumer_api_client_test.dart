@@ -63,6 +63,56 @@ Map<String, Object?> _feedJson({
 };
 
 void main() {
+  test('next round rejects repeats and family changes', () async {
+    final current = PlayDocument.fromJson({
+      ..._playJson(),
+      'gameFamily': {'id': 'logic', 'revisionId': 'rev_1'},
+    });
+    Map<String, Object?> response = {...current.toJson(), 'id': 'play_2'};
+    final client = ConsumerApiClient(
+      baseUri: Uri.parse('https://api.example.test/'),
+      actorAccess: _actorAccess,
+      client: MockClient((request) async {
+        expect(request.url.path, '/v1/plays/play_1/revisions/rev_1/next-round');
+        expect(request.method, 'POST');
+        return http.Response(jsonEncode(response), 200);
+      }),
+    );
+    const capabilities = PlayCapabilityEnvelope(
+      schemaVersions: {1},
+      presentationTypes: {'text'},
+      inputTypes: {'tap'},
+      validatorTypes: {'none'},
+    );
+    expect(
+      (await client.fetchNextGameRound(
+        current: current,
+        capabilities: capabilities,
+      ))?.id,
+      'play_2',
+    );
+    response = current.toJson();
+    expect(
+      await client.fetchNextGameRound(
+        current: current,
+        capabilities: capabilities,
+      ),
+      isNull,
+    );
+    response = {
+      ...response,
+      'id': 'play_2',
+      'gameFamily': {'id': 'different', 'revisionId': 'rev_1'},
+    };
+    expect(
+      await client.fetchNextGameRound(
+        current: current,
+        capabilities: capabilities,
+      ),
+      isNull,
+    );
+    client.close();
+  });
   test('first private request registers actor before preferences', () async {
     final paths = <String>[];
     final client = ConsumerApiClient(

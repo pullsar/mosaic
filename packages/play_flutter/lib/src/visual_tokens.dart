@@ -5,6 +5,9 @@ abstract final class MosaicVisualTokens {
   static const Color foreground = Color(0xFFF7F7F7);
   static const Color secondary = Color(0xB3FFFFFF);
   static const Color controlSurface = Color(0x70000000);
+  static const Color utilitySurface = Color(0xE6202425);
+  static const Color pianoNatural = Color(0xFFF4F1E9);
+  static const Color pianoAccidental = Color(0xFF202729);
   static const double controlRadius = 22;
   static const double horizontalInset = 20;
   static const Duration fastFeedback = Duration(milliseconds: 140);

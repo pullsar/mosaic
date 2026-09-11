@@ -254,6 +254,65 @@ PlayDocument _exactSetPlay() => PlayDocument.fromJson({
 });
 
 void main() {
+  testWidgets('movable scenes share the authored canvas coordinate space', (
+    tester,
+  ) async {
+    final raw = _timedCuePlay(durationMs: 2000).toJson();
+    raw['assets'] = ['continuous_canvas'];
+    final states = raw['states']! as Map<String, Object?>;
+    final cue = states['cue']! as Map<String, Object?>;
+    final presentation = cue['presentation']! as Map<String, Object?>;
+    final layers = presentation['layers']! as List<Object?>;
+    layers.insert(0, {
+      'type': 'canvas',
+      'role': 'media',
+      'assetId': 'continuous_canvas',
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PlaySurface(
+          play: PlayDocument.fromJson(raw),
+          mediaBuilder: (_, _) => PlayCanvas(asset: _continuousCanvas()),
+        ),
+      ),
+    );
+    final paintedCanvas = find.descendant(
+      of: find.byType(PlayCanvas),
+      matching: find.byType(CustomPaint),
+    );
+    expect(
+      tester.getRect(find.byType(PlaySceneRenderer)),
+      tester.getRect(paintedCanvas),
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('dark Play objects remain legible in either app brightness', (
+    tester,
+  ) async {
+    final colors = <ColorScheme>[];
+    for (final brightness in Brightness.values) {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(brightness: brightness),
+          home: PlaySurface(play: _timedCuePlay(durationMs: 2000)),
+        ),
+      );
+      final palette = Theme.of(
+        tester.element(find.byType(PlaySceneRenderer)),
+      ).colorScheme;
+      colors.add(palette);
+      for (final ink in [palette.onSurface, palette.primary]) {
+        final contrast =
+            (ink.computeLuminance() + .05) /
+            (MosaicVisualTokens.surface.computeLuminance() + .05);
+        expect(contrast, greaterThanOrEqualTo(4.5));
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
+    }
+    expect(colors.first, colors.last);
+  });
+
   testWidgets(
     'answer contact compresses without submitting and cancellation restores it',
     (tester) async {

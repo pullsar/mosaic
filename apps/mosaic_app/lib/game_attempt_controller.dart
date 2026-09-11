@@ -49,6 +49,20 @@ final class GameAttemptController extends ChangeNotifier {
   PlayResolution? _lastResolution;
   bool _recoverable = true;
   bool _disposed = false;
+  int roundsCompleted = 0;
+  int correctRounds = 0;
+  bool _scored = false;
+
+  /// A final, unvalidated acknowledgement contains no further game decision.
+  /// The authored reveal remains intact while the app prepares another round.
+  bool get roundResolved =>
+      _lastResolution != null &&
+      (_session.ended ||
+          (_lastResolution!.wasCorrect != null &&
+              _session.state.input.type == PlayInputType.tap &&
+              _session.state.validation.type == PlayValidatorType.none &&
+              _session.state.transitions.length == 1 &&
+              _session.state.transitions['default'] == r'$end'));
 
   String get attemptId => _attemptId;
   GameAttemptMode get mode => _mode;
@@ -163,18 +177,42 @@ final class GameAttemptController extends ChangeNotifier {
     }
     _session = resolution.session;
     _lastResolution = resolution;
+    if (roundResolved && !_scored) {
+      _scored = true;
+      roundsCompleted++;
+      if (resolution.wasCorrect == true) correctRounds++;
+    }
     notifyListeners();
     return resolution;
   }
 
   void replay({GameAttemptMode mode = GameAttemptMode.practice}) {
+    _restart(_session.play, mode);
+  }
+
+  void advanceTo(PlayDocument next, {bool familiar = false}) {
+    final family = _session.play.gameFamily;
+    if (!roundResolved ||
+        family == null ||
+        next.gameFamily?.id != family.id ||
+        next.gameFamily?.revisionId != family.revisionId ||
+        next.id == _session.play.id) {
+      throw StateError(
+        'A fresh round requires a different compatible family Play.',
+      );
+    }
+    _restart(next, familiar ? GameAttemptMode.practice : GameAttemptMode.first);
+  }
+
+  void _restart(PlayDocument play, GameAttemptMode mode) {
     _lease.invalidate();
     _attemptId = _nextId(_idFactory);
     _mode = mode;
-    _session = _engine.start(_session.play);
+    _session = _engine.start(play);
     _actions.clear();
     _recoverable = true;
     _lastResolution = null;
+    _scored = false;
     notifyListeners();
   }
 

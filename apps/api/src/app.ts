@@ -248,6 +248,30 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     return reply.send(document);
   });
 
+  app.post('/v1/plays/:playId/revisions/:revisionId/next-round', async (request, reply) => {
+    const params = request.params as {playId?: string; revisionId?: string};
+    const playId = boundedText(params.playId, 200);
+    const revisionId = boundedText(params.revisionId, 200);
+    const capabilities = parseClientCapabilities(request.body);
+    if (!playId || !revisionId || !capabilities) {
+      return reply.code(400).send({error: 'invalid_request'});
+    }
+    const source = await options.repository.getPublicPlayRevision(playId, revisionId);
+    if (!isRecord(source)) return reply.code(404).send({error: 'public_play_not_found'});
+    const family = source.gameFamily;
+    if (!isRecord(family)) return reply.code(204).send();
+    const candidates = await options.repository.getNextGameRoundCandidates?.(playId, revisionId) ?? [];
+    for (const candidate of candidates.slice(0, 64)) {
+      if (!isRecord(candidate) || candidate.id === playId || !isRecord(candidate.gameFamily)) continue;
+      if (candidate.gameFamily.id !== family.id ||
+          candidate.gameFamily.revisionId !== family.revisionId) continue;
+      if (checkPlayCompatibility(candidate, capabilities).compatible) {
+        return reply.send(candidate);
+      }
+    }
+    return reply.code(204).send();
+  });
+
   const challenges = options.challengeRepository;
   if (challenges) {
     app.post('/v1/challenges', async (request, reply) => {

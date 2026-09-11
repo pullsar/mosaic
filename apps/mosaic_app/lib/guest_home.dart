@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:play_flutter/play_flutter.dart';
 
 import 'guest_engagement.dart';
@@ -107,39 +108,45 @@ final class _GuestHomeState extends State<GuestHome> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    key: const ValueKey<String>('guest-home'),
-    backgroundColor: Colors.black,
-    body: LayoutBuilder(
-      builder: (context, constraints) {
-        final mediaQuery = MediaQuery.of(context);
-        final composition = PlayViewportComposition.fromConstraints(
-          constraints,
-          safeInsets: mediaQuery.padding,
-          textScaler: mediaQuery.textScaler,
-        );
-        return PlayViewportScope(
-          composition: composition,
-          child: Stack(
-            fit: StackFit.expand,
-            children: <Widget>[
-              widget.child,
-              Positioned.fromRect(
-                rect: composition.chromeRect,
-                child: _GuestChrome(
-                  onSearch: widget.onSearch,
-                  activeSearchLabel: widget.activeSearchLabel,
-                  onClearSearch: widget.onClearSearch,
+  Widget build(BuildContext context) => AnnotatedRegion<SystemUiOverlayStyle>(
+    value: SystemUiOverlayStyle.light.copyWith(
+      statusBarColor: Colors.transparent,
+      systemNavigationBarColor: Colors.black,
+    ),
+    child: Scaffold(
+      key: const ValueKey<String>('guest-home'),
+      backgroundColor: Colors.black,
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final mediaQuery = MediaQuery.of(context);
+          final composition = PlayViewportComposition.fromConstraints(
+            constraints,
+            safeInsets: mediaQuery.padding,
+            textScaler: mediaQuery.textScaler,
+          );
+          return PlayViewportScope(
+            composition: composition,
+            child: Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                widget.child,
+                Positioned.fromRect(
+                  rect: composition.chromeRect,
+                  child: _GuestChrome(
+                    onSearch: widget.onSearch,
+                    activeSearchLabel: widget.activeSearchLabel,
+                    onClearSearch: widget.onClearSearch,
+                  ),
                 ),
-              ),
-              Positioned.fromRect(
-                rect: composition.navigationRect,
-                child: _GuestNavigation(onSaved: widget.onSaved),
-              ),
-            ],
-          ),
-        );
-      },
+                Positioned.fromRect(
+                  rect: composition.navigationRect,
+                  child: _GuestNavigation(onSaved: widget.onSaved),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
     ),
   );
 }

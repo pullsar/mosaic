@@ -6,6 +6,10 @@ This plan turns Mixli's product, experience, runtime, visual-language, accessibi
 
 The evolving execution tracker remains GitHub issue #48. This document defines the experience bar that implementation must satisfy.
 
+The [continuous-round implementation](2026-09-11-continuous-rounds.md) replaces
+Done/Replay in family games with immediate scoring and a prepared successor.
+API/catalog rollout and physical pacing checks remain explicit release gates.
+
 ## Current repository reality
 
 As of 2026-08-29, the upstream repository is already the real Flutter + Dart implementation—not a design shell or Next.js prototype. The shared client/runtime architecture is:
@@ -328,6 +332,12 @@ require their own evidence before release.
 Asset review used the shared Flutter renderer in a release browser preview at 390×844 and 320×640, including the pattern's answer transition. Square geometry accounts for the renderer's 4:5 canvas stage; circles and squares now have equal physical extents. The corrected routes have readable labels and uniform strokes. This review does not replace physical-device or first-time-user evidence.
 
 ## Definition of done
+
+The [2026-09-11 Android visual review](2026-09-11-device-visual-review.md)
+records the material palette, phone layout, canvas/scene alignment and system-bar
+fixes, reviewed screenshot references, and a bounded 120 Hz device capture.
+It supersedes the earlier four-golden-mismatch status. The live catalog still
+serves older starter revisions; the newer catalog requires publication.
 
 Mixli is experience-ready when it feels like a polished, calm, playful instrument: content is beautiful, the action is obvious, feedback is immediate, motion is purposeful, state reconciliation is trustworthy, accessibility is native to the interaction, resources remain bounded, and the user can always swipe away.
 

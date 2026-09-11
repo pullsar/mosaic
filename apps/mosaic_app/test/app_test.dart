@@ -15,6 +15,8 @@ import 'package:mosaic_app/main.dart';
 import 'package:platform_contracts/platform_contracts.dart';
 import 'package:play_schema/play_schema.dart';
 
+import 'continuous_game_host_test.dart' as game_fixture;
+
 final class _AppOutbox implements EventOutbox {
   @override
   Future<void> enqueue(
@@ -161,6 +163,71 @@ ConsumerFeedItem _seededItem() => ConsumerFeedItem.fromJson(
 );
 
 void main() {
+  testWidgets('continuous round updates the shared immutable revision', (
+    tester,
+  ) async {
+    final first = game_fixture.round('First');
+    final second = game_fixture.round('Second');
+    final item = ConsumerFeedItem.fromJson(
+      {
+        'playId': first.id,
+        'revisionId': first.revisionId,
+        'sourceBucket': 'known',
+        'document': first.toJson(),
+      },
+      compatibilityChecker: const PlayCompatibilityChecker(),
+      capabilities: PlayCapabilityEnvelope.m1(),
+    );
+    final runtime = AppEventRuntime.create(
+      resources: AppEventResources(
+        outbox: _AppOutbox(),
+        consumerLocalState: _SeededAppState(
+          ConsumerFeedCache(
+            requestId: 'continuous',
+            items: [item],
+            updatedAt: DateTime.now().toUtc(),
+          ),
+        ),
+        actorId: 'continuous_actor',
+        actorAccessToken: 'A' * 43,
+        close: () async {},
+      ),
+    );
+    final share = _ShareGateway();
+    final api = ConsumerApiClient(
+      baseUri: Uri.parse('https://api.example.test/'),
+      actorAccess: ActorAccessIdentity(
+        actorId: 'continuous_actor',
+        accessToken: 'A' * 43,
+      ),
+      client: MockClient(
+        (request) async => request.url.path.endsWith('/next-round')
+            ? http.Response(jsonEncode(second.toJson()), 200)
+            : http.Response('{}', 503),
+      ),
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MosaicApp(
+          eventRuntime: runtime,
+          consumerApi: api,
+          shareGateway: share,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('A'));
+    await tester.pump();
+    expect(find.text('Done'), findsNothing);
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+    expect(find.text('Second'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey<String>('play-action-share')));
+    await tester.pump();
+    expect(share.sharedUri, Uri.parse('https://mixli.app/p/Second/rev_1'));
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+  });
   testWidgets('first launch opens the guest discovery feed', (tester) async {
     await tester.pumpWidget(const ProviderScope(child: MosaicApp()));
     await tester.pumpAndSettle();
