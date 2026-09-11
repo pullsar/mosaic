@@ -355,17 +355,12 @@ final class _GuestSignupSheetState extends State<_GuestSignupSheet> {
           ),
           const SizedBox(height: 24),
           Text(
-            'Your Mixli is getting good',
+            'Early access',
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
               color: Colors.white,
               fontWeight: FontWeight.w800,
               letterSpacing: -0.5,
             ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Keep this feed and your progress.',
-            style: TextStyle(color: Color(0xFFB9B9C0), fontSize: 16),
           ),
           const SizedBox(height: 24),
           SizedBox(
@@ -433,18 +428,12 @@ final class _EarlyAccessPage extends StatelessWidget {
               letterSpacing: -1,
             ),
           ),
-          const SizedBox(height: 12),
-          const Text(
-            'Your guest feed stays right here.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Color(0xFFB9B9C0), fontSize: 17),
-          ),
           const Spacer(),
           SizedBox(
             height: 52,
             child: FilledButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Back to exploring'),
+              child: const Text('Continue playing'),
             ),
           ),
         ],
