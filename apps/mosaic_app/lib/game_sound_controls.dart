@@ -31,6 +31,7 @@ Future<void> showGameSoundControls(
 ) => showModalBottomSheet<void>(
   context: context,
   showDragHandle: true,
+  isScrollControlled: true,
   builder: (_) => _GameSoundSheet(controller: controller),
 );
 
@@ -45,12 +46,16 @@ final class _GameSoundSheet extends StatelessWidget {
       animation: controller,
       builder: (context, _) {
         final preferences = controller.preferences;
-        return Padding(
-          padding: const EdgeInsetsDirectional.only(bottom: 12),
+        return SingleChildScrollView(
+          padding: const EdgeInsetsDirectional.fromSTEB(20, 0, 20, 16),
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              const ListTile(title: Text('Sound')),
+              const Padding(
+                padding: EdgeInsetsDirectional.only(start: 4, bottom: 4),
+                child: Text('Sound'),
+              ),
               SwitchListTile.adaptive(
                 key: const ValueKey<String>('game-sound-master'),
                 title: const Text('Mute'),
@@ -63,6 +68,41 @@ final class _GameSoundSheet extends StatelessWidget {
                 onChanged: (value) =>
                     unawaited(controller.setMasterMuted(!value)),
               ),
+              SwitchListTile.adaptive(
+                key: const ValueKey<String>('game-sound-music'),
+                title: const Text('Music'),
+                secondary: const Icon(Icons.music_note_rounded),
+                value: preferences.musicEnabled,
+                onChanged: (value) =>
+                    unawaited(controller.setMusicEnabled(value)),
+              ),
+              SwitchListTile.adaptive(
+                key: const ValueKey<String>('game-sound-effects'),
+                title: const Text('Effects'),
+                secondary: const Icon(Icons.auto_awesome_rounded),
+                value: preferences.effectsEnabled,
+                onChanged: (value) =>
+                    unawaited(controller.setEffectsEnabled(value)),
+              ),
+              const SizedBox(height: 12),
+              Text('Theme', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final theme in _curatedThemes)
+                    ChoiceChip(
+                      key: ValueKey<String>(
+                        'game-theme:${theme.id ?? 'random'}',
+                      ),
+                      label: Text(theme.label),
+                      selected: preferences.themeId == theme.id,
+                      onSelected: (_) =>
+                          unawaited(controller.setThemeId(theme.id)),
+                    ),
+                ],
+              ),
             ],
           ),
         );
@@ -70,3 +110,18 @@ final class _GameSoundSheet extends StatelessWidget {
     ),
   );
 }
+
+final class _CuratedTheme {
+  const _CuratedTheme({required this.id, required this.label});
+
+  final String? id;
+  final String label;
+}
+
+const _curatedThemes = <_CuratedTheme>[
+  _CuratedTheme(id: null, label: 'Random'),
+  _CuratedTheme(id: 'paper-studio', label: 'Paper Studio'),
+  _CuratedTheme(id: 'night-museum', label: 'Night Museum'),
+  _CuratedTheme(id: 'glass-garden', label: 'Glass Garden'),
+  _CuratedTheme(id: 'orbital', label: 'Orbital'),
+];
