@@ -33,6 +33,7 @@ final class _PlayTimedCueInputState extends State<PlayTimedCueInput>
   late final AnimationController _progress;
   Timer? _completion;
   bool _started = false;
+  bool? _reducedMotion;
 
   @override
   void initState() {
@@ -43,7 +44,18 @@ final class _PlayTimedCueInputState extends State<PlayTimedCueInput>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_started) _start();
+    final reduced = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    if (!_started) {
+      _reducedMotion = reduced;
+      _start();
+    } else if (_reducedMotion != reduced) {
+      _reducedMotion = reduced;
+      if (reduced) {
+        _progress.stop();
+      } else {
+        unawaited(_progress.forward(from: _progress.value));
+      }
+    }
   }
 
   @override
@@ -59,7 +71,7 @@ final class _PlayTimedCueInputState extends State<PlayTimedCueInput>
       ..stop()
       ..duration = widget.duration
       ..value = 0;
-    if (!(MediaQuery.maybeOf(context)?.disableAnimations ?? false)) {
+    if (!(_reducedMotion ?? false)) {
       unawaited(_progress.forward());
     }
     _completion = Timer(widget.duration, () {

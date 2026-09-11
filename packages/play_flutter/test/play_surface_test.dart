@@ -193,6 +193,38 @@ void main() {
     expect(find.text('Pick one.'), findsOneWidget);
   });
 
+  testWidgets('timed cue stops motion when reduced motion changes', (
+    tester,
+  ) async {
+    Widget cue(bool reduced) => MaterialApp(
+      home: MediaQuery(
+        data: MediaQueryData(disableAnimations: reduced),
+        child: Center(
+          child: PlayTimedCueInput(
+            key: const ValueKey<String>('cue'),
+            duration: const Duration(milliseconds: 300),
+            cueId: 'observe_1',
+            ordinal: 1,
+            onElapsed: () {},
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(cue(false));
+    await tester.pump(const Duration(milliseconds: 80));
+    final before = tester.widget<LinearProgressIndicator>(
+      find.byType(LinearProgressIndicator),
+    );
+    expect(before.value, greaterThan(0));
+
+    await tester.pumpWidget(cue(true));
+    final reduced = tester.widget<LinearProgressIndicator>(
+      find.byType(LinearProgressIndicator),
+    );
+    expect(reduced.value, 1);
+  });
+
   testWidgets('fades a new stage state without duplicating the stage', (
     tester,
   ) async {
