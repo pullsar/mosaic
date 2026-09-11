@@ -57,4 +57,92 @@ void main() {
 
     expect(moves, [('match', 'slot')]);
   });
+
+  testWidgets('scene move resolves through the shared Play surface', (
+    tester,
+  ) async {
+    final play = PlayDocument.fromJson({
+      'schemaVersion': 1,
+      'id': 'scene_surface',
+      'revisionId': 'rev_1',
+      'format': 'solve',
+      'classification': 'challenge',
+      'topics': [],
+      'learningTopics': [],
+      'estimatedDurationSec': 10,
+      'assets': [],
+      'sources': [],
+      'entryState': 'move',
+      'states': {
+        'move': {
+          'presentation': {
+            'layers': [
+              {
+                'type': 'scene',
+                'role': 'media',
+                'scene': {
+                  'version': 1,
+                  'objects': [
+                    {
+                      'id': 'piece',
+                      'semanticLabel': 'Move piece',
+                      'shape': 'rounded_rect',
+                      'x': .2,
+                      'y': .2,
+                      'width': .05,
+                      'height': .2,
+                      'movable': true,
+                    },
+                  ],
+                  'targets': [
+                    {
+                      'id': 'slot',
+                      'semanticLabel': 'Open slot',
+                      'x': .7,
+                      'y': .2,
+                      'width': .05,
+                      'height': .2,
+                    },
+                  ],
+                },
+              },
+              {'type': 'text', 'role': 'prompt', 'value': 'Move it.'},
+            ],
+          },
+          'input': {'type': 'piece_move'},
+          'validation': {
+            'type': 'legal_piece_move',
+            'value': [
+              {'pieceId': 'piece', 'targetId': 'slot', 'correct': true},
+            ],
+          },
+          'transition': {'correct': 'reveal', 'incorrect': 'move'},
+        },
+        'reveal': {
+          'presentation': {
+            'layers': [
+              {'type': 'text', 'role': 'reveal_title', 'value': 'Placed.'},
+            ],
+          },
+          'input': {'type': 'tap', 'label': 'Done'},
+          'validation': {'type': 'none'},
+          'transition': {'default': r'$end'},
+        },
+      },
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox.expand(child: PlaySurface(play: play)),
+        ),
+      ),
+    );
+
+    await tester.tap(find.bySemanticsLabel('Move piece'));
+    await tester.pump();
+    await tester.tap(find.bySemanticsLabel('Open slot'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Placed.'), findsOneWidget);
+  });
 }
