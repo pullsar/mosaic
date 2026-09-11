@@ -4,6 +4,10 @@ import {
   PostgresCanvasAssetRepository,
 } from './canvas_asset.js';
 import {
+  PostgresGameThemeRegistry,
+  type GameFamilyManifest,
+} from './game_theme.js';
+import {
   assertProductionCatalogIntegrity,
   buildMatchstickCanvasAsset,
   moveSegment,
@@ -2338,7 +2342,7 @@ const clarifiedStarterPlays: readonly StarterPlay[] = clarifiedChoiceSpecs.map((
   document: choiceDocument(spec, 'rev_4'),
 }));
 const clarifiedPlayIds = new Set(clarifiedStarterPlays.map((play) => play.id));
-const starterPlays = [
+const authoredStarterPlays = [
   moveOneMatchV4,
   ...additionalMatchstickRounds,
   ...releaseV3StarterPlays
@@ -2359,6 +2363,66 @@ const starterPlays = [
   ...ruleFlipRounds,
   ...secondThoughtRounds,
 ] as const;
+
+type StarterFamilyId =
+  | 'one-move'
+  | 'quiet-switch'
+  | 'sleight'
+  | 'constellation'
+  | 'counterexample'
+  | 'evidence-lens'
+  | 'rule-flip'
+  | 'second-thought';
+
+const starterFamilyRevision = 'rev_1';
+
+function starterFamilyId(playId: string): StarterFamilyId | undefined {
+  if (playId.startsWith('mixli_starter_move_')) return 'one-move';
+  if (
+    playId === 'mixli_starter_quiet_switch' ||
+    /mixli_starter_(gallery|garden|studio|bakery|platform)_/.test(playId)
+  ) return 'quiet-switch';
+  if (playId.startsWith('mixli_starter_sleight_')) return 'sleight';
+  if (playId.startsWith('mixli_starter_constellation_')) return 'constellation';
+  if (playId.startsWith('mixli_starter_counterexample_')) return 'counterexample';
+  if (playId.startsWith('mixli_starter_evidence_lens_')) return 'evidence-lens';
+  if (playId.startsWith('mixli_starter_rule_flip_')) return 'rule-flip';
+  if (playId.startsWith('mixli_starter_second_thought_')) return 'second-thought';
+  return undefined;
+}
+
+function withGameFamily(play: StarterPlay): StarterPlay {
+  const familyId = starterFamilyId(play.id);
+  if (familyId === undefined) return play;
+  return {
+    ...play,
+    document: {
+      ...play.document,
+      gameFamily: {id: familyId, revisionId: starterFamilyRevision},
+    },
+  };
+}
+
+const starterPlays = authoredStarterPlays.map(withGameFamily);
+
+const starterFamilyManifests: readonly GameFamilyManifest[] = [
+  'one-move',
+  'quiet-switch',
+  'sleight',
+  'constellation',
+  'counterexample',
+  'evidence-lens',
+  'rule-flip',
+  'second-thought',
+].map((id) => ({
+  id,
+  revisionId: starterFamilyRevision,
+  playRevisions: starterPlays
+    .filter((play) => starterFamilyId(play.id) === id)
+    .map((play) => ({playId: play.id, revisionId: play.revisionId})),
+  requiredPlatformFlags: [],
+  compatibleThemes: [],
+}));
 
 const historicalStarterPlays = [
   ...legacyStarterPlays,
@@ -2559,6 +2623,8 @@ export async function applyProductionCatalog(
 ): Promise<ProductionCatalogStatus> {
   const canvasRepository = new PostgresCanvasAssetRepository(pool);
   for (const asset of canvasAssets) await canvasRepository.register(asset);
+  const gameFamilies = new PostgresGameThemeRegistry(pool);
+  for (const family of starterFamilyManifests) await gameFamilies.publishFamily(family);
 
   const client = await pool.connect();
   try {
