@@ -267,6 +267,54 @@ void main() {
     await tester.pump();
   });
 
+  testWidgets('invalid share origin falls back to the public Mixli origin', (
+    tester,
+  ) async {
+    final reported = <FlutterErrorDetails>[];
+    final previousOnError = FlutterError.onError;
+    FlutterError.onError = reported.add;
+    addTearDown(() => FlutterError.onError = previousOnError);
+    final shareGateway = _ShareGateway();
+    final runtime = AppEventRuntime.create(
+      resources: AppEventResources(
+        outbox: _AppOutbox(),
+        consumerLocalState: _SeededAppState(
+          ConsumerFeedCache(
+            requestId: 'request_invalid_share_origin',
+            items: <ConsumerFeedItem>[_seededItem()],
+            updatedAt: DateTime.now().toUtc(),
+          ),
+        ),
+        actorId: 'actor_invalid_share_origin',
+        actorAccessToken: 'A' * 43,
+        close: () async {},
+      ),
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MosaicApp(
+          eventRuntime: runtime,
+          shareGateway: shareGateway,
+          shareOrigin: Uri.parse('http://staging.mixli.app'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey<String>('play-action-share')));
+    await tester.pump();
+
+    expect(
+      shareGateway.sharedUri,
+      Uri.parse('https://mixli.app/p/play_app_share/revision_app_share'),
+    );
+    expect(reported, hasLength(1));
+    expect(reported.single.exception, isA<ArgumentError>());
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+
   testWidgets('Saved opens a retained local round', (tester) async {
     final state = _SeededAppState(
       ConsumerFeedCache(

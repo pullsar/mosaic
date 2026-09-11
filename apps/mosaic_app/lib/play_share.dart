@@ -25,8 +25,8 @@ abstract final class PlayShareLink {
     required String playId,
     required String revisionId,
   }) {
-    final canonicalOrigin = _canonicalOrigin(origin);
-    return canonicalOrigin.replace(
+    final normalizedOrigin = canonicalOrigin(origin);
+    return normalizedOrigin.replace(
       pathSegments: <String>[
         'p',
         _identifier(playId, 'playId'),
@@ -36,8 +36,8 @@ abstract final class PlayShareLink {
   }
 
   static PlayShareTarget? parse(Uri value, {required Uri origin}) {
-    final canonicalOrigin = _canonicalOrigin(origin);
-    if (!_sameOrigin(value, canonicalOrigin) ||
+    final normalizedOrigin = canonicalOrigin(origin);
+    if (!_sameOrigin(value, normalizedOrigin) ||
         value.hasQuery ||
         value.fragment.isNotEmpty ||
         value.userInfo.isNotEmpty) {
@@ -59,6 +59,9 @@ abstract final class PlayShareLink {
     }
     return _parseSegments(route.pathSegments);
   }
+
+  /// Validates a configured public origin and removes its optional root slash.
+  static Uri canonicalOrigin(Uri value) => _canonicalOrigin(value);
 
   static PlayShareTarget? _parseSegments(List<String> segments) {
     if (segments.length != 3 || segments[0] != 'p') return null;

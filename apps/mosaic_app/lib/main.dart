@@ -112,7 +112,7 @@ final class _MosaicAppState extends State<MosaicApp> {
     super.initState();
     _eventRuntime = widget.eventRuntime ?? AppEventRuntime.disabled();
     _shareGateway = widget.shareGateway ?? SharePlusGateway();
-    _shareOrigin = widget.shareOrigin ?? Uri.parse(_shareOriginValue);
+    _shareOrigin = _resolveShareOrigin();
     _initialRoute =
         widget.initialRoute ??
         WidgetsBinding.instance.platformDispatcher.defaultRouteName;
@@ -202,6 +202,28 @@ final class _MosaicAppState extends State<MosaicApp> {
       onSemanticResume: _resumeSemanticMedia,
       onError: _reportPlatformError,
     );
+  }
+
+  Uri _resolveShareOrigin() {
+    final configured = widget.shareOrigin ?? Uri.tryParse(_shareOriginValue);
+    if (configured != null) {
+      try {
+        return PlayShareLink.canonicalOrigin(configured);
+      } on ArgumentError catch (error, stackTrace) {
+        _reportEventRuntimeError(
+          error,
+          stackTrace,
+          operation: 'play_share_origin',
+        );
+      }
+    } else {
+      _reportEventRuntimeError(
+        StateError('MIXLI_SHARE_ORIGIN is not a URI.'),
+        StackTrace.current,
+        operation: 'play_share_origin',
+      );
+    }
+    return Uri(scheme: 'https', host: 'mixli.app');
   }
 
   void _resumeSemanticMedia() {
@@ -396,11 +418,17 @@ final class _MosaicAppState extends State<MosaicApp> {
     ConsumerFeedItem item,
     BuildContext actionContext,
   ) async {
-    final link = PlayShareLink.build(
-      origin: _shareOrigin,
-      playId: item.playId,
-      revisionId: item.revisionId,
-    );
+    late final Uri link;
+    try {
+      link = PlayShareLink.build(
+        origin: _shareOrigin,
+        playId: item.playId,
+        revisionId: item.revisionId,
+      );
+    } on Object catch (error, stackTrace) {
+      _reportEventRuntimeError(error, stackTrace, operation: 'play_share_link');
+      return;
+    }
     ShareDisposition disposition;
     try {
       disposition = await _shareGateway.share(link);
