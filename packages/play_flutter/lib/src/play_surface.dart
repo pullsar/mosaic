@@ -848,6 +848,20 @@ final class _InputOverlay extends StatelessWidget {
       );
     }
 
+    if (input.type == PlayInputType.multipleChoice) {
+      return Align(
+        alignment: Alignment.center,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          child: PlayMultipleChoiceInput(
+            key: ValueKey<String>('multiple-choice:$inputEpoch'),
+            options: input.options,
+            onSubmit: (values) => onAction(SequenceAction(values)),
+          ),
+        ),
+      );
+    }
+
     if (input.type == PlayInputType.pianoKey) {
       final spec = _safePianoSpec(input, validation);
       if (spec == null) {

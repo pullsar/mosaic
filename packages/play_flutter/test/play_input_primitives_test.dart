@@ -5,6 +5,36 @@ import 'package:play_flutter/play_flutter.dart';
 import 'package:play_schema/play_schema.dart';
 
 void main() {
+  testWidgets('multiple choice toggles options and submits a stable set', (
+    tester,
+  ) async {
+    final submitted = <List<String>>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PlayMultipleChoiceInput(
+            options: const [
+              PlayOption(id: 'beacon', label: 'Beacon'),
+              PlayOption(id: 'orbit', label: 'Orbit'),
+              PlayOption(id: 'comet', label: 'Comet'),
+            ],
+            onSubmit: submitted.add,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.bySemanticsLabel('Orbit'));
+    await tester.pump();
+    await tester.tap(find.bySemanticsLabel('Beacon'));
+    await tester.pump();
+    await tester.tap(find.text('Submit'));
+
+    expect(submitted, [
+      <String>['beacon', 'orbit'],
+    ]);
+  });
+
   testWidgets('a new pickup interrupts the return without a late snap', (
     tester,
   ) async {

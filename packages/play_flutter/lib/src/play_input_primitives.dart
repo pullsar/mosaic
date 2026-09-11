@@ -129,6 +129,78 @@ final class _PlayTimedCueInputState extends State<PlayTimedCueInput>
   }
 }
 
+final class PlayMultipleChoiceInput extends StatefulWidget {
+  const PlayMultipleChoiceInput({
+    required this.options,
+    required this.onSubmit,
+    super.key,
+  });
+
+  final List<PlayOption> options;
+  final ValueChanged<List<String>> onSubmit;
+
+  @override
+  State<PlayMultipleChoiceInput> createState() =>
+      _PlayMultipleChoiceInputState();
+}
+
+final class _PlayMultipleChoiceInputState
+    extends State<PlayMultipleChoiceInput> {
+  final Set<String> _selected = <String>{};
+
+  void _toggle(String id, bool selected) => setState(() {
+    if (selected) {
+      _selected.add(id);
+    } else {
+      _selected.remove(id);
+    }
+  });
+
+  void _submit() {
+    if (_selected.isEmpty) return;
+    widget.onSubmit(
+      List<String>.unmodifiable([
+        for (final option in widget.options)
+          if (_selected.contains(option.id)) option.id,
+      ]),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    container: true,
+    label: 'Multiple choice',
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final option in widget.options)
+              ChoiceChip(
+                label: Text(option.label),
+                selected: _selected.contains(option.id),
+                onSelected: (selected) => _toggle(option.id, selected),
+              ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Semantics(
+          button: true,
+          label: 'Submit selection',
+          child: FilledButton(
+            onPressed: _selected.isEmpty ? null : _submit,
+            child: const Text('Submit'),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
 final class PlayPianoInputSpec {
   const PlayPianoInputSpec({required this.keys, required this.sequenceLength});
 
