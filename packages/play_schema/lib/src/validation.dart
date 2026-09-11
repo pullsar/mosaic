@@ -1,4 +1,5 @@
 import 'capability.dart';
+import 'game_scene.dart';
 import 'interaction_defaults.dart';
 import 'model.dart';
 
@@ -325,8 +326,73 @@ final class PlaySchemaValidator {
         _validatePianoInput(stateId, state, issues);
       case PlayInputType.drag:
         _validateDragInput(stateId, state, issues);
+      case PlayInputType.pieceMove:
+        _validatePieceMoveInput(stateId, state, issues);
       default:
         break;
+    }
+  }
+
+  void _validatePieceMoveInput(
+    String stateId,
+    PlayStateDefinition state,
+    List<PlayValidationIssue> issues,
+  ) {
+    final path = 'states.$stateId';
+    final scene = state.presentation
+        .where((layer) => layer.type == 'scene')
+        .map((layer) => layer.scene)
+        .whereType<GameSceneDefinition>()
+        .firstOrNull;
+    if (scene == null ||
+        state.validation.type != PlayValidatorType.legalPieceMove) {
+      issues.add(
+        PlayValidationIssue(
+          code: 'piece_move_scene',
+          path: path,
+          message:
+              'piece_move requires a scene and legal_piece_move validation.',
+        ),
+      );
+      return;
+    }
+    final raw = state.validation.value;
+    if (raw is! List || raw.isEmpty || raw.length > 24) {
+      issues.add(
+        PlayValidationIssue(
+          code: 'piece_move_rules',
+          path: '$path.validation.value',
+          message: 'legal_piece_move requires 1–24 legal moves.',
+        ),
+      );
+      return;
+    }
+    final movable = scene.objects
+        .where((object) => object.movable)
+        .map((object) => object.id)
+        .toSet();
+    final targets = scene.targets.map((target) => target.id).toSet();
+    final pairs = <String>{};
+    final valid = raw.every(
+      (entry) =>
+          entry is Map &&
+          entry['pieceId'] is String &&
+          entry['targetId'] is String &&
+          entry['correct'] is bool &&
+          movable.contains(entry['pieceId']) &&
+          targets.contains(entry['targetId']) &&
+          pairs.add('${entry['pieceId']}\u0000${entry['targetId']}'),
+    );
+    if (!valid ||
+        !raw.any((entry) => entry is Map && entry['correct'] == true)) {
+      issues.add(
+        PlayValidationIssue(
+          code: 'piece_move_rules',
+          path: '$path.validation.value',
+          message:
+              'Piece moves must name unique real movable objects, targets, and a solution.',
+        ),
+      );
     }
   }
 

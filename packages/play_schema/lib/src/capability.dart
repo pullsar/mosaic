@@ -45,9 +45,22 @@ final class PlayCapabilityEnvelope {
   /// measured on the running client.
   factory PlayCapabilityEnvelope.m1() => const PlayCapabilityEnvelope(
     schemaVersions: {1},
-    presentationTypes: {'text', 'image', 'video_clip', 'audio', 'canvas'},
-    inputTypes: {'tap', 'single_choice', 'piano_key', 'drag'},
-    validatorTypes: {'none', 'equals', 'ordered_sequence', 'target_region'},
+    presentationTypes: {
+      'text',
+      'image',
+      'video_clip',
+      'audio',
+      'canvas',
+      'scene',
+    },
+    inputTypes: {'tap', 'single_choice', 'piano_key', 'drag', 'piece_move'},
+    validatorTypes: {
+      'none',
+      'equals',
+      'ordered_sequence',
+      'target_region',
+      'legal_piece_move',
+    },
   );
 
   factory PlayCapabilityEnvelope.fromJson(Map<String, Object?> json) {
