@@ -127,6 +127,18 @@ test('the observation pack contains six independently reviewed Quiet Switch roun
   assert.equal(new Set(reviews.map((review) => review.playId)).size, 6);
 });
 
+test('the timed pack contains six independently reviewed Sleight rounds', () => {
+  const reviews = productionCatalogIntegrityFixture.reviews.filter(
+    (review) => (review as {kind: string}).kind === 'sleight',
+  );
+
+  assert.equal(reviews.length, 6);
+  assert.equal(
+    new Set(reviews.map((review) => review.playId)).size,
+    6,
+  );
+});
+
 test('moving a piece preserves count and the original configuration', () => {
   const before = new Set(['a', 'b']);
 

@@ -4,6 +4,10 @@ import type {
   CanvasPalette,
 } from './canvas_asset.js';
 import {canonicalJson} from './media.js';
+import {
+  simulateSleightTrajectory,
+  type SleightTrajectory,
+} from './sleight_solver.js';
 
 export interface StarterPlayIntegrityDocument {
   readonly id?: unknown;
@@ -64,6 +68,17 @@ export type CatalogIntegrityReview =
       readonly choicePrompt: string;
       readonly answer: string;
       readonly changedElementIndex: number;
+      readonly revealStartsWith: string;
+    }
+  | {
+      readonly kind: 'sleight';
+      readonly playId: string;
+      readonly revisionId: string;
+      readonly prompt: string;
+      readonly cueId: string;
+      readonly durationMs: number;
+      readonly trajectory: SleightTrajectory;
+      readonly answerPositionId: string;
       readonly revealStartsWith: string;
     };
 
@@ -269,17 +284,18 @@ export function assertProductionCatalogIntegrity(
     const states = record(play.document.states, `${review.playId}.states`);
     const entryStateId = string(play.document.entryState, `${review.playId}.entryState`);
     const entryState = record(states[entryStateId], `${review.playId}.${entryStateId}`);
-    const primaryAssetId = firstAssetId(play.document.assets, review.playId);
-    const primaryAsset = assetById.get(primaryAssetId);
-    if (primaryAsset === undefined) {
-      throw new Error(`missing_canvas_asset:${review.playId}/${primaryAssetId}`);
+    const primaryAsset = review.kind === 'sleight'
+      ? undefined
+      : assetById.get(firstAssetId(play.document.assets, review.playId));
+    if (review.kind !== 'sleight' && primaryAsset === undefined) {
+      throw new Error(`missing_canvas_asset:${review.playId}`);
     }
     switch (review.kind) {
       case 'single_choice':
-        assertSingleChoiceReview(review, entryState, states, primaryAsset);
+        assertSingleChoiceReview(review, entryState, states, primaryAsset!);
         break;
       case 'preference':
-        assertPreferenceReview(review, entryState, primaryAsset, states);
+        assertPreferenceReview(review, entryState, primaryAsset!, states);
         break;
       case 'matchstick':
         assertMatchstickReview(review, entryState, states, assetById);
@@ -287,7 +303,66 @@ export function assertProductionCatalogIntegrity(
       case 'quiet_switch':
         assertQuietSwitchReview(review, entryState, states, assetById);
         break;
+      case 'sleight':
+        assertSleightReview(review, play.document, entryState, states);
+        break;
     }
+  }
+}
+
+function assertSleightReview(
+  review: Extract<CatalogIntegrityReview, {kind: 'sleight'}>,
+  document: StarterPlayIntegrityDocument,
+  entryState: Record<string, unknown>,
+  states: Record<string, unknown>,
+): void {
+  assertPrompt(review, entryState);
+  const flags: readonly unknown[] = Array.isArray(
+    (document as Record<string, unknown>).requiredPlatformFlags,
+  )
+    ? (document as Record<string, unknown>).requiredPlatformFlags as readonly unknown[]
+    : [];
+  if (!flags.includes('timed_scene_v1')) {
+    throw new Error(`sleight_capability_missing:${review.playId}`);
+  }
+  const input = record(entryState.input, `${review.playId}.input`);
+  if (
+    input.type !== 'timed_cue' ||
+    input.cueId !== review.cueId ||
+    input.cueOrdinal !== 1 ||
+    input.durationMs !== review.durationMs
+  ) {
+    throw new Error(`sleight_timed_input_mismatch:${review.playId}`);
+  }
+  const sceneLayer = presentationLayers(entryState, review.playId).find(
+    (layer) => layer.type === 'scene' && layer.role === 'media',
+  );
+  const scene = record(sceneLayer?.scene, `${review.playId}.scene`);
+  const cues = Array.isArray(scene.cues) ? scene.cues : [];
+  if (!review.trajectory.cupIds.every((cupId) =>
+    cues.some((cue) => {
+      const candidate = record(cue, `${review.playId}.cue`);
+      return candidate.id === review.cueId && candidate.objectId === cupId;
+    }))) {
+    throw new Error(`sleight_cue_tracks_missing:${review.playId}`);
+  }
+  const answer = simulateSleightTrajectory(review.trajectory).finalPositionId;
+  if (answer !== review.answerPositionId) {
+    throw new Error(`sleight_answer_mismatch:${review.playId}`);
+  }
+  const choose = record(states.choose, `${review.playId}.choose`);
+  const options = optionIdsFrom(record(choose.input, `${review.playId}.choose.input`), review.playId);
+  const validation = record(choose.validation, `${review.playId}.choose.validation`);
+  if (
+    !options.includes(answer) ||
+    validation.type !== 'equals' ||
+    validation.value !== answer
+  ) {
+    throw new Error(`sleight_choice_mismatch:${review.playId}`);
+  }
+  const reveal = record(states.reveal, `${review.playId}.reveal`);
+  if (!revealTitleFrom(reveal, review.playId).startsWith(review.revealStartsWith)) {
+    throw new Error(`sleight_reveal_mismatch:${review.playId}`);
   }
 }
 

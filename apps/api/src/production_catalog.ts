@@ -11,9 +11,10 @@ import {
   type ProductionCatalogIntegrityFixture,
 } from './catalog_integrity.js';
 import {canonicalJson} from './media.js';
+import type {SleightTrajectory, SleightTrajectoryEvent} from './sleight_solver.js';
 
 export const productionStarterPrefix = 'mixli_starter_';
-export const productionStarterCount = 17;
+export const productionStarterCount = 23;
 
 export interface ProductionCatalogStatus {
   eligiblePlays: number;
@@ -334,6 +335,13 @@ function matchstickEquationSegments(
   segments.add('operator.horizontal');
   if (operator === '+') segments.add('operator.vertical');
   return segments;
+}
+
+interface SleightRoundSpec {
+  readonly id: string;
+  readonly trajectory: SleightTrajectory;
+  readonly durationMs: number;
+  readonly answerPositionId: 'left' | 'center' | 'right';
 }
 
 const additionalMatchstickRoundSpecs: readonly MatchstickRoundSpec[] = [
@@ -1614,6 +1622,109 @@ const additionalQuietSwitchV2 = additionalQuietSwitchSpecs.map((spec) =>
   additionalQuietSwitchPlay(spec, 'rev_2'),
 );
 
+const sleightRoundSpecs: readonly SleightRoundSpec[] = [
+  {id: 'mixli_starter_sleight_one', durationMs: 2400, answerPositionId: 'right', trajectory: {cupIds: ['left', 'center', 'right'], coinStartCupId: 'left', events: [{atMs: 500, type: 'occlude', cupId: 'left'}, {atMs: 1400, type: 'swap', firstCupId: 'left', secondCupId: 'right'}]}},
+  {id: 'mixli_starter_sleight_two', durationMs: 2600, answerPositionId: 'left', trajectory: {cupIds: ['left', 'center', 'right'], coinStartCupId: 'center', events: [{atMs: 600, type: 'swap', firstCupId: 'center', secondCupId: 'left'}, {atMs: 1700, type: 'swap', firstCupId: 'left', secondCupId: 'right'}]}},
+  {id: 'mixli_starter_sleight_three', durationMs: 2800, answerPositionId: 'center', trajectory: {cupIds: ['left', 'center', 'right'], coinStartCupId: 'right', events: [{atMs: 550, type: 'occlude', cupId: 'right'}, {atMs: 1200, type: 'swap', firstCupId: 'right', secondCupId: 'center'}, {atMs: 2100, type: 'swap', firstCupId: 'center', secondCupId: 'left'}]}},
+  {id: 'mixli_starter_sleight_four', durationMs: 2700, answerPositionId: 'left', trajectory: {cupIds: ['left', 'center', 'right'], coinStartCupId: 'left', events: [{atMs: 650, type: 'swap', firstCupId: 'left', secondCupId: 'center'}, {atMs: 1400, type: 'transfer', fromCupId: 'left', toCupId: 'right'}, {atMs: 2100, type: 'swap', firstCupId: 'right', secondCupId: 'center'}]}},
+  {id: 'mixli_starter_sleight_five', durationMs: 2500, answerPositionId: 'right', trajectory: {cupIds: ['left', 'center', 'right'], coinStartCupId: 'center', events: [{atMs: 700, type: 'transfer', fromCupId: 'center', toCupId: 'left'}, {atMs: 1700, type: 'swap', firstCupId: 'left', secondCupId: 'right'}]}},
+  {id: 'mixli_starter_sleight_six', durationMs: 2900, answerPositionId: 'right', trajectory: {cupIds: ['left', 'center', 'right'], coinStartCupId: 'right', events: [{atMs: 600, type: 'swap', firstCupId: 'right', secondCupId: 'left'}, {atMs: 1400, type: 'transfer', fromCupId: 'right', toCupId: 'center'}, {atMs: 2200, type: 'swap', firstCupId: 'center', secondCupId: 'left'}]}},
+];
+
+function sleightRound(spec: SleightRoundSpec): StarterPlay {
+  const cueId = 'shuffle_1';
+  const initialScene = sleightScene(spec, cueId, false);
+  const finalScene = sleightScene(spec, cueId, true);
+  const answerLabel = `${spec.answerPositionId[0]!.toUpperCase()}${spec.answerPositionId.slice(1)} cup`;
+  return {
+    id: spec.id,
+    revisionId: 'rev_1',
+    topics: ['observation', 'focus'],
+    document: {
+      schemaVersion: 1,
+      id: spec.id,
+      revisionId: 'rev_1',
+      format: 'guess',
+      classification: 'challenge',
+      topics: ['observation', 'focus'],
+      learningTopics: [],
+      estimatedDurationSec: 12,
+      assets: [],
+      sources: [],
+      requiredPlatformFlags: ['timed_scene_v1'],
+      entryState: 'observe',
+      states: {
+        observe: {
+          presentation: {layers: [{type: 'scene', role: 'media', scene: initialScene}, {type: 'text', role: 'prompt', value: 'Track the coin.'}]},
+          input: {type: 'timed_cue', cueId, cueOrdinal: 1, durationMs: spec.durationMs},
+          validation: {type: 'none'},
+          transition: {default: 'choose'},
+        },
+        choose: {
+          presentation: {layers: [{type: 'scene', role: 'media', scene: finalScene}, {type: 'text', role: 'prompt', value: 'Where is it?'}]},
+          input: {type: 'single_choice', options: [{id: 'left', label: 'Left cup'}, {id: 'center', label: 'Center cup'}, {id: 'right', label: 'Right cup'}]},
+          validation: {type: 'equals', value: spec.answerPositionId},
+          transition: {correct: 'reveal', incorrect: 'choose'},
+        },
+        reveal: {
+          presentation: {layers: [{type: 'scene', role: 'media', scene: finalScene}, {type: 'text', role: 'reveal_title', value: `The coin finishes under the ${answerLabel.toLowerCase()}.`}]},
+          input: {type: 'tap', label: 'Done'}, validation: {type: 'none'}, transition: {default: '$end'},
+        },
+      },
+    },
+  };
+}
+
+function sleightScene(spec: SleightRoundSpec, cueId: string, final: boolean): Record<string, unknown> {
+  const positions = new Map<string, string>(spec.trajectory.cupIds.map((cupId) => [cupId, cupId]));
+  let coinCupId = spec.trajectory.coinStartCupId;
+  const cupFrames = new Map<string, Array<Record<string, number>>>();
+  const coinFrames: Array<Record<string, number>> = [];
+  const addFrame = (timeMs: number) => {
+    for (const cupId of spec.trajectory.cupIds) cupFrames.get(cupId)!.push({timeMs, ...sleightRect(positions.get(cupId)!)});
+    coinFrames.push({timeMs, ...sleightCoinRect(positions.get(coinCupId)!)});
+  };
+  for (const cupId of spec.trajectory.cupIds) cupFrames.set(cupId, []);
+  addFrame(0);
+  for (const event of spec.trajectory.events) {
+    applySleightVisualEvent(event, positions, (cupId) => { if (event.type === 'transfer' && event.fromCupId === coinCupId) coinCupId = event.toCupId; });
+    addFrame(event.atMs);
+  }
+  addFrame(spec.durationMs);
+  const object = (id: string, label: string, rect: Record<string, number>, shape: 'circle' | 'rounded_rect', tone: string) => ({id, semanticLabel: label, shape, ...rect, tone});
+  const objects = [
+    object('coin', 'Coin', coinFrames[final ? coinFrames.length - 1 : 0]!, 'circle', 'accent'),
+    ...spec.trajectory.cupIds.map((cupId) => object(cupId, 'Cup', cupFrames.get(cupId)![final ? cupFrames.get(cupId)!.length - 1 : 0]!, 'rounded_rect', 'surface')),
+  ];
+  return {version: 1, objects, targets: [], ...(final ? {} : {cues: [
+    {id: cueId, objectId: 'coin', durationMs: spec.durationMs, keyframes: coinFrames},
+    ...spec.trajectory.cupIds.map((cupId) => ({id: cueId, objectId: cupId, durationMs: spec.durationMs, keyframes: cupFrames.get(cupId)!})),
+  ]})};
+}
+
+function applySleightVisualEvent(event: SleightTrajectoryEvent, positions: Map<string, string>, transfer: (cupId: string) => void): void {
+  if (event.type === 'swap') {
+    const first = positions.get(event.firstCupId)!;
+    positions.set(event.firstCupId, positions.get(event.secondCupId)!);
+    positions.set(event.secondCupId, first);
+  } else if (event.type === 'transfer') {
+    transfer(event.fromCupId);
+  }
+}
+
+function sleightRect(position: string): Record<string, number> {
+  const x = {left: .1, center: .42, right: .74}[position];
+  if (x === undefined) throw new Error(`unknown_sleight_position:${position}`);
+  return {x, y: .36, width: .16, height: .28};
+}
+
+function sleightCoinRect(position: string): Record<string, number> {
+  const cup = sleightRect(position);
+  return {x: cup.x! + .06, y: cup.y! + .2, width: .04, height: .04};
+}
+
+const sleightRounds = sleightRoundSpecs.map(sleightRound);
+
 const releaseV3StarterPlays: readonly StarterPlay[] = [
   moveOneMatchV3,
   ...releaseV3ChoiceSpecs.map((spec) => ({
@@ -1648,6 +1759,7 @@ const starterPlays = [
       ),
   quietSwitchV2,
   ...additionalQuietSwitchV2,
+  ...sleightRounds,
 ] as const;
 
 const historicalStarterPlays = [
@@ -1779,6 +1891,17 @@ const starterIntegrityReviews: readonly CatalogIntegrityReview[] = [
     answer: spec.answer,
     changedElementIndex: spec.changedElementIndex,
     revealStartsWith: spec.reveal,
+  })),
+  ...sleightRoundSpecs.map((spec) => ({
+    kind: 'sleight' as const,
+    playId: spec.id,
+    revisionId: 'rev_1',
+    prompt: 'Track the coin.',
+    cueId: 'shuffle_1',
+    durationMs: spec.durationMs,
+    trajectory: spec.trajectory,
+    answerPositionId: spec.answerPositionId,
+    revealStartsWith: 'The coin finishes',
   })),
 ] as const;
 
