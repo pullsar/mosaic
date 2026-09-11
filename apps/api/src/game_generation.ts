@@ -14,6 +14,14 @@ import {
 const generatorVersion = 'one-move-matchstick-v1';
 const maximumDrafts = 24;
 const maximumCandidateChecksPerDraft = 200;
+const generatedThemeIds = [
+  'paper-studio',
+  'night-museum',
+  'glass-garden',
+  'orbital',
+] as const;
+
+export type GeneratedThemeId = typeof generatedThemeIds[number];
 
 export interface OneMoveGenerationRequest {
   readonly seed: number;
@@ -29,6 +37,8 @@ export interface OneMoveMatchstickDraft {
   readonly solution: MatchstickMoveSolution;
   readonly structuralSignature: string;
   readonly canonicalHash: string;
+  /** Frozen visual material selected independently from the puzzle mechanics. */
+  readonly themeId: GeneratedThemeId;
   readonly media: {
     readonly sourceCanvasAssetId: string;
     readonly solvedCanvasAssetId: string;
@@ -72,6 +82,7 @@ export function generateOneMoveMatchstickDrafts(
   request: OneMoveGenerationRequest,
 ): OneMoveGenerationResult {
   validateRequest(request);
+  const themePreference = normalizeThemePreference(request.themePreference);
   const candidatePool = oneMoveCandidates();
   const random = mulberry32(request.seed);
   const shuffled = [...candidatePool];
@@ -95,15 +106,16 @@ export function generateOneMoveMatchstickDrafts(
       rejections.duplicate_structure += 1;
       continue;
     }
+    const themeId = resolveDraftTheme(themePreference, random);
     const canonical = JSON.stringify({
       family: 'one_move_matchstick',
       generatorVersion,
       sourceSegments: candidate.sourceSegments,
       solution: candidate.solution,
+      themeId,
     });
-    const themePreference = normalizeThemePreference(request.themePreference);
     const canonicalHash = createHash('sha256').update(canonical).digest('hex');
-    const renderable = buildRenderableDraft(candidate, canonicalHash);
+    const renderable = buildRenderableDraft(candidate, canonicalHash, themeId);
     drafts.push(Object.freeze({
       family: 'one_move_matchstick',
       generatorVersion,
@@ -112,6 +124,7 @@ export function generateOneMoveMatchstickDrafts(
       solution: candidate.solution,
       structuralSignature: candidate.structuralSignature,
       canonicalHash,
+      themeId,
       ...renderable,
       ...(themePreference === undefined ? {} : {themePreference}),
     }));
@@ -126,21 +139,34 @@ export function generateOneMoveMatchstickDrafts(
   });
 }
 
-const draftMatchstickPalette: CanvasPalette = Object.freeze({
-  background: '#FFF7ED',
-  foreground: '#5D2518',
-  accent: '#C9783E',
-  muted: '#7C6253',
-  surface: '#F4E4D4',
-});
+const draftMatchstickPalettes: Readonly<Record<GeneratedThemeId, CanvasPalette>> =
+  Object.freeze({
+    'paper-studio': Object.freeze({
+      background: '#FFF7ED', foreground: '#5D2518', accent: '#C9783E',
+      muted: '#7C6253', surface: '#F4E4D4',
+    }),
+    'night-museum': Object.freeze({
+      background: '#16191E', foreground: '#F3F4F6', accent: '#A8D6FF',
+      muted: '#B2BAC7', surface: '#27303A',
+    }),
+    'glass-garden': Object.freeze({
+      background: '#EFF8F2', foreground: '#173D35', accent: '#157A6E',
+      muted: '#52736A', surface: '#D4EBE0',
+    }),
+    orbital: Object.freeze({
+      background: '#0B1020', foreground: '#F4F7FF', accent: '#66D2FF',
+      muted: '#B5C0D8', surface: '#1C2842',
+    }),
+  });
 
 function buildRenderableDraft(
   candidate: Candidate,
   canonicalHash: string,
+  themeId: GeneratedThemeId,
 ): Pick<OneMoveMatchstickDraft, 'media' | 'canvasAssets' | 'document' | 'editorial'> {
   const media = Object.freeze({
-    sourceCanvasAssetId: `draft_matchsticks_${canonicalHash}_source`,
-    solvedCanvasAssetId: `draft_matchsticks_${canonicalHash}_solved`,
+    sourceCanvasAssetId: `draft_matchsticks_${themeId}_${canonicalHash}_source`,
+    solvedCanvasAssetId: `draft_matchsticks_${themeId}_${canonicalHash}_solved`,
   });
   const staticSource = new Set(candidate.sourceSegments);
   staticSource.delete(candidate.solution.from);
@@ -150,11 +176,13 @@ function buildRenderableDraft(
     media.sourceCanvasAssetId,
     staticSource,
     'An incomplete matchstick equation.',
+    draftMatchstickPalettes[themeId],
   );
   const solvedAsset = buildDraftMatchstickCanvas(
     media.solvedCanvasAssetId,
     solved,
     'A solved matchstick equation.',
+    draftMatchstickPalettes[themeId],
   );
   const pieceId = `match_${candidate.solution.from.replace('.', '_')}`;
   const targetSegments = [
@@ -259,6 +287,7 @@ function buildDraftMatchstickCanvas(
   id: string,
   occupied: ReadonlySet<string>,
   semanticLabel: string,
+  palette: CanvasPalette,
 ): CanvasAssetDocument {
   const elements = [...occupied]
     .sort()
@@ -272,7 +301,7 @@ function buildDraftMatchstickCanvas(
     id,
     semanticLabel,
     elements: Object.freeze(elements),
-    palette: draftMatchstickPalette,
+    palette,
   });
 }
 
@@ -367,13 +396,23 @@ function validateRequest(request: OneMoveGenerationRequest): void {
   normalizeThemePreference(request.themePreference);
 }
 
-function normalizeThemePreference(value: string | undefined): string | undefined {
+function normalizeThemePreference(value: string | undefined): GeneratedThemeId | undefined {
   if (value === undefined) return undefined;
   const normalized = value.trim();
   if (normalized.length === 0 || normalized.length > 200) {
     throw new RangeError('themePreference must be 1 to 200 characters');
   }
-  return normalized;
+  if (!(generatedThemeIds as readonly string[]).includes(normalized)) {
+    throw new RangeError('themePreference must identify a curated theme');
+  }
+  return normalized as GeneratedThemeId;
+}
+
+function resolveDraftTheme(
+  preference: GeneratedThemeId | undefined,
+  random: () => number,
+): GeneratedThemeId {
+  return preference ?? generatedThemeIds[Math.floor(random() * generatedThemeIds.length)]!;
 }
 
 function mulberry32(seed: number): () => number {

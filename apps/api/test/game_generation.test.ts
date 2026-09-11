@@ -1,4 +1,4 @@
-import {deepEqual, equal, throws} from 'node:assert/strict';
+import {deepEqual, equal, notDeepEqual, notEqual, throws} from 'node:assert/strict';
 import {mkdtemp, readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -29,8 +29,14 @@ test('One Move generation is byte-stable and independently solver-checked', () =
       enumerateOneMoveMatchstickSolutions(new Set(draft.sourceSegments)),
       [draft.solution],
     );
-    equal(draft.media.sourceCanvasAssetId, `draft_matchsticks_${draft.canonicalHash}_source`);
-    equal(draft.media.solvedCanvasAssetId, `draft_matchsticks_${draft.canonicalHash}_solved`);
+    equal(
+      draft.media.sourceCanvasAssetId,
+      `draft_matchsticks_${draft.themeId}_${draft.canonicalHash}_source`,
+    );
+    equal(
+      draft.media.solvedCanvasAssetId,
+      `draft_matchsticks_${draft.themeId}_${draft.canonicalHash}_solved`,
+    );
     equal(draft.canvasAssets.length, 2);
     deepEqual(
       draft.canvasAssets.map((asset) => asset.id),
@@ -79,7 +85,7 @@ test('One Move generation is byte-stable and independently solver-checked', () =
   }
 });
 
-test('theme preference cannot change a generated One Move answer', () => {
+test('a curated theme changes generated One Move material without changing its answer', () => {
   const random = generateOneMoveMatchstickDrafts({seed: 91, count: 1});
   const paper = generateOneMoveMatchstickDrafts({
     seed: 91,
@@ -89,13 +95,37 @@ test('theme preference cannot change a generated One Move answer', () => {
 
   deepEqual(random.drafts[0]!.sourceSegments, paper.drafts[0]!.sourceSegments);
   deepEqual(random.drafts[0]!.solution, paper.drafts[0]!.solution);
+  equal(paper.drafts[0]!.themeId, 'paper-studio');
   equal(paper.drafts[0]!.themePreference, 'paper-studio');
+
+  const orbital = generateOneMoveMatchstickDrafts({
+    seed: 91,
+    count: 1,
+    themePreference: 'orbital',
+  });
+  deepEqual(paper.drafts[0]!.sourceSegments, orbital.drafts[0]!.sourceSegments);
+  deepEqual(paper.drafts[0]!.solution, orbital.drafts[0]!.solution);
+  equal(orbital.drafts[0]!.themeId, 'orbital');
+  notDeepEqual(
+    paper.drafts[0]!.canvasAssets[0]!.palette,
+    orbital.drafts[0]!.canvasAssets[0]!.palette,
+  );
+  notEqual(paper.drafts[0]!.canonicalHash, orbital.drafts[0]!.canonicalHash);
 });
 
 test('One Move generation rejects unbounded requests', () => {
   throws(() => generateOneMoveMatchstickDrafts({seed: 1, count: 0}), /count/);
   throws(() => generateOneMoveMatchstickDrafts({seed: 1, count: 25}), /count/);
   throws(() => generateOneMoveMatchstickDrafts({seed: -1, count: 1}), /seed/);
+  throws(
+    () =>
+      generateOneMoveMatchstickDrafts({
+        seed: 1,
+        count: 1,
+        themePreference: 'unreviewed-neon',
+      }),
+    /curated theme/,
+  );
 });
 
 test('local draft CLI requires an explicit output and writes no publication state', async () => {
