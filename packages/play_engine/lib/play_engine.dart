@@ -182,8 +182,9 @@ _Evaluation _legalPieceMove(Object? raw, PlayAction action) {
     if (entry is! Map ||
         entry['pieceId'] is! String ||
         entry['targetId'] is! String ||
-        entry['correct'] is! bool)
-      continue;
+        entry['correct'] is! bool) {
+      throw StateError('legal_piece_move payload is malformed.');
+    }
     if (entry['pieceId'] == action.pieceId &&
         entry['targetId'] == action.targetId) {
       return (entry['correct'] as bool)
@@ -191,7 +192,7 @@ _Evaluation _legalPieceMove(Object? raw, PlayAction action) {
           : const _Evaluation(outcome: 'incorrect', wasCorrect: false);
     }
   }
-  return const _Evaluation(outcome: 'incorrect', wasCorrect: false);
+  throw StateError('piece_move action references an unknown piece or target.');
 }
 
 final class _Evaluation {

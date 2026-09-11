@@ -49,6 +49,7 @@ export type CatalogIntegrityReview =
       readonly solvedAssetId: string;
       readonly sourceSegments: readonly string[];
       readonly sourceEquation: string;
+      readonly movingPieceId: string;
       readonly destinations: readonly MatchstickDestination[];
       readonly answerDestinationId: string;
       readonly solvedEquation: string;
@@ -85,6 +86,7 @@ type PlayState = {
       readonly role?: unknown;
       readonly value?: unknown;
       readonly assetId?: unknown;
+      readonly scene?: unknown;
     }[];
   };
   readonly input?: {
@@ -430,7 +432,7 @@ function assertMatchstickReview(
 ): void {
   assertPrompt(review, entryState);
   const input = record(entryState.input, `${review.playId}.input`);
-  if (input.type !== 'drag') throw new Error(`review_input_type:${review.playId}`);
+  if (input.type !== 'piece_move') throw new Error(`review_input_type:${review.playId}`);
   const entryLayers = presentationLayers(entryState, review.playId);
   if (
     !entryLayers.some(
@@ -439,7 +441,19 @@ function assertMatchstickReview(
   ) {
     throw new Error(`matchstick_source_asset_mismatch:${review.playId}`);
   }
-  const targets = Array.isArray(input.targets) ? input.targets : [];
+  const sceneLayer = entryLayers.find(
+    (layer) => layer.type === 'scene' && layer.role === 'media',
+  );
+  const scene = record(sceneLayer?.scene, `${review.playId}.scene`);
+  const objects = Array.isArray(scene.objects) ? scene.objects : [];
+  const movablePiece = objects.find((object) => {
+    const candidate = record(object, `${review.playId}.scene.object`);
+    return candidate.id === review.movingPieceId && candidate.movable === true;
+  });
+  if (movablePiece === undefined) {
+    throw new Error(`matchstick_moving_piece_mismatch:${review.playId}`);
+  }
+  const targets = Array.isArray(scene.targets) ? scene.targets : [];
   const targetIds = targets.map((target) =>
     string(record(target, `${review.playId}.target`).id, `${review.playId}.target.id`),
   );
@@ -448,9 +462,19 @@ function assertMatchstickReview(
     throw new Error(`matchstick_targets_mismatch:${review.playId}`);
   }
   const validation = record(entryState.validation, `${review.playId}.validation`);
+  if (validation.type !== 'legal_piece_move' || !Array.isArray(validation.value)) {
+    throw new Error(`review_answer_mismatch:${review.playId}`);
+  }
+  const legalMoves = validation.value.map((move, index) =>
+    record(move, `${review.playId}.validation.value[${index}]`),
+  );
   if (
-    validation.type !== 'target_region' ||
-    validation.value !== review.answerDestinationId
+    legalMoves.length !== review.destinations.length ||
+    legalMoves.some((move, index) =>
+      move.pieceId !== review.movingPieceId ||
+      move.targetId !== review.destinations[index]?.id ||
+      move.correct !== (review.destinations[index]?.id === review.answerDestinationId),
+    )
   ) {
     throw new Error(`review_answer_mismatch:${review.playId}`);
   }
@@ -469,13 +493,15 @@ function assertMatchstickReview(
   if (sourceAsset === undefined) {
     throw new Error(`missing_canvas_asset:${review.playId}/${review.sourceAssetId}`);
   }
-  assertMatchstickAsset(sourceAsset, source, review.playId);
   const sourcePieceIds = new Set(
     review.destinations.map((destination) => destination.from),
   );
   if (sourcePieceIds.size !== 1) {
     throw new Error(`matchstick_multiple_source_segments:${review.playId}`);
   }
+  const sourceWithoutMovedPiece = new Set(source);
+  sourceWithoutMovedPiece.delete([...sourcePieceIds][0]!);
+  assertMatchstickAsset(sourceAsset, sourceWithoutMovedPiece, review.playId);
   const resolvedDestinations = review.destinations.map((destination) => {
     const segments = moveSegment(source, destination.from, destination.to);
     return {
@@ -556,6 +582,7 @@ function presentationLayers(
   readonly role?: unknown;
   readonly value?: unknown;
   readonly assetId?: unknown;
+  readonly scene?: unknown;
 }[] {
   const presentation = record(state.presentation, `${playId}.presentation`);
   if (!Array.isArray(presentation.layers)) {

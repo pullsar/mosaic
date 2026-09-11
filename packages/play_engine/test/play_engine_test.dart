@@ -120,6 +120,50 @@ void main() {
     expect(result.session.piecePlacements, {'match': 'slot'});
   });
 
+  test('piece moves reject unlisted source and destination pairs', () {
+    final play = playWithValidation(
+      inputType: 'piece_move',
+      validation: {
+        'type': 'legal_piece_move',
+        'value': [
+          {'pieceId': 'match', 'targetId': 'slot', 'correct': true},
+        ],
+      },
+    );
+
+    expect(
+      () => engine.apply(
+        engine.start(play),
+        const PieceMoveAction(pieceId: 'match', targetId: 'unknown_slot'),
+      ),
+      throwsA(
+        stateErrorMessage(
+          'piece_move action references an unknown piece or target.',
+        ),
+      ),
+    );
+  });
+
+  test('piece moves reject malformed legal move rules', () {
+    final play = playWithValidation(
+      inputType: 'piece_move',
+      validation: {
+        'type': 'legal_piece_move',
+        'value': [
+          {'pieceId': 'match', 'targetId': 'slot'},
+        ],
+      },
+    );
+
+    expect(
+      () => engine.apply(
+        engine.start(play),
+        const PieceMoveAction(pieceId: 'match', targetId: 'slot'),
+      ),
+      throwsA(stateErrorMessage('legal_piece_move payload is malformed.')),
+    );
+  });
+
   test('unimplemented typed inputs reject arbitrary actions', () {
     final play = PlayDocument.fromJson({
       'schemaVersion': 1,

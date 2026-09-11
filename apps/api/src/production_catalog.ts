@@ -292,6 +292,15 @@ const matchstickSolvedSegments = moveSegment(
 
 const verifiedCanvasAssets = [
   buildMatchstickCanvasAsset(
+    'mixli_canvas_matchsticks_base_v4',
+    new Set(
+      [...matchstickSourceSegments].filter(
+        (segment) => segment !== 'operator.vertical',
+      ),
+    ),
+    matchstickPalette,
+  ),
+  buildMatchstickCanvasAsset(
     'mixli_canvas_matchsticks_v3',
     matchstickSourceSegments,
     matchstickPalette,
@@ -975,6 +984,123 @@ const releaseV3ChoiceSpecs: readonly ChoiceSpec[] = [
   },
 ];
 
+const moveOneMatchV4: StarterPlay = {
+  id: 'mixli_starter_move_one_match',
+  revisionId: 'rev_4',
+  topics: ['puzzles', 'logic'],
+  document: {
+    schemaVersion: 1,
+    id: 'mixli_starter_move_one_match',
+    revisionId: 'rev_4',
+    format: 'solve',
+    classification: 'challenge',
+    topics: ['puzzles', 'logic'],
+    learningTopics: [],
+    estimatedDurationSec: 20,
+    assets: [
+      'mixli_canvas_matchsticks_base_v4',
+      'mixli_canvas_matchsticks_solved_v3',
+    ],
+    sources: [],
+    entryState: 'solve',
+    states: {
+      solve: {
+        presentation: {
+          layers: [
+            {
+              type: 'canvas',
+              role: 'media',
+              assetId: 'mixli_canvas_matchsticks_base_v4',
+            },
+            {
+              type: 'scene',
+              role: 'media',
+              scene: {
+                version: 1,
+                objects: [
+                  {
+                    id: 'operator_vertical',
+                    semanticLabel: 'Vertical match',
+                    shape: 'rounded_rect',
+                    x: 0.325,
+                    y: 0.43,
+                    width: 0.03,
+                    height: 0.14,
+                    tone: 'accent',
+                    movable: true,
+                  },
+                ],
+                targets: [
+                  {
+                    id: 'solution_a',
+                    semanticLabel: 'Upper right opening',
+                    x: 0.195,
+                    y: 0.36,
+                    width: 0.04,
+                    height: 0.14,
+                  },
+                  {
+                    id: 'invalid_left',
+                    semanticLabel: 'Lower left opening',
+                    x: 0.425,
+                    y: 0.5,
+                    width: 0.04,
+                    height: 0.14,
+                  },
+                  {
+                    id: 'invalid_right',
+                    semanticLabel: 'Right opening',
+                    x: 0.745,
+                    y: 0.5,
+                    width: 0.04,
+                    height: 0.14,
+                  },
+                ],
+              },
+            },
+            {type: 'text', role: 'prompt', value: 'Move one match.'},
+          ],
+        },
+        input: {
+          type: 'piece_move',
+        },
+        validation: {
+          type: 'legal_piece_move',
+          value: [
+            {
+              pieceId: 'operator_vertical',
+              targetId: 'solution_a',
+              correct: true,
+            },
+            {
+              pieceId: 'operator_vertical',
+              targetId: 'invalid_left',
+              correct: false,
+            },
+            {
+              pieceId: 'operator_vertical',
+              targetId: 'invalid_right',
+              correct: false,
+            },
+          ],
+        },
+        transition: {correct: 'reveal', incorrect: 'solve'},
+      },
+      reveal: {
+        presentation: {
+          layers: [
+            {type: 'canvas', role: 'media', assetId: 'mixli_canvas_matchsticks_solved_v3'},
+            {type: 'text', role: 'reveal_title', value: '8 - 4 = 4. One stroke changes sides.'},
+          ],
+        },
+        input: {type: 'tap', label: 'Done'},
+        validation: {type: 'none'},
+        transition: {default: '$end'},
+      },
+    },
+  },
+};
+
 const moveOneMatchV3: StarterPlay = {
   id: 'mixli_starter_move_one_match',
   revisionId: 'rev_3',
@@ -1016,8 +1142,16 @@ const moveOneMatchV3: StarterPlay = {
       reveal: {
         presentation: {
           layers: [
-            {type: 'canvas', role: 'media', assetId: 'mixli_canvas_matchsticks_solved_v3'},
-            {type: 'text', role: 'reveal_title', value: '8 - 4 = 4. One stroke changes sides.'},
+            {
+              type: 'canvas',
+              role: 'media',
+              assetId: 'mixli_canvas_matchsticks_solved_v3',
+            },
+            {
+              type: 'text',
+              role: 'reveal_title',
+              value: '8 - 4 = 4. One stroke changes sides.',
+            },
           ],
         },
         input: {type: 'tap', label: 'Done'},
@@ -1181,9 +1315,16 @@ const clarifiedStarterPlays: readonly StarterPlay[] = clarifiedChoiceSpecs.map((
 }));
 const clarifiedPlayIds = new Set(clarifiedStarterPlays.map((play) => play.id));
 const starterPlays = [
-  ...releaseV3StarterPlays.map((play) =>
-    clarifiedStarterPlays.find((replacement) => replacement.id === play.id) ?? play,
-  ),
+  moveOneMatchV4,
+  ...releaseV3StarterPlays
+      .filter((play) => play.id !== moveOneMatchV3.id)
+      .map(
+        (play) =>
+            clarifiedStarterPlays.find(
+              (replacement) => replacement.id === play.id,
+            ) ??
+            play,
+      ),
   quietSwitchV1,
   ...additionalQuietSwitchPlays,
 ] as const;
@@ -1191,7 +1332,9 @@ const starterPlays = [
 const historicalStarterPlays = [
   ...legacyStarterPlays,
   ...releaseV2StarterPlays,
-  ...releaseV3StarterPlays.filter((play) => clarifiedPlayIds.has(play.id)),
+  ...releaseV3StarterPlays.filter(
+    (play) => clarifiedPlayIds.has(play.id) || play.id === moveOneMatchV3.id,
+  ),
 ] as const;
 
 const allStarterPlays = [...historicalStarterPlays, ...starterPlays] as const;
@@ -1200,12 +1343,13 @@ const starterIntegrityReviews: readonly CatalogIntegrityReview[] = [
   {
     kind: 'matchstick',
     playId: 'mixli_starter_move_one_match',
-    revisionId: 'rev_3',
+    revisionId: 'rev_4',
     prompt: 'Move one match.',
-    sourceAssetId: 'mixli_canvas_matchsticks_v3',
+    sourceAssetId: 'mixli_canvas_matchsticks_base_v4',
     solvedAssetId: 'mixli_canvas_matchsticks_solved_v3',
     sourceSegments: [...matchstickSourceSegments],
     sourceEquation: '6 + 4 = 4',
+    movingPieceId: 'operator_vertical',
     destinations: [
       {
         id: 'solution_a',
