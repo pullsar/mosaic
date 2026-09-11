@@ -902,6 +902,7 @@ PlayCapabilityEnvelope consumerCapabilitiesForAssetDelivery(
     inputTypes: const {
       'tap',
       'single_choice',
+      'multiple_choice',
       'piano_key',
       'drag',
       'piece_move',
@@ -910,6 +911,7 @@ PlayCapabilityEnvelope consumerCapabilitiesForAssetDelivery(
     validatorTypes: const {
       'none',
       'equals',
+      'set_equality',
       'ordered_sequence',
       'target_region',
       'legal_piece_move',

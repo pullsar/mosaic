@@ -10,6 +10,8 @@ void main() {
       final noDelivery = consumerCapabilitiesForAssetDelivery(null);
       expect(noDelivery.presentationTypes, <String>{'text', 'scene'});
       expect(noDelivery.platformFlags, contains('timed_scene_v1'));
+      expect(noDelivery.inputTypes, contains('multiple_choice'));
+      expect(noDelivery.validatorTypes, contains('set_equality'));
 
       final secure = AssetDeliveryClient(
         baseUri: Uri.parse('https://api.example.test/'),
