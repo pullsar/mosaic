@@ -798,6 +798,9 @@ final class _PlayDragInputState extends State<PlayDragInput>
         .toDouble();
     final hitRect = Rect.fromLTWH(hitLeft, hitTop, hitWidth, hitHeight);
     final localVisualRect = visualRect.shift(-hitRect.topLeft);
+    final horizontalMatchstick =
+        widget.spec.handleStyle == PlayDragHandleStyle.matchstick &&
+        visualRect.width > visualRect.height;
     final targetCount = widget.spec.targets.length;
     final increasedTargetIndex = math.min(
       _selectedTargetIndex + 1,
@@ -873,12 +876,14 @@ final class _PlayDragInputState extends State<PlayDragInput>
                       child: DecoratedBox(
                         key: const ValueKey<String>('play-drag-object'),
                         decoration: BoxDecoration(
-                          color: widget.spec.handleStyle ==
+                          color:
+                              widget.spec.handleStyle ==
                                   PlayDragHandleStyle.matchstick
                               ? const Color(0xFFC9783E)
                               : colorScheme.primaryContainer,
                           border: Border.all(
-                            color: widget.spec.handleStyle ==
+                            color:
+                                widget.spec.handleStyle ==
                                     PlayDragHandleStyle.matchstick
                                 ? const Color(0xFF7A3E20)
                                 : colorScheme.onPrimaryContainer,
@@ -904,22 +909,29 @@ final class _PlayDragInputState extends State<PlayDragInput>
                                 ]
                               : const <BoxShadow>[],
                         ),
-                        child: widget.spec.handleStyle ==
+                        child:
+                            widget.spec.handleStyle ==
                                 PlayDragHandleStyle.matchstick
-                            ? const Align(
-                                alignment: Alignment.topCenter,
+                            ? Align(
+                                alignment: horizontalMatchstick
+                                    ? Alignment.centerRight
+                                    : Alignment.topCenter,
                                 child: FractionallySizedBox(
-                                  widthFactor: .78,
-                                  heightFactor: .2,
+                                  widthFactor: horizontalMatchstick ? .2 : .78,
+                                  heightFactor: horizontalMatchstick ? .78 : .2,
                                   child: DecoratedBox(
-                                    key: ValueKey<String>(
+                                    key: const ValueKey<String>(
                                       'play-drag-matchstick-head',
                                     ),
                                     decoration: BoxDecoration(
-                                      color: Color(0xFF5D2518),
-                                      borderRadius: BorderRadius.vertical(
-                                        top: Radius.circular(999),
-                                      ),
+                                      color: const Color(0xFF5D2518),
+                                      borderRadius: horizontalMatchstick
+                                          ? const BorderRadius.horizontal(
+                                              right: Radius.circular(999),
+                                            )
+                                          : const BorderRadius.vertical(
+                                              top: Radius.circular(999),
+                                            ),
                                     ),
                                   ),
                                 ),

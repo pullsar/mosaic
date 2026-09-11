@@ -85,7 +85,47 @@ void main() {
       ),
     );
 
-    expect(find.byKey(const ValueKey<String>('scene-matchstick-head')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('scene-matchstick-head')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('scene puts a horizontal matchstick head at its end', (
+    tester,
+  ) async {
+    final scene = GameSceneDefinition.fromJson({
+      'version': 1,
+      'objects': [
+        {
+          'id': 'match',
+          'semanticLabel': 'Horizontal match',
+          'shape': 'matchstick',
+          'x': .2,
+          'y': .2,
+          'width': .2,
+          'height': .05,
+          'movable': true,
+        },
+      ],
+      'targets': const [],
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox.square(
+          dimension: 300,
+          child: PlaySceneRenderer(scene: scene, onPieceMove: (_, _) {}),
+        ),
+      ),
+    );
+
+    final head = tester.widget<Align>(
+      find.ancestor(
+        of: find.byKey(const ValueKey<String>('scene-matchstick-head')),
+        matching: find.byType(Align),
+      ),
+    );
+    expect(head.alignment, Alignment.centerRight);
   });
 
   testWidgets(

@@ -204,6 +204,7 @@ final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
     final rect = target?.rect ?? object.rect;
     final selected = object.id == _selectedId;
     final isMatchstick = object.shape == GameSceneShape.matchstick;
+    final horizontalMatchstick = isMatchstick && rect.width > rect.height;
     final color = isMatchstick
         ? const Color(0xFFC9783E)
         : switch (object.tone) {
@@ -264,7 +265,8 @@ final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
                     shape: object.shape == GameSceneShape.circle
                         ? BoxShape.circle
                         : BoxShape.rectangle,
-                    borderRadius: object.shape == GameSceneShape.roundedRect ||
+                    borderRadius:
+                        object.shape == GameSceneShape.roundedRect ||
                             isMatchstick
                         ? BorderRadius.circular(999)
                         : null,
@@ -281,22 +283,30 @@ final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
                               offset: const Offset(0, 4),
                               blurRadius: 8,
                             ),
-                        ]
+                          ]
                         : const [],
                   ),
                   child: isMatchstick
-                      ? const Align(
-                          alignment: Alignment.topCenter,
+                      ? Align(
+                          alignment: horizontalMatchstick
+                              ? Alignment.centerRight
+                              : Alignment.topCenter,
                           child: FractionallySizedBox(
-                            widthFactor: .78,
-                            heightFactor: .2,
+                            widthFactor: horizontalMatchstick ? .2 : .78,
+                            heightFactor: horizontalMatchstick ? .78 : .2,
                             child: DecoratedBox(
-                              key: ValueKey<String>('scene-matchstick-head'),
+                              key: const ValueKey<String>(
+                                'scene-matchstick-head',
+                              ),
                               decoration: BoxDecoration(
-                                color: Color(0xFF5D2518),
-                                borderRadius: BorderRadius.vertical(
-                                  top: Radius.circular(999),
-                                ),
+                                color: const Color(0xFF5D2518),
+                                borderRadius: horizontalMatchstick
+                                    ? const BorderRadius.horizontal(
+                                        right: Radius.circular(999),
+                                      )
+                                    : const BorderRadius.vertical(
+                                        top: Radius.circular(999),
+                                      ),
                               ),
                             ),
                           ),

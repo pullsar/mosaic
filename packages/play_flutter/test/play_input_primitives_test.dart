@@ -104,6 +104,37 @@ void main() {
     await gesture.cancel();
   });
 
+  testWidgets('horizontal drag matchstick puts its head at the end', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: SizedBox.square(
+            dimension: 300,
+            child: PlayDragInput(
+              spec: const PlayDragInputSpec(
+                origin: Offset(.2, .2),
+                size: Size(.2, .05),
+                handleStyle: PlayDragHandleStyle.matchstick,
+                targets: [],
+              ),
+              onTarget: (_) {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final head = tester.widget<Align>(
+      find.ancestor(
+        of: find.byKey(const ValueKey<String>('play-drag-matchstick-head')),
+        matching: find.byType(Align),
+      ),
+    );
+    expect(head.alignment, Alignment.centerRight);
+  });
+
   testWidgets('drag lift is immediate with reduced motion', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
