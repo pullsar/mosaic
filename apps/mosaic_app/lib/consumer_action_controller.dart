@@ -327,12 +327,79 @@ final class ConsumerActionController {
     final wasPinned = _pinnedFamilyIds.contains(id);
     if (wasPinned == pinned) return true;
     if (_pinsBusy || pinned && _pinnedFamilyIds.length >= 6) return false;
-    final before = List<String>.of(_pinnedFamilyIds);
+    final next = List<String>.of(_pinnedFamilyIds);
     if (pinned) {
-      _pinnedFamilyIds.add(id);
+      next.add(id);
     } else {
-      _pinnedFamilyIds.remove(id);
+      next.remove(id);
     }
+    return _commitGameFamilyPins(
+      next,
+      feedRequestId: feedRequestId,
+      playRevisionId: playRevisionId,
+    );
+  }
+
+  /// Moves one pin without changing the other pin positions.
+  Future<bool> moveGameFamilyPin({
+    required String familyId,
+    required bool moveEarlier,
+    required String feedRequestId,
+    required String playRevisionId,
+  }) async {
+    _ensureOpen();
+    await _loadPinnedFamilies();
+    if (_pinsBusy) return false;
+    final id = _text(familyId, 'familyId');
+    final index = _pinnedFamilyIds.indexOf(id);
+    final target = index + (moveEarlier ? -1 : 1);
+    if (index < 0 || target < 0 || target >= _pinnedFamilyIds.length) {
+      return false;
+    }
+    final next = List<String>.of(_pinnedFamilyIds);
+    final moved = next.removeAt(index);
+    next.insert(target, moved);
+    return _commitGameFamilyPins(
+      next,
+      feedRequestId: feedRequestId,
+      playRevisionId: playRevisionId,
+    );
+  }
+
+  /// Replaces one existing pin at its current position.
+  Future<bool> replaceGameFamilyPin({
+    required String replacedFamilyId,
+    required String replacementFamilyId,
+    required String feedRequestId,
+    required String playRevisionId,
+  }) async {
+    _ensureOpen();
+    await _loadPinnedFamilies();
+    if (_pinsBusy) return false;
+    final replaced = _text(replacedFamilyId, 'replacedFamilyId');
+    final replacement = _text(replacementFamilyId, 'replacementFamilyId');
+    final index = _pinnedFamilyIds.indexOf(replaced);
+    if (index < 0 || _pinnedFamilyIds.contains(replacement)) return false;
+    final next = List<String>.of(_pinnedFamilyIds)..[index] = replacement;
+    return _commitGameFamilyPins(
+      next,
+      feedRequestId: feedRequestId,
+      playRevisionId: playRevisionId,
+    );
+  }
+
+  Future<bool> _commitGameFamilyPins(
+    Iterable<String> familyIds, {
+    required String feedRequestId,
+    required String playRevisionId,
+  }) async {
+    final next = _normalizedPinnedFamilyIds(familyIds);
+    if (_pinsBusy) return false;
+    if (_sameStrings(_pinnedFamilyIds, next)) return true;
+    final before = List<String>.of(_pinnedFamilyIds);
+    _pinnedFamilyIds
+      ..clear()
+      ..addAll(next);
     _pinsBusy = true;
     _notify();
     final now = _clock().toUtc();
@@ -572,4 +639,28 @@ String _text(String value, String name) {
     throw ArgumentError.value(value, name, 'must be 1 to 200 characters');
   }
   return normalized;
+}
+
+List<String> _normalizedPinnedFamilyIds(Iterable<String> values) {
+  final result = <String>[];
+  final seen = <String>{};
+  for (final value in values) {
+    final id = _text(value, 'familyId');
+    if (!seen.add(id)) {
+      throw ArgumentError.value(values, 'familyIds', 'must be distinct');
+    }
+    result.add(id);
+  }
+  if (result.length > 6) {
+    throw ArgumentError.value(values, 'familyIds', 'must contain at most six');
+  }
+  return result;
+}
+
+bool _sameStrings(List<String> left, List<String> right) {
+  if (left.length != right.length) return false;
+  for (var index = 0; index < left.length; index += 1) {
+    if (left[index] != right[index]) return false;
+  }
+  return true;
 }

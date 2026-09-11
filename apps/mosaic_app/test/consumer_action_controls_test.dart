@@ -42,6 +42,7 @@ final class _MemoryOutbox implements EventOutbox {
 final class _MemoryState implements ConsumerLocalState {
   final actions = <String, ConsumerPlayActionState>{};
   final mutedTopics = <String>{};
+  final pinnedFamilies = <String>[];
 
   @override
   Future<ConsumerPreferences> readPreferences() async => ConsumerPreferences();
@@ -82,10 +83,15 @@ final class _MemoryState implements ConsumerLocalState {
   }
 
   @override
-  Future<List<String>> readPinnedGameFamilyIds() async => const <String>[];
+  Future<List<String>> readPinnedGameFamilyIds() async =>
+      List<String>.unmodifiable(pinnedFamilies);
 
   @override
-  Future<void> writePinnedGameFamilyIds(Iterable<String> familyIds) async {}
+  Future<void> writePinnedGameFamilyIds(Iterable<String> familyIds) async {
+    pinnedFamilies
+      ..clear()
+      ..addAll(familyIds);
+  }
 }
 
 final class _MemorySoundStore implements GameSoundPreferencesStore {
@@ -199,6 +205,33 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Mute'), findsOneWidget);
+  });
+
+  testWidgets('a seventh game pin asks which pin to replace', (tester) async {
+    final harness = _Harness();
+    harness.state.pinnedFamilies.addAll(<String>[
+      'one-move',
+      'quiet-switch',
+      'sleight',
+      'constellation',
+      'counterexample',
+      'echo-architect',
+    ]);
+    addTearDown(harness.close);
+
+    await tester.pumpWidget(_app(harness, familyId: 'evidence-lens'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey<String>('play-action-more')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Pin game'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Replace a pin'), findsOneWidget);
+    await tester.tap(find.text('One Move'));
+    await tester.pumpAndSettle();
+
+    expect(harness.controller.pinnedGameFamilyIds.first, 'evidence-lens');
+    expect(harness.outbox.events.last.event, MosaicEventName.gamePinsChanged);
   });
 
   for (final viewportCase in _utilityViewportCases) {
@@ -366,9 +399,10 @@ Widget _app(
   _Harness harness, {
   bool active = true,
   GameSoundController? soundController,
+  String? familyId,
 }) => MaterialApp(
   home: ConsumerActionControls(
-    item: _item(),
+    item: _item(familyId: familyId),
     feedRequestId: 'feed_controls',
     controller: harness.controller,
     onAdvance: harness.advance,
@@ -460,7 +494,7 @@ void _expectContained(Rect outer, Rect inner) {
   expect(inner.bottom, lessThanOrEqualTo(outer.bottom));
 }
 
-ConsumerFeedItem _item() => ConsumerFeedItem.fromJson(
+ConsumerFeedItem _item({String? familyId}) => ConsumerFeedItem.fromJson(
   <String, Object?>{
     'playId': 'play_controls',
     'revisionId': 'revision_controls',
@@ -474,6 +508,11 @@ ConsumerFeedItem _item() => ConsumerFeedItem.fromJson(
       'topics': <String>['testing'],
       'learningTopics': <String>[],
       'estimatedDurationSec': 5,
+      if (familyId != null)
+        'gameFamily': <String, Object?>{
+          'id': familyId,
+          'revisionId': '${familyId}_v1',
+        },
       'assets': <String>[],
       'sources': <Object>[],
       'entryState': 'entry',

@@ -223,9 +223,7 @@ final class _ConsumerActionControlsState extends State<ConsumerActionControls> {
       entries.add(
         PopupMenuItem<String>(
           value: 'game_pin:$familyId',
-          enabled:
-              !widget.controller.areGamePinsBusy &&
-              (pinned || widget.controller.pinnedGameFamilyIds.length < 6),
+          enabled: !widget.controller.areGamePinsBusy,
           child: ListTile(
             dense: true,
             contentPadding: EdgeInsets.zero,
@@ -234,6 +232,34 @@ final class _ConsumerActionControlsState extends State<ConsumerActionControls> {
           ),
         ),
       );
+      if (pinned) {
+        final index = widget.controller.pinnedGameFamilyIds.indexOf(familyId);
+        entries.addAll(<PopupMenuEntry<String>>[
+          PopupMenuItem<String>(
+            value: 'game_pin_move_earlier:$familyId',
+            enabled: !widget.controller.areGamePinsBusy && index > 0,
+            child: const ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.arrow_upward_rounded),
+              title: Text('Move earlier'),
+            ),
+          ),
+          PopupMenuItem<String>(
+            value: 'game_pin_move_later:$familyId',
+            enabled:
+                !widget.controller.areGamePinsBusy &&
+                index >= 0 &&
+                index < widget.controller.pinnedGameFamilyIds.length - 1,
+            child: const ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.arrow_downward_rounded),
+              title: Text('Move later'),
+            ),
+          ),
+        ]);
+      }
     }
     if (state?.notInterested != true) {
       entries.add(
@@ -327,9 +353,30 @@ final class _ConsumerActionControlsState extends State<ConsumerActionControls> {
     }
     if (action.startsWith('game_pin:')) {
       final familyId = action.substring('game_pin:'.length);
+      final pinned = widget.controller.isGameFamilyPinned(familyId);
+      if (!pinned && widget.controller.pinnedGameFamilyIds.length >= 6) {
+        await _showPinReplacement(familyId);
+        return;
+      }
       await widget.controller.setGameFamilyPinned(
         familyId: familyId,
-        pinned: !widget.controller.isGameFamilyPinned(familyId),
+        pinned: !pinned,
+        feedRequestId: widget.feedRequestId,
+        playRevisionId: widget.item.revisionId,
+      );
+      return;
+    }
+    if (action.startsWith('game_pin_move_earlier:') ||
+        action.startsWith('game_pin_move_later:')) {
+      final moveEarlier = action.startsWith('game_pin_move_earlier:');
+      final familyId = action.substring(
+        moveEarlier
+            ? 'game_pin_move_earlier:'.length
+            : 'game_pin_move_later:'.length,
+      );
+      await widget.controller.moveGameFamilyPin(
+        familyId: familyId,
+        moveEarlier: moveEarlier,
         feedRequestId: widget.feedRequestId,
         playRevisionId: widget.item.revisionId,
       );
@@ -350,6 +397,34 @@ final class _ConsumerActionControlsState extends State<ConsumerActionControls> {
     if (applied && muted) {
       await widget.onAdvance(ConsumerFeedAdvanceReason.topicMuted);
     }
+  }
+
+  Future<void> _showPinReplacement(String replacementFamilyId) async {
+    final replacedFamilyId = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.only(bottom: 12),
+          children: <Widget>[
+            const ListTile(title: Text('Replace a pin')),
+            for (final familyId in widget.controller.pinnedGameFamilyIds)
+              ListTile(
+                title: Text(_displayGameFamily(familyId)),
+                onTap: () => Navigator.of(context).pop(familyId),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (replacedFamilyId == null || !mounted) return;
+    await widget.controller.replaceGameFamilyPin(
+      replacedFamilyId: replacedFamilyId,
+      replacementFamilyId: replacementFamilyId,
+      feedRequestId: widget.feedRequestId,
+      playRevisionId: widget.item.revisionId,
+    );
   }
 
   Future<void> _showMutedTopics() async {
@@ -432,6 +507,19 @@ String _displayTopic(String topicId) {
       ? words.toUpperCase()
       : '${words[0].toUpperCase()}${words.substring(1)}';
 }
+
+String _displayGameFamily(String familyId) => switch (familyId) {
+  'one-move' => 'One Move',
+  'quiet-switch' => 'Quiet Switch',
+  'sleight' => 'Sleight',
+  'constellation' => 'Constellation',
+  'counterexample' => 'Counterexample',
+  'evidence-lens' => 'Evidence Lens',
+  'rule-flip' => 'Rule Flip',
+  'second-thought' => 'Second Thought',
+  'echo-architect' => 'Echo Architect',
+  _ => _displayTopic(familyId),
+};
 
 String _reportLabel(ConsumerReportReason reason) => switch (reason) {
   ConsumerReportReason.spam => 'Spam',

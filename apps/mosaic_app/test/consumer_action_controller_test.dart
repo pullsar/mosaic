@@ -436,4 +436,64 @@ void main() {
       expect(controller.isGameFamilyPinned('echo-architect'), isTrue);
     },
   );
+
+  test('reorders and replaces pins as complete durable lists', () async {
+    final outbox = _MemoryOutbox();
+    final state = _MemoryState()
+      ..pinnedFamilies.addAll(<String>[
+        'one-move',
+        'quiet-switch',
+        'sleight',
+        'constellation',
+        'counterexample',
+        'echo-architect',
+      ]);
+    final runtime = _runtime(outbox, state);
+    addTearDown(runtime.close);
+    final controller = ConsumerActionController(
+      eventRuntime: runtime,
+      localState: state,
+      eventIdFactory: () => 'pin_${outbox.events.length}',
+    );
+    addTearDown(controller.dispose);
+
+    expect(
+      await controller.moveGameFamilyPin(
+        familyId: 'sleight',
+        moveEarlier: true,
+        feedRequestId: 'feed_a',
+        playRevisionId: 'rev_a',
+      ),
+      isTrue,
+    );
+    expect(controller.pinnedGameFamilyIds, <String>[
+      'one-move',
+      'sleight',
+      'quiet-switch',
+      'constellation',
+      'counterexample',
+      'echo-architect',
+    ]);
+    expect(
+      await controller.replaceGameFamilyPin(
+        replacedFamilyId: 'quiet-switch',
+        replacementFamilyId: 'evidence-lens',
+        feedRequestId: 'feed_a',
+        playRevisionId: 'rev_a',
+      ),
+      isTrue,
+    );
+    expect(controller.pinnedGameFamilyIds, <String>[
+      'one-move',
+      'sleight',
+      'evidence-lens',
+      'constellation',
+      'counterexample',
+      'echo-architect',
+    ]);
+    expect(
+      outbox.events.last.envelope.payload['familyIds'],
+      controller.pinnedGameFamilyIds,
+    );
+  });
 }
