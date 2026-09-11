@@ -203,12 +203,15 @@ final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
               .firstOrNull;
     final rect = target?.rect ?? object.rect;
     final selected = object.id == _selectedId;
-    final color = switch (object.tone) {
-      GameSceneTone.foreground => colors.onSurface,
-      GameSceneTone.muted => colors.onSurfaceVariant,
-      GameSceneTone.accent => colors.primary,
-      GameSceneTone.surface => colors.surfaceContainerHighest,
-    };
+    final isMatchstick = object.shape == GameSceneShape.matchstick;
+    final color = isMatchstick
+        ? const Color(0xFFC9783E)
+        : switch (object.tone) {
+            GameSceneTone.foreground => colors.onSurface,
+            GameSceneTone.muted => colors.onSurfaceVariant,
+            GameSceneTone.accent => colors.primary,
+            GameSceneTone.surface => colors.surfaceContainerHighest,
+          };
     return AnimatedPositioned(
       key: ValueKey<String>('scene-object:${object.id}'),
       duration: reduced ? Duration.zero : const Duration(milliseconds: 180),
@@ -261,19 +264,44 @@ final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
                     shape: object.shape == GameSceneShape.circle
                         ? BoxShape.circle
                         : BoxShape.rectangle,
-                    borderRadius: object.shape == GameSceneShape.roundedRect
+                    borderRadius: object.shape == GameSceneShape.roundedRect ||
+                            isMatchstick
                         ? BorderRadius.circular(999)
                         : null,
-                    boxShadow: selected
+                    border: isMatchstick
+                        ? Border.all(
+                            color: const Color(0xFF7A3E20),
+                            width: 1.25,
+                          )
+                        : null,
+                    boxShadow: selected || isMatchstick
                         ? [
                             BoxShadow(
                               color: colors.shadow.withValues(alpha: .22),
                               offset: const Offset(0, 4),
                               blurRadius: 8,
                             ),
-                          ]
+                        ]
                         : const [],
                   ),
+                  child: isMatchstick
+                      ? const Align(
+                          alignment: Alignment.topCenter,
+                          child: FractionallySizedBox(
+                            widthFactor: .78,
+                            heightFactor: .2,
+                            child: DecoratedBox(
+                              key: ValueKey<String>('scene-matchstick-head'),
+                              decoration: BoxDecoration(
+                                color: Color(0xFF5D2518),
+                                borderRadius: BorderRadius.vertical(
+                                  top: Radius.circular(999),
+                                ),
+                              ),
+                            ),
+                          ),
+                        )
+                      : null,
                 ),
               ),
             ),

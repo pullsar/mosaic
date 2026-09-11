@@ -35,6 +35,28 @@ void main() {
     expect(scene.targets.single.id, 'left_top_right');
   });
 
+  test('scene retains the bounded matchstick appearance', () {
+    final scene = GameSceneDefinition.fromJson({
+      'version': 1,
+      'objects': [
+        {
+          'id': 'match',
+          'semanticLabel': 'Match',
+          'shape': 'matchstick',
+          'x': .2,
+          'y': .2,
+          'width': .04,
+          'height': .2,
+          'movable': true,
+        },
+      ],
+      'targets': const [],
+    });
+
+    expect(scene.objects.single.shape, GameSceneShape.matchstick);
+    expect(scene.toJson()['objects'], [containsPair('shape', 'matchstick')]);
+  });
+
   test('scene rejects duplicate identities and off-stage geometry', () {
     expect(
       () => GameSceneDefinition.fromJson({

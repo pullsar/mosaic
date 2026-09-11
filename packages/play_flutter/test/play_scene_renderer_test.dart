@@ -59,6 +59,35 @@ void main() {
     expect(moves, [('match', 'slot')]);
   });
 
+  testWidgets('scene renders a matchstick with a visible head', (tester) async {
+    final scene = GameSceneDefinition.fromJson({
+      'version': 1,
+      'objects': [
+        {
+          'id': 'match',
+          'semanticLabel': 'Vertical match',
+          'shape': 'matchstick',
+          'x': .2,
+          'y': .2,
+          'width': .05,
+          'height': .2,
+          'movable': true,
+        },
+      ],
+      'targets': const [],
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox.square(
+          dimension: 300,
+          child: PlaySceneRenderer(scene: scene, onPieceMove: (_, _) {}),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey<String>('scene-matchstick-head')), findsOneWidget);
+  });
+
   testWidgets(
     'scene drag commits one legal piece move and releases its lease',
     (tester) async {

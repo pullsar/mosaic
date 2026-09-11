@@ -1021,7 +1021,7 @@ const moveOneMatchV4: StarterPlay = {
                   {
                     id: 'operator_vertical',
                     semanticLabel: 'Vertical match',
-                    shape: 'rounded_rect',
+                    shape: 'matchstick',
                     x: 0.325,
                     y: 0.43,
                     width: 0.03,
