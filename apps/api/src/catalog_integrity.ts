@@ -13,6 +13,10 @@ import {
   type ConstellationTrajectory,
 } from './constellation_solver.js';
 import {
+  solveRuleFlip,
+  type RuleFlipObject,
+} from './rule_flip_solver.js';
+import {
   solveEvidenceLens,
   type EvidenceLensClaim,
   type EvidenceLensPoint,
@@ -111,6 +115,12 @@ export type CatalogIntegrityReview =
       readonly revealStartsWith: string;
     }
   | {
+      readonly kind: 'rule_flip';
+      readonly playId: string;
+      readonly revisionId: string;
+      readonly sourceAssetId: string;
+      readonly object: RuleFlipObject;
+    }  | {
       readonly kind: 'evidence_lens';
       readonly playId: string;
       readonly revisionId: string;
@@ -356,6 +366,9 @@ export function assertProductionCatalogIntegrity(
       case 'constellation':
         assertConstellationReview(review, play.document, entryState, states);
         break;
+      case 'rule_flip':
+        assertRuleFlipReview(review, entryState, states, assetById);
+        break;
       case 'evidence_lens':
         assertEvidenceLensReview(review, entryState, states, assetById);
         break;      case 'counterexample':
@@ -365,6 +378,38 @@ export function assertProductionCatalogIntegrity(
   }
 }
 
+function assertRuleFlipReview(
+  review: Extract<CatalogIntegrityReview, {kind: 'rule_flip'}>,
+  entryState: Record<string, unknown>,
+  states: Record<string, unknown>,
+  assetById: ReadonlyMap<string, CanvasAssetDocument>,
+): void {
+  const asset = assetById.get(review.sourceAssetId);
+  if (asset === undefined) throw new Error(`rule_flip_asset_missing:${review.playId}`);
+  const shape = solveRuleFlip('shape', review.object).side;
+  const fill = solveRuleFlip('fill', review.object).side;
+  const shapeInput = record(entryState.input, `${review.playId}.shape.input`);
+  const fillState = record(states.fill, `${review.playId}.fill`);
+  const fillInput = record(fillState.input, `${review.playId}.fill.input`);
+  const shapeAnswer = `shape_${shape}`;
+  const fillAnswer = `fill_${fill}`;
+  if (shapeInput.type !== 'single_choice' || fillInput.type !== 'single_choice' ||
+      !optionIdsFrom(shapeInput, review.playId).every((id) => id.startsWith('shape_')) ||
+      !optionIdsFrom(fillInput, review.playId).every((id) => id.startsWith('fill_')) ||
+      record(entryState.validation, `${review.playId}.shape.validation`).value !== shapeAnswer ||
+      record(fillState.validation, `${review.playId}.fill.validation`).value !== fillAnswer ||
+      record(entryState.transition, `${review.playId}.shape.transition`).correct !== 'fill' ||
+      record(fillState.transition, `${review.playId}.fill.transition`).correct !== 'reveal' ||
+      !presentationLayers(entryState, review.playId).some((layer) => layer.type === 'canvas' && layer.assetId === review.sourceAssetId)) {
+    throw new Error(`rule_flip_trial_mismatch:${review.playId}`);
+  }
+  const reveal = record(states.reveal, `${review.playId}.reveal`);
+  if (!revealTitleFrom(reveal, review.playId).startsWith(`Shape: ${shape}. Fill: ${fill}.`)) {
+    throw new Error(`rule_flip_reveal_mismatch:${review.playId}`);
+  }
+  const expectedLabel = `A ${review.object.fill} ${review.object.shape}.`;
+  if (asset.semanticLabel !== expectedLabel) throw new Error(`rule_flip_visual_mismatch:${review.playId}`);
+}
 function assertEvidenceLensReview(
   review: Extract<CatalogIntegrityReview, {kind: 'evidence_lens'}>,
   entryState: Record<string, unknown>,

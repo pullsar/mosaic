@@ -370,3 +370,25 @@ test('catalog integrity rejects an Evidence Lens answer disconnected from its se
     /evidence_lens_claim_label/,
   );
 });
+
+test('the attention pack contains six independently reviewed Rule Flip rounds', () => {
+  const reviews = productionCatalogIntegrityFixture.reviews.filter(
+    (review) => review.kind === 'rule_flip',
+  );
+  assert.equal(reviews.length, 6);
+  assert.equal(new Set(reviews.map((review) => review.playId)).size, 6);
+});
+
+test('catalog integrity rejects a Rule Flip trial that accepts a stale option ID', () => {
+  const altered = JSON.parse(JSON.stringify(productionCatalogIntegrityFixture)) as {
+    plays: Array<{id: string; document: {states: Record<string, {validation?: {value?: string}}>}}>;
+  };
+  altered.plays.find((play) => play.id === 'mixli_starter_rule_flip_one')!
+    .document.states.fill!.validation!.value = 'shape_left';
+  assert.throws(
+    () => assertProductionCatalogIntegrity(
+      altered as unknown as typeof productionCatalogIntegrityFixture,
+    ),
+    /rule_flip_trial_mismatch/,
+  );
+});

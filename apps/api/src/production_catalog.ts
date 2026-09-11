@@ -17,6 +17,10 @@ import type {
   ConstellationTrajectory,
 } from './constellation_solver.js';
 import {
+  solveRuleFlip,
+  type RuleFlipObject,
+} from './rule_flip_solver.js';
+import {
   solveEvidenceLens,
   type EvidenceLensClaim,
   type EvidenceLensPoint,
@@ -28,7 +32,7 @@ import {
 } from './counterexample_solver.js';
 
 export const productionStarterPrefix = 'mixli_starter_';
-export const productionStarterCount = 41;
+export const productionStarterCount = 47;
 
 export interface ProductionCatalogStatus {
   eligiblePlays: number;
@@ -54,6 +58,11 @@ interface MatchstickRoundSpec {
   readonly solvedEquation: string;
 }
 
+interface RuleFlipRoundSpec {
+  readonly id: string;
+  readonly topics: readonly [string, string];
+  readonly object: RuleFlipObject;
+}
 interface EvidenceLensRoundSpec {
   readonly id: string;
   readonly topics: readonly [string, string];
@@ -942,6 +951,41 @@ const counterexampleCanvasAssets = counterexampleRoundSpecs.flatMap((spec) => [
   counterexampleAsset(spec, true),
 ]);
 
+const ruleFlipPalette = {
+  background: '#1E1728', foreground: '#FBF4E9', accent: '#C983E6', muted: '#8CB8E8', surface: '#E7BD63',
+} as const;
+
+const ruleFlipRoundSpecs: readonly RuleFlipRoundSpec[] = [
+  {id: 'mixli_starter_rule_flip_one', topics: ['reasoning', 'focus'], object: {shape: 'triangle', fill: 'striped'}},
+  {id: 'mixli_starter_rule_flip_two', topics: ['attention', 'reasoning'], object: {shape: 'round', fill: 'solid'}},
+  {id: 'mixli_starter_rule_flip_three', topics: ['patterns', 'reasoning'], object: {shape: 'triangle', fill: 'solid'}},
+  {id: 'mixli_starter_rule_flip_four', topics: ['logic', 'focus'], object: {shape: 'round', fill: 'striped'}},
+  {id: 'mixli_starter_rule_flip_five', topics: ['observation', 'reasoning'], object: {shape: 'triangle', fill: 'striped'}},
+  {id: 'mixli_starter_rule_flip_six', topics: ['focus', 'patterns'], object: {shape: 'round', fill: 'solid'}},
+];
+
+function ruleFlipAsset(spec: RuleFlipRoundSpec): Record<string, unknown> {
+  const object = spec.object;
+  const objectElements = object.shape === 'round'
+    ? [{type: 'circle', x: .5, y: .43, radius: .14, fill: object.fill === 'solid', tone: 'accent'}]
+    : [
+      {type: 'line', x1: .5, y1: .25, x2: .34, y2: .56, width: .022, tone: 'accent'},
+      {type: 'line', x1: .34, y1: .56, x2: .66, y2: .56, width: .022, tone: 'accent'},
+      {type: 'line', x1: .66, y1: .56, x2: .5, y2: .25, width: .022, tone: 'accent'},
+    ];
+  const stripeElements = object.fill === 'striped' ? [
+    {type: 'line', x1: .4, y1: .36, x2: .6, y2: .36, width: .018, tone: 'surface'},
+    {type: 'line', x1: .38, y1: .43, x2: .62, y2: .43, width: .018, tone: 'surface'},
+    {type: 'line', x1: .4, y1: .5, x2: .6, y2: .5, width: .018, tone: 'surface'},
+  ] : [];
+  return {schemaVersion: 1, id: `${spec.id}_canvas`, semanticLabel: `A ${object.fill} ${object.shape}.`, palette: ruleFlipPalette, elements: [
+    ...objectElements, ...stripeElements,
+    {type: 'label', x: .27, y: .76, text: 'LEFT', scale: .05, tone: 'foreground'},
+    {type: 'label', x: .73, y: .76, text: 'RIGHT', scale: .05, tone: 'foreground'},
+  ]};
+}
+
+const ruleFlipCanvasAssets = ruleFlipRoundSpecs.map(ruleFlipAsset);
 const evidenceLensPalette = {
   background: '#132330', foreground: '#F8F4E8', accent: '#F2B84B', muted: '#86C7D6', surface: '#D67563',
 } as const;
@@ -989,6 +1033,7 @@ const canvasAssets = [
   ...quietSwitchCanvasAssets,
   ...counterexampleCanvasAssets,
   ...evidenceLensCanvasAssets,
+  ...ruleFlipCanvasAssets,
 ] as const;
 
 const legacyChoiceSpecs: readonly ChoiceSpec[] = [
@@ -2133,6 +2178,35 @@ function counterexampleRound(spec: CounterexampleRoundSpec): StarterPlay {
   };
 }
 
+function ruleFlipRound(spec: RuleFlipRoundSpec): StarterPlay {
+  const shape = solveRuleFlip('shape', spec.object).side;
+  const fill = solveRuleFlip('fill', spec.object).side;
+  const assetId = `${spec.id}_canvas`;
+  const option = (trial: 'shape' | 'fill', side: 'left' | 'right') => `${trial}_${side}`;
+  return {
+    id: spec.id, revisionId: 'rev_1', topics: spec.topics,
+    document: {
+      schemaVersion: 1, id: spec.id, revisionId: 'rev_1', format: 'solve', classification: 'challenge',
+      topics: spec.topics, learningTopics: [], estimatedDurationSec: 16, assets: [assetId], sources: [], entryState: 'shape',
+      states: {
+        shape: {
+          presentation: {layers: [{type: 'canvas', role: 'media', assetId}, {type: 'text', role: 'prompt', value: 'Shape: triangle left.'}]},
+          input: {type: 'single_choice', options: [{id: option('shape', 'left'), label: 'Left'}, {id: option('shape', 'right'), label: 'Right'}]},
+          validation: {type: 'equals', value: option('shape', shape)}, transition: {correct: 'fill', incorrect: 'shape'},
+        },
+        fill: {
+          presentation: {layers: [{type: 'canvas', role: 'media', assetId}, {type: 'text', role: 'prompt', value: 'Fill: solid left.'}]},
+          input: {type: 'single_choice', options: [{id: option('fill', 'left'), label: 'Left'}, {id: option('fill', 'right'), label: 'Right'}]},
+          validation: {type: 'equals', value: option('fill', fill)}, transition: {correct: 'reveal', incorrect: 'fill'},
+        },
+        reveal: {
+          presentation: {layers: [{type: 'canvas', role: 'media', assetId}, {type: 'text', role: 'reveal_title', value: `Shape: ${shape}. Fill: ${fill}.`}]},
+          input: {type: 'tap', label: 'Done'}, validation: {type: 'none'}, transition: {default: '$end'},
+        },
+      },
+    },
+  };
+}
 function evidenceLensRound(spec: EvidenceLensRoundSpec): StarterPlay {
   const claims = evidenceLensClaims(spec.points);
   const assetId = `${spec.id}_canvas`;
@@ -2170,6 +2244,7 @@ const sleightRounds = sleightRoundSpecs.map(sleightRound);
 const constellationRounds = constellationRoundSpecs.map(constellationRound);
 const counterexampleRounds = counterexampleRoundSpecs.map(counterexampleRound);
 const evidenceLensRounds = evidenceLensRoundSpecs.map(evidenceLensRound);
+const ruleFlipRounds = ruleFlipRoundSpecs.map(ruleFlipRound);
 
 const releaseV3StarterPlays: readonly StarterPlay[] = [
   moveOneMatchV3,
@@ -2209,6 +2284,7 @@ const starterPlays = [
   ...constellationRounds,
   ...counterexampleRounds,
   ...evidenceLensRounds,
+  ...ruleFlipRounds,
 ] as const;
 
 const historicalStarterPlays = [
@@ -2383,6 +2459,12 @@ const starterIntegrityReviews: readonly CatalogIntegrityReview[] = [
     sourceAssetId: `${spec.id}_canvas`,
     points: spec.points,
     claims: evidenceLensClaims(spec.points),
+  })),  ...ruleFlipRoundSpecs.map((spec) => ({
+    kind: 'rule_flip' as const,
+    playId: spec.id,
+    revisionId: 'rev_1',
+    sourceAssetId: `${spec.id}_canvas`,
+    object: spec.object,
   })),] as const;
 
 export const productionCatalogIntegrityFixture: ProductionCatalogIntegrityFixture = {
