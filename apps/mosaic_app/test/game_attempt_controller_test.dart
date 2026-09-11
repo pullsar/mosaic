@@ -115,7 +115,12 @@ PlayDocument _timedCuePlay() => PlayDocument.fromJson({
           {'type': 'text', 'role': 'prompt', 'value': 'Look closer.'},
         ],
       },
-      'input': {'type': 'timed_cue', 'durationMs': 300},
+      'input': {
+        'type': 'timed_cue',
+        'cueId': 'observe_1',
+        'cueOrdinal': 1,
+        'durationMs': 300,
+      },
       'validation': {'type': 'none'},
       'transition': {'default': 'cue'},
     },
@@ -261,7 +266,7 @@ void main() {
 
   test('recovery snapshot preserves an authored timed cue action', () {
     final controller = GameAttemptController(play: _timedCuePlay());
-    controller.apply(const TimedCueAction());
+    controller.apply(const TimedCueAction(cueId: 'observe_1', ordinal: 1));
     final restored = GameAttemptController.restoreRecoverySnapshot(
       play: _timedCuePlay(),
       encodedSnapshot: controller.encodeRecoverySnapshot(capabilityVersion: 1)!,

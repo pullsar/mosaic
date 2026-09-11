@@ -303,6 +303,11 @@ function assertQuietSwitchReview(
   const entryTransition = record(entryState.transition, `${review.playId}.transition`);
   if (
     entryInput.type !== 'timed_cue' ||
+    typeof entryInput.cueId !== 'string' ||
+    !/^[A-Za-z0-9_-]{1,80}$/.test(entryInput.cueId) ||
+    !Number.isInteger(entryInput.cueOrdinal) ||
+    (entryInput.cueOrdinal as number) < 1 ||
+    (entryInput.cueOrdinal as number) > 128 ||
     !Number.isInteger(entryInput.durationMs) ||
     (entryInput.durationMs as number) < 300 ||
     (entryInput.durationMs as number) > 10000 ||

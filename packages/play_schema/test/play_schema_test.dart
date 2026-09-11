@@ -293,7 +293,12 @@ void main() {
     final guess = Map<String, Object?>.from(states['guess']! as Map);
     states['guess'] = {
       ...guess,
-      'input': {'type': 'timed_cue', 'durationMs': 1200},
+      'input': {
+        'type': 'timed_cue',
+        'cueId': 'observe_1',
+        'cueOrdinal': 1,
+        'durationMs': 1200,
+      },
       'validation': {'type': 'none'},
       'transition': {'default': r'$end'},
     };
@@ -307,7 +312,12 @@ void main() {
         ...states,
         'guess': {
           ...states['guess']! as Map<String, Object?>,
-          'input': {'type': 'timed_cue', 'durationMs': 100},
+          'input': {
+            'type': 'timed_cue',
+            'cueId': '',
+            'cueOrdinal': 0,
+            'durationMs': 100,
+          },
           'validation': {'type': 'equals', 'value': 'anything'},
         },
       },
@@ -315,7 +325,14 @@ void main() {
     final codes = const PlaySchemaValidator()
         .validate(invalid)
         .map((issue) => issue.code);
-    expect(codes, containsAll(['timed_cue_duration', 'timed_cue_validator']));
+    expect(
+      codes,
+      containsAll([
+        'timed_cue_duration',
+        'timed_cue_validator',
+        'timed_cue_identity',
+      ]),
+    );
   });
 
   test('drag publication validation rejects an unknown handle appearance', () {

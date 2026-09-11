@@ -15,6 +15,7 @@ PlayDocument fixture(String name) {
 PlayDocument playWithValidation({
   required String inputType,
   required Map<String, Object?> validation,
+  Map<String, Object?> inputProperties = const {},
   Map<String, String> transition = const {
     'correct': r'$end',
     'incorrect': r'$end',
@@ -38,7 +39,7 @@ PlayDocument playWithValidation({
           {'type': 'text', 'role': 'prompt', 'value': 'Try it.'},
         ],
       },
-      'input': {'type': inputType},
+      'input': {'type': inputType, ...inputProperties},
       'validation': validation,
       'transition': transition,
     },
@@ -109,14 +110,29 @@ void main() {
       inputType: 'timed_cue',
       validation: {'type': 'none'},
       transition: {'default': r'$end'},
+      inputProperties: {
+        'cueId': 'observe_1',
+        'cueOrdinal': 1,
+        'durationMs': 300,
+      },
     );
     final session = engine.start(play);
 
-    final result = engine.apply(session, const TimedCueAction());
+    final result = engine.apply(
+      session,
+      const TimedCueAction(cueId: 'observe_1', ordinal: 1),
+    );
     expect(result.outcome, 'default');
     expect(result.session.ended, isTrue);
     expect(
       () => engine.apply(session, const TapAction()),
+      throwsA(isA<StateError>()),
+    );
+    expect(
+      () => engine.apply(
+        session,
+        const TimedCueAction(cueId: 'observe_2', ordinal: 2),
+      ),
       throwsA(isA<StateError>()),
     );
   });

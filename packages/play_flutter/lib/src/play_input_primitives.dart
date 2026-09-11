@@ -13,11 +13,15 @@ import 'visual_tokens.dart';
 final class PlayTimedCueInput extends StatefulWidget {
   const PlayTimedCueInput({
     required this.duration,
+    required this.cueId,
+    required this.ordinal,
     required this.onElapsed,
     super.key,
   });
 
   final Duration duration;
+  final String cueId;
+  final int ordinal;
   final VoidCallback onElapsed;
 
   @override

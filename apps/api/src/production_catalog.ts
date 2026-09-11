@@ -1518,7 +1518,12 @@ const quietSwitchV2: StarterPlay = {
             {type: 'text', role: 'prompt', value: 'Look closer.'},
           ],
         },
-        input: {type: 'timed_cue', durationMs: quietSwitchCueDurationMs},
+        input: {
+          type: 'timed_cue',
+          cueId: 'observe_1',
+          cueOrdinal: 1,
+          durationMs: quietSwitchCueDurationMs,
+        },
         validation: {type: 'none'},
         transition: {default: 'choose'},
       },
@@ -1559,7 +1564,12 @@ function additionalQuietSwitchPlay(
             ],
           },
           input: revisionId === 'rev_2'
-            ? {type: 'timed_cue', durationMs: quietSwitchCueDurationMs}
+            ? {
+                type: 'timed_cue',
+                cueId: 'observe_1',
+                cueOrdinal: 1,
+                durationMs: quietSwitchCueDurationMs,
+              }
             : {type: 'tap', label: 'Ready'},
           validation: {type: 'none'},
           transition: {default: 'choose'},

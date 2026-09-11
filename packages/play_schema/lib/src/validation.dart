@@ -342,6 +342,22 @@ final class PlaySchemaValidator {
   ) {
     final path = 'states.$stateId.input';
     final durationMs = state.input.properties['durationMs'];
+    final cueId = state.input.properties['cueId'];
+    final cueOrdinal = state.input.properties['cueOrdinal'];
+    if (cueId is! String ||
+        !RegExp(r'^[A-Za-z0-9_-]{1,80}$').hasMatch(cueId.trim()) ||
+        cueOrdinal is! int ||
+        cueOrdinal < 1 ||
+        cueOrdinal > 128) {
+      issues.add(
+        PlayValidationIssue(
+          code: 'timed_cue_identity',
+          path: path,
+          message:
+              'timed_cue requires a bounded cue ID and ordinal from 1 to 128.',
+        ),
+      );
+    }
     if (durationMs is! int || durationMs < 300 || durationMs > 10000) {
       issues.add(
         PlayValidationIssue(

@@ -650,7 +650,7 @@ bool _dragRectsOverlap(PlayNormalizedRect left, PlayNormalizedRect right) =>
     left.y < right.y + right.height &&
     left.y + left.height > right.y;
 
-Duration? _safeTimedCueDuration(
+_TimedCueSpec? _safeTimedCueSpec(
   PlayInputDefinition input,
   PlayValidationDefinition validation,
 ) {
@@ -659,10 +659,35 @@ Duration? _safeTimedCueDuration(
     return null;
   }
   final durationMs = input.properties['durationMs'];
-  if (durationMs is! int || durationMs < 300 || durationMs > 10000) {
+  final cueId = input.properties['cueId'];
+  final ordinal = input.properties['cueOrdinal'];
+  if (durationMs is! int ||
+      durationMs < 300 ||
+      durationMs > 10000 ||
+      cueId is! String ||
+      !RegExp(r'^[A-Za-z0-9_-]{1,80}$').hasMatch(cueId.trim()) ||
+      ordinal is! int ||
+      ordinal < 1 ||
+      ordinal > 128) {
     return null;
   }
-  return Duration(milliseconds: durationMs);
+  return _TimedCueSpec(
+    duration: Duration(milliseconds: durationMs),
+    cueId: cueId.trim(),
+    ordinal: ordinal,
+  );
+}
+
+final class _TimedCueSpec {
+  const _TimedCueSpec({
+    required this.duration,
+    required this.cueId,
+    required this.ordinal,
+  });
+
+  final Duration duration;
+  final String cueId;
+  final int ordinal;
 }
 
 final class _InputOverlay extends StatelessWidget {
@@ -795,8 +820,8 @@ final class _InputOverlay extends StatelessWidget {
     }
 
     if (input.type == PlayInputType.timedCue) {
-      final duration = _safeTimedCueDuration(input, validation);
-      if (duration == null) {
+      final spec = _safeTimedCueSpec(input, validation);
+      if (spec == null) {
         return const PlayInputUnavailable(type: 'timed_cue');
       }
       return Align(
@@ -805,8 +830,12 @@ final class _InputOverlay extends StatelessWidget {
           padding: const EdgeInsetsDirectional.fromSTEB(20, 8, 20, 8),
           child: PlayTimedCueInput(
             key: ValueKey<String>('timed-cue:$inputEpoch'),
-            duration: duration,
-            onElapsed: () => onAction(const TimedCueAction()),
+            duration: spec.duration,
+            cueId: spec.cueId,
+            ordinal: spec.ordinal,
+            onElapsed: () => onAction(
+              TimedCueAction(cueId: spec.cueId, ordinal: spec.ordinal),
+            ),
           ),
         ),
       );

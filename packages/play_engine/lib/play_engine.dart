@@ -33,7 +33,10 @@ final class PieceMoveAction extends PlayAction {
 
 /// Emitted by a bounded presentation timer; the engine does not own a clock.
 final class TimedCueAction extends PlayAction {
-  const TimedCueAction();
+  const TimedCueAction({required this.cueId, required this.ordinal});
+
+  final String cueId;
+  final int ordinal;
 }
 
 final class PlaySession {
@@ -83,7 +86,7 @@ final class PlayEngine {
 
   PlayResolution apply(PlaySession session, PlayAction action) {
     if (session.ended) throw StateError('Cannot act on an ended Play.');
-    _assertCompatible(session.state.input.type, action);
+    _assertCompatible(session.state.input, action);
 
     final evaluation = _evaluate(session.state.validation, action);
     final transition =
@@ -162,23 +165,36 @@ final class PlayEngine {
     TimedCueAction() => null,
   };
 
-  void _assertCompatible(PlayInputType input, PlayAction action) {
+  void _assertCompatible(PlayInputDefinition input, PlayAction action) {
     final compatible = switch (input) {
-      PlayInputType.tap => action is TapAction,
-      PlayInputType.singleChoice => action is ChoiceAction,
-      PlayInputType.multipleChoice || PlayInputType.pianoKey =>
+      PlayInputDefinition(type: PlayInputType.tap) => action is TapAction,
+      PlayInputDefinition(type: PlayInputType.singleChoice) =>
+        action is ChoiceAction,
+      PlayInputDefinition(
+        type: PlayInputType.multipleChoice || PlayInputType.pianoKey,
+      ) =>
         action is SequenceAction || action is ChoiceAction,
-      PlayInputType.drag => action is DragAction,
-      PlayInputType.pieceMove => action is PieceMoveAction,
-      PlayInputType.timedCue => action is TimedCueAction,
+      PlayInputDefinition(type: PlayInputType.drag) => action is DragAction,
+      PlayInputDefinition(type: PlayInputType.pieceMove) =>
+        action is PieceMoveAction,
+      PlayInputDefinition(type: PlayInputType.timedCue) => _matchesTimedCue(
+        input,
+        action,
+      ),
       _ => false,
     };
     if (!compatible) {
       throw StateError(
-        'Action ${action.runtimeType} is incompatible with ${input.name}.',
+        'Action ${action.runtimeType} is incompatible with ${input.type.name}.',
       );
     }
   }
+}
+
+bool _matchesTimedCue(PlayInputDefinition input, PlayAction action) {
+  if (action is! TimedCueAction) return false;
+  return input.properties['cueId'] == action.cueId &&
+      input.properties['cueOrdinal'] == action.ordinal;
 }
 
 _Evaluation _legalPieceMove(Object? raw, PlayAction action) {

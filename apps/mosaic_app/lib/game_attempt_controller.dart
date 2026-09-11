@@ -216,23 +216,25 @@ final class GameAttemptController extends ChangeNotifier {
           'pieceId': pieceId,
           'targetId': targetId,
         },
-        TimedCueAction() => const <String, Object?>{'type': 'timed_cue'},
+        TimedCueAction(:final cueId, :final ordinal) => <String, Object?>{
+          'type': 'timed_cue',
+          'cueId': cueId,
+          'ordinal': ordinal,
+        },
       };
 
   static PlayAction? _decodeAction(Object? raw) {
     if (raw is! Map) return null;
     final action = raw.cast<String, Object?>();
-    if ((action['type'] == 'tap' || action['type'] == 'timed_cue') &&
-        action.length != 1)
-      return null;
+    if (action['type'] == 'tap' && action.length != 1) return null;
     if (action['type'] != 'tap' &&
-        action['type'] != 'timed_cue' &&
         action['type'] != 'piece_move' &&
+        action['type'] != 'timed_cue' &&
         action.length != 2)
       return null;
     return switch (action['type']) {
       'tap' => action.length == 1 ? const TapAction() : null,
-      'timed_cue' => action.length == 1 ? const TimedCueAction() : null,
+      'timed_cue' => _timedCueAction(action),
       'choice' => _boundedActionText(action['optionId'], 'choice'),
       'drag' => _boundedActionText(action['targetId'], 'drag'),
       'sequence' => _sequenceAction(action['values']),
@@ -272,6 +274,21 @@ final class GameAttemptController extends ChangeNotifier {
     return PieceMoveAction(pieceId: pieceId, targetId: targetId);
   }
 
+  static PlayAction? _timedCueAction(Map<String, Object?> raw) {
+    if (raw.length != 3) return null;
+    final cueId = raw['cueId'];
+    final ordinal = raw['ordinal'];
+    if (cueId is! String ||
+        cueId.trim().isEmpty ||
+        cueId.length > 80 ||
+        ordinal is! int ||
+        ordinal < 1 ||
+        ordinal > 128) {
+      return null;
+    }
+    return TimedCueAction(cueId: cueId, ordinal: ordinal);
+  }
+
   static GameAttemptMode? _modeFromWire(Object? raw) => switch (raw) {
     'first' => GameAttemptMode.first,
     'practice' => GameAttemptMode.practice,
@@ -294,7 +311,10 @@ final class GameAttemptController extends ChangeNotifier {
       PieceMoveAction(:final pieceId, :final targetId) =>
         input.type == PlayInputType.pieceMove &&
             _sceneAllowsMove(_session.state.presentation, pieceId, targetId),
-      TimedCueAction() => input.type == PlayInputType.timedCue,
+      TimedCueAction(:final cueId, :final ordinal) =>
+        input.type == PlayInputType.timedCue &&
+            input.properties['cueId'] == cueId &&
+            input.properties['cueOrdinal'] == ordinal,
       SequenceAction(:final values) =>
         input.type == PlayInputType.pianoKey &&
             values.every(

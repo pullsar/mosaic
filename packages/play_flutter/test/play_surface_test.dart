@@ -149,7 +149,12 @@ PlayDocument _timedCuePlay() => PlayDocument.fromJson({
           {'type': 'text', 'role': 'prompt', 'value': 'Look closer.'},
         ],
       },
-      'input': {'type': 'timed_cue', 'durationMs': 300},
+      'input': {
+        'type': 'timed_cue',
+        'cueId': 'observe_1',
+        'cueOrdinal': 1,
+        'durationMs': 300,
+      },
       'validation': {'type': 'none'},
       'transition': {'default': 'choose'},
     },
