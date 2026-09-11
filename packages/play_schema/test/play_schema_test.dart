@@ -111,6 +111,55 @@ void main() {
     expect(supported, isA<DecodedPlay>());
   });
 
+  test('themed v1 metadata and platform requirements survive round-trip', () {
+    final raw = {
+      ..._fixture('compat/v1_baseline_guess.json'),
+      'requiredPlatformFlags': ['managed_game_themes'],
+      'gameFamily': {'id': 'quiet-switch', 'revisionId': 'family_1'},
+      'presentation': {
+        'themeId': 'paper-studio',
+        'themeRevisionId': 'theme_1',
+        'variantId': 'felt-ivory',
+      },
+    };
+
+    final play = PlayDocument.fromJson(raw);
+
+    expect(play.requiredPlatformFlags, ['managed_game_themes']);
+    expect(play.gameFamily?.id, 'quiet-switch');
+    expect(play.gameFamily?.revisionId, 'family_1');
+    expect(play.presentation?.themeId, 'paper-studio');
+    expect(play.presentation?.themeRevisionId, 'theme_1');
+    expect(play.presentation?.variantId, 'felt-ivory');
+    expect(
+      play.toJson(),
+      containsPair('requiredPlatformFlags', ['managed_game_themes']),
+    );
+    expect(play.toJson()['gameFamily'], {
+      'id': 'quiet-switch',
+      'revisionId': 'family_1',
+    });
+    expect(play.toJson()['presentation'], {
+      'themeId': 'paper-studio',
+      'themeRevisionId': 'theme_1',
+      'variantId': 'felt-ivory',
+    });
+  });
+
+  test('malformed presentation references fail closed before decoding', () {
+    final raw = {
+      ..._fixture('compat/v1_baseline_guess.json'),
+      'presentation': {'themeId': 'paper-studio', 'themeRevisionId': 'theme_1'},
+    };
+
+    final result = const PlayCompatibilityChecker().decode(
+      raw,
+      PlayCapabilityEnvelope.m0(),
+    );
+
+    expect(result, isA<MalformedPlay>());
+  });
+
   test('unknown optional fields remain additive-compatible', () {
     final raw = {
       ..._fixture('where_is_this.json'),
@@ -238,6 +287,69 @@ void main() {
     expect(issues.any((issue) => issue.code == 'drag_target_overlap'), isTrue);
   });
 
+  test('timed cue requires a bounded duration and none validation', () {
+    final raw = _fixture('compat/v1_baseline_guess.json');
+    final states = Map<String, Object?>.from(raw['states']! as Map);
+    final guess = Map<String, Object?>.from(states['guess']! as Map);
+    states['guess'] = {
+      ...guess,
+      'input': {
+        'type': 'timed_cue',
+        'cueId': 'observe_1',
+        'cueOrdinal': 1,
+        'durationMs': 12000,
+      },
+      'validation': {'type': 'none'},
+      'transition': {'default': r'$end'},
+    };
+
+    final valid = PlayDocument.fromJson({...raw, 'states': states});
+    expect(const PlaySchemaValidator().validate(valid), isEmpty);
+
+    final invalid = PlayDocument.fromJson({
+      ...raw,
+      'states': {
+        ...states,
+        'guess': {
+          ...states['guess']! as Map<String, Object?>,
+          'input': {
+            'type': 'timed_cue',
+            'cueId': '',
+            'cueOrdinal': 0,
+            'durationMs': 100,
+          },
+          'validation': {'type': 'equals', 'value': 'anything'},
+        },
+      },
+    });
+    final codes = const PlaySchemaValidator()
+        .validate(invalid)
+        .map((issue) => issue.code);
+    expect(
+      codes,
+      containsAll([
+        'timed_cue_duration',
+        'timed_cue_validator',
+        'timed_cue_identity',
+      ]),
+    );
+  });
+
+  test('drag publication validation rejects an unknown handle appearance', () {
+    final raw = _fixture('move_one_match.json');
+    final states = Map<String, Object?>.from(raw['states']! as Map);
+    final solve = Map<String, Object?>.from(states['solve']! as Map);
+    final input = Map<String, Object?>.from(solve['input']! as Map);
+    states['solve'] = {
+      ...solve,
+      'input': {...input, 'handleStyle': 'firework'},
+    };
+
+    final play = PlayDocument.fromJson({...raw, 'states': states});
+    final issues = const PlaySchemaValidator().validate(play);
+    expect(issues.any((issue) => issue.code == 'drag_handle_style'), isTrue);
+  });
+
   test(
     'drag publication validation requires validator target to be authored',
     () {
@@ -295,6 +407,52 @@ void main() {
     expect(
       issues.any((issue) => issue.code == 'transition_target_missing'),
       isTrue,
+    );
+  });
+
+  test('exact set validation requires unique authored options', () {
+    PlayDocument document(List<String> answer) => PlayDocument.fromJson({
+      'schemaVersion': 1,
+      'id': 'exact_set',
+      'revisionId': 'rev_1',
+      'format': 'guess',
+      'classification': 'challenge',
+      'topics': <String>[],
+      'learningTopics': <String>[],
+      'estimatedDurationSec': 10,
+      'assets': <String>[],
+      'sources': <Object>[],
+      'entryState': 'choose',
+      'states': {
+        'choose': {
+          'presentation': {
+            'layers': [
+              {'type': 'text', 'role': 'prompt', 'value': 'Pick two.'},
+            ],
+          },
+          'input': {
+            'type': 'multiple_choice',
+            'options': [
+              {'id': 'beacon', 'label': 'Beacon'},
+              {'id': 'orbit', 'label': 'Orbit'},
+              {'id': 'comet', 'label': 'Comet'},
+            ],
+          },
+          'validation': {'type': 'set_equality', 'value': answer},
+          'transition': {'correct': r'$end', 'incorrect': r'$end'},
+        },
+      },
+    });
+
+    expect(
+      const PlaySchemaValidator().validate(document(['beacon', 'orbit'])),
+      isEmpty,
+    );
+    expect(
+      const PlaySchemaValidator()
+          .validate(document(['beacon', 'beacon', 'missing']))
+          .map((issue) => issue.code),
+      contains('set_equality_options'),
     );
   });
 

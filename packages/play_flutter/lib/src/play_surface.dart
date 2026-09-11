@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import 'package:play_schema/play_schema.dart';
 import 'play_canvas_renderer.dart';
 import 'play_input_primitives.dart';
 import 'play_media_layer_renderer.dart';
+import 'play_scene_renderer.dart';
 import 'play_viewport_composition.dart';
 import 'visual_tokens.dart';
 
@@ -18,13 +20,35 @@ final class PlaySurface extends StatefulWidget {
     required this.play,
     this.mediaBuilder,
     this.onResolved,
+    this.terminal,
+    this.resolvedFeedback,
     this.onDirectManipulationChanged,
     super.key,
-  });
+  }) : session = null,
+       onAction = null;
+
+  PlaySurface.controlled({
+    required PlaySession session,
+    required ValueChanged<PlayAction> onAction,
+    this.mediaBuilder,
+    this.onResolved,
+    this.terminal,
+    this.resolvedFeedback,
+    this.onDirectManipulationChanged,
+    super.key,
+  }) : play = session.play,
+       session = session,
+       onAction = onAction;
 
   final PlayDocument play;
+  final PlaySession? session;
+  final ValueChanged<PlayAction>? onAction;
   final PlayMediaBuilder? mediaBuilder;
   final ValueChanged<PlayResolution>? onResolved;
+  final Widget? terminal;
+
+  /// Presentation supplied by a continuous round owner during a final reveal.
+  final Widget? resolvedFeedback;
 
   /// True while a direct-manipulation primitive owns a drag gesture.
   ///
@@ -38,28 +62,73 @@ final class PlaySurface extends StatefulWidget {
 
 final class _PlaySurfaceState extends State<PlaySurface> {
   static const _engine = PlayEngine();
-  late PlaySession _session;
+  PlaySession? _ownedSession;
+  final _cueProgress = ValueNotifier<_ActiveCueProgress?>(null);
+
+  bool get _isControlled => widget.session != null;
+
+  PlaySession get _session => widget.session ?? _ownedSession!;
 
   @override
   void initState() {
     super.initState();
-    _session = _engine.start(widget.play);
+    if (!_isControlled) _ownedSession = _engine.start(widget.play);
   }
 
   @override
   void didUpdateWidget(covariant PlaySurface oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.play.id != widget.play.id ||
-        oldWidget.play.revisionId != widget.play.revisionId) {
-      _session = _engine.start(widget.play);
+    final wasControlled = oldWidget.session != null;
+    if (wasControlled != _isControlled) {
+      throw FlutterError(
+        'Changing PlaySurface session ownership requires a new widget identity.',
+      );
+    }
+    if (!_isControlled &&
+        (oldWidget.play.id != widget.play.id ||
+            oldWidget.play.revisionId != widget.play.revisionId)) {
+      _ownedSession = _engine.start(widget.play);
+      _cueProgress.value = null;
     }
   }
 
   void _apply(PlayAction action) {
     if (_session.ended) return;
+    if (action is TimedCueAction) {
+      final activeCue = _cueProgress.value;
+      if (activeCue?.cueId == action.cueId &&
+          activeCue?.ordinal == action.ordinal) {
+        _cueProgress.value = null;
+      }
+    }
+    final delegated = widget.onAction;
+    if (delegated != null) {
+      delegated(action);
+      return;
+    }
     final result = _engine.apply(_session, action);
-    setState(() => _session = result.session);
+    setState(() => _ownedSession = result.session);
     widget.onResolved?.call(result);
+  }
+
+  void _updateCueProgress(String cueId, int ordinal, double progress) {
+    if (_session.ended || !progress.isFinite) return;
+    final spec = _safeTimedCueSpec(
+      _session.state.input,
+      _session.state.validation,
+    );
+    if (spec == null || spec.cueId != cueId || spec.ordinal != ordinal) return;
+    _cueProgress.value = _ActiveCueProgress(
+      cueId: cueId,
+      ordinal: ordinal,
+      value: progress.clamp(0.0, 1.0).toDouble(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _cueProgress.dispose();
+    super.dispose();
   }
 
   @override
@@ -82,64 +151,158 @@ final class _PlaySurfaceState extends State<PlaySurface> {
           .where((layer) => layer.type == 'text')
           .toList(growable: false);
       final isDragInput = state.input.type == PlayInputType.drag;
+      final isPieceMoveInput = state.input.type == PlayInputType.pieceMove;
       final usesCanvasStage = media.any((layer) => layer.type == 'canvas');
+      Widget alignScene(Widget child) =>
+          usesCanvasStage ? PlayCanvasStage(child: child) : child;
       final input = _InputOverlay(
         input: state.input,
         validation: state.validation,
-        inputEpoch: _session.attempts,
+        // A direct terminal drag keeps the placed object from its final input.
+        inputEpoch: _session.attempts - (isDragInput && _session.ended ? 1 : 0),
         onAction: _apply,
+        onCueProgress: _updateCueProgress,
         onDirectManipulationChanged: widget.onDirectManipulationChanged,
       );
+      final dragPresentation = IgnorePointer(
+        ignoring: _session.ended,
+        child: ExcludeFocus(
+          excluding: _session.ended,
+          child: ExcludeSemantics(excluding: _session.ended, child: input),
+        ),
+      );
 
-      return ColoredBox(
-        color: MosaicVisualTokens.surface,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            Positioned.fromRect(
-              rect: composition.promptRect,
-              child: SizedBox.expand(
-                key: const ValueKey<String>('play-prompt'),
-                child: _TextOverlay(layers: text),
-              ),
-            ),
-            Positioned.fromRect(
-              rect: composition.stageRect,
-              child: SizedBox.expand(
-                key: const ValueKey<String>('play-stage'),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    for (final slot in mediaSlots)
-                      KeyedSubtree(
-                        key: ValueKey<String>(slot.key),
-                        child: _buildMedia(context, slot.layer),
-                      ),
-                    if (isDragInput)
-                      if (usesCanvasStage)
-                        PlayCanvasStage(child: input)
-                      else
-                        input,
-                  ],
-                ),
-              ),
-            ),
-            Positioned.fromRect(
-              rect: composition.inputRect,
-              child: SizedBox.expand(
-                key: const ValueKey<String>('play-input'),
-                child: isDragInput ? const SizedBox.shrink() : input,
-              ),
-            ),
-            Positioned.fromRect(
-              rect: composition.utilityRect,
-              child: const IgnorePointer(
+      // Play backgrounds are authored independently of the surrounding app.
+      // Keep their objects and controls on that same palette in either OS mode.
+      final appTheme = Theme.of(context);
+      final palette = _playColorScheme(widget.play.presentation);
+      return Theme(
+        data: appTheme.copyWith(
+          colorScheme: palette,
+          textTheme: appTheme.textTheme.apply(
+            bodyColor: palette.onSurface,
+            displayColor: palette.onSurface,
+          ),
+          iconTheme: appTheme.iconTheme.copyWith(color: palette.onSurface),
+          // The round owner coordinates optional scoring audio. Native button
+          // clicks would otherwise double it and bypass the Sound preference.
+          filledButtonTheme: FilledButtonThemeData(
+            style: (appTheme.filledButtonTheme.style ?? const ButtonStyle())
+                .copyWith(enableFeedback: false),
+          ),
+          textButtonTheme: TextButtonThemeData(
+            style: (appTheme.textButtonTheme.style ?? const ButtonStyle())
+                .copyWith(enableFeedback: false),
+          ),
+          iconButtonTheme: IconButtonThemeData(
+            style: (appTheme.iconButtonTheme.style ?? const ButtonStyle())
+                .copyWith(enableFeedback: false),
+          ),
+        ),
+        child: ColoredBox(
+          color: MosaicVisualTokens.surface,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              _PlayThemeBackdrop(presentation: widget.play.presentation),
+              Positioned.fromRect(
+                rect: composition.promptRect,
                 child: SizedBox.expand(
-                  key: ValueKey<String>('play-utilities-region'),
+                  key: const ValueKey<String>('play-prompt'),
+                  child: _TextOverlay(layers: text),
                 ),
               ),
-            ),
-          ],
+              Positioned.fromRect(
+                rect: composition.stageRect,
+                child: _StageFeedback(
+                  resolved: _session.ended || widget.resolvedFeedback != null,
+                  animateScale: !isDragInput,
+                  child: _StageStateTransition(
+                    stateId: _session.stateId,
+                    child: SizedBox.expand(
+                      key: const ValueKey<String>('play-stage'),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          for (final slot in mediaSlots)
+                            KeyedSubtree(
+                              key: ValueKey<String>(slot.key),
+                              child:
+                                  slot.layer.type == 'scene' &&
+                                      slot.layer.scene != null
+                                  ? alignScene(
+                                      IgnorePointer(
+                                        ignoring: _session.ended,
+                                        child:
+                                            ValueListenableBuilder<
+                                              _ActiveCueProgress?
+                                            >(
+                                              valueListenable: _cueProgress,
+                                              builder:
+                                                  (
+                                                    context,
+                                                    activeCue,
+                                                    child,
+                                                  ) => PlaySceneRenderer(
+                                                    scene: slot.layer.scene!,
+                                                    cueId: activeCue?.cueId,
+                                                    cueProgress:
+                                                        activeCue?.value ?? 0,
+                                                    placements: _session
+                                                        .piecePlacements,
+                                                    onPieceMove:
+                                                        (
+                                                          pieceId,
+                                                          targetId,
+                                                        ) => _apply(
+                                                          PieceMoveAction(
+                                                            pieceId: pieceId,
+                                                            targetId: targetId,
+                                                          ),
+                                                        ),
+                                                    onDirectManipulationChanged:
+                                                        widget
+                                                            .onDirectManipulationChanged,
+                                                  ),
+                                            ),
+                                      ),
+                                    )
+                                  : _buildMedia(context, slot.layer),
+                            ),
+                          if (isDragInput)
+                            if (usesCanvasStage)
+                              PlayCanvasStage(child: dragPresentation)
+                            else
+                              dragPresentation,
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned.fromRect(
+                rect: composition.inputRect,
+                child: SizedBox.expand(
+                  key: const ValueKey<String>('play-input'),
+                  child:
+                      widget.resolvedFeedback ??
+                      (_session.ended
+                          ? _terminalOrEmpty(widget.terminal)
+                          : isDragInput || isPieceMoveInput
+                          ? const SizedBox.shrink()
+                          : input),
+                ),
+              ),
+              Positioned.fromRect(
+                rect: composition.utilityRect,
+                child: const IgnorePointer(
+                  child: SizedBox.expand(
+                    key: ValueKey<String>('play-utilities-region'),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       );
     },
@@ -166,6 +329,218 @@ final class _PlaySurfaceState extends State<PlaySurface> {
       );
     }
     return result;
+  }
+}
+
+final class _ActiveCueProgress {
+  const _ActiveCueProgress({
+    required this.cueId,
+    required this.ordinal,
+    required this.value,
+  });
+
+  final String cueId;
+  final int ordinal;
+  final double value;
+}
+
+/// A frozen, low-cost visual treatment selected when the immutable Play was
+/// prepared. It deliberately uses no time, random state, or user preference:
+/// replaying a revision retains the same visual identity.
+final class _PlayThemeBackdrop extends StatelessWidget {
+  const _PlayThemeBackdrop({required this.presentation});
+
+  final PlayPresentationReference? presentation;
+
+  @override
+  Widget build(BuildContext context) {
+    final reference = presentation;
+    if (reference == null) return const SizedBox.expand();
+    final color = _themeSurface(reference);
+    if (color == null) return const SizedBox.expand();
+    return RepaintBoundary(
+      child: ColoredBox(
+        key: ValueKey<String>(
+          'play-theme-backdrop:${reference.themeId}:'
+          '${reference.themeRevisionId}:${reference.variantId}',
+        ),
+        color: color,
+      ),
+    );
+  }
+}
+
+Color? _themeSurface(PlayPresentationReference reference) => switch ((
+  reference.themeId,
+  reference.themeRevisionId,
+  reference.variantId,
+)) {
+  ('paper-studio', 'theme_1', 'felt-ivory') => const Color(0xFF302821),
+  ('night-museum', 'theme_1', 'ceramic-night') => const Color(0xFF111216),
+  ('glass-garden', 'theme_1', 'mineral-mist') => const Color(0xFF102C30),
+  ('orbital', 'theme_1', 'onyx-orbit') => const Color(0xFF0B1020),
+  _ => null,
+};
+
+ColorScheme _playColorScheme(PlayPresentationReference? reference) {
+  final background = reference == null
+      ? MosaicVisualTokens.surface
+      : _themeSurface(reference) ?? MosaicVisualTokens.surface;
+  final (accent, material) = switch ((
+    reference?.themeId,
+    reference?.themeRevisionId,
+    reference?.variantId,
+  )) {
+    ('paper-studio', 'theme_1', 'felt-ivory') => (
+      const Color(0xFFE8C591),
+      const Color(0xFF594331),
+    ),
+    ('night-museum', 'theme_1', 'ceramic-night') => (
+      const Color(0xFFC2B7EC),
+      const Color(0xFF39334F),
+    ),
+    ('glass-garden', 'theme_1', 'mineral-mist') => (
+      const Color(0xFF9CDDD0),
+      const Color(0xFF24504E),
+    ),
+    ('orbital', 'theme_1', 'onyx-orbit') => (
+      const Color(0xFFADCFFF),
+      const Color(0xFF283B58),
+    ),
+    _ => (const Color(0xFF9CDDD0), const Color(0xFF284742)),
+  };
+  return ColorScheme.dark(
+    surface: background,
+    onSurface: const Color(0xFFF4F1E9),
+    onSurfaceVariant: const Color(0xFFBDC7C8),
+    surfaceContainerHighest: Color.alphaBlend(
+      accent.withValues(alpha: .18),
+      background,
+    ),
+    primary: accent,
+    onPrimary: background,
+    primaryContainer: material,
+    onPrimaryContainer: const Color(0xFFF4F1E9),
+    secondary: accent,
+    onSecondary: background,
+    secondaryContainer: material,
+    onSecondaryContainer: const Color(0xFFF4F1E9),
+    tertiary: const Color(0xFFEDCA87),
+    onTertiary: const Color(0xFF302411),
+    tertiaryContainer: const Color(0xFF6C512B),
+    onTertiaryContainer: const Color(0xFFFFE6AE),
+    outline: const Color(0xFF929E9F),
+    outlineVariant: const Color(0xFF7F9295),
+  );
+}
+
+final class _StageFeedback extends StatelessWidget {
+  const _StageFeedback({
+    required this.resolved,
+    required this.animateScale,
+    required this.child,
+  });
+  final bool resolved;
+  final bool animateScale;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final reduced = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    final accent = Theme.of(context).colorScheme.primary;
+    return RepaintBoundary(
+      child: AnimatedScale(
+        scale: resolved && animateScale ? 1.012 : 1,
+        duration: reduced ? Duration.zero : MosaicVisualTokens.fastFeedback,
+        curve: Curves.easeOutBack,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            ClipRRect(borderRadius: BorderRadius.circular(26), child: child),
+            IgnorePointer(
+              child: AnimatedContainer(
+                duration: reduced
+                    ? Duration.zero
+                    : MosaicVisualTokens.fastFeedback,
+                curve: Curves.easeOutCubic,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(28),
+                  border: Border.all(
+                    color: resolved
+                        ? accent.withValues(alpha: .72)
+                        : Colors.transparent,
+                    width: 2,
+                  ),
+                  boxShadow: resolved && !reduced
+                      ? [
+                          BoxShadow(
+                            color: accent.withValues(alpha: .20),
+                            blurRadius: 18,
+                          ),
+                        ]
+                      : const [],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Gives an authored scene change one immediate visual beat without keeping a
+/// previous media tree alive. The state key resets only when the deterministic
+/// engine advances, so retries inside the same state remain stable.
+final class _StageStateTransition extends StatefulWidget {
+  const _StageStateTransition({required this.stateId, required this.child});
+
+  final String stateId;
+  final Widget child;
+
+  @override
+  State<_StageStateTransition> createState() => _StageStateTransitionState();
+}
+
+final class _StageStateTransitionState extends State<_StageStateTransition>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _opacity;
+
+  @override
+  void initState() {
+    super.initState();
+    _opacity = AnimationController(
+      value: 1,
+      duration: MosaicVisualTokens.revealTransition,
+      vsync: this,
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _StageStateTransition oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.stateId == widget.stateId) return;
+    if (MediaQuery.maybeOf(context)?.disableAnimations ?? false) {
+      _opacity.value = 1;
+    } else {
+      unawaited(_opacity.forward(from: .78));
+    }
+  }
+
+  @override
+  void dispose() {
+    _opacity.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final reduced = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    return FadeTransition(
+      key: const ValueKey<String>('play-stage-state-transition'),
+      opacity: reduced ? const AlwaysStoppedAnimation<double>(1) : _opacity,
+      child: widget.child,
+    );
   }
 }
 
@@ -427,12 +802,53 @@ bool _dragRectsOverlap(PlayNormalizedRect left, PlayNormalizedRect right) =>
     left.y < right.y + right.height &&
     left.y + left.height > right.y;
 
+_TimedCueSpec? _safeTimedCueSpec(
+  PlayInputDefinition input,
+  PlayValidationDefinition validation,
+) {
+  if (input.type != PlayInputType.timedCue ||
+      validation.type != PlayValidatorType.none) {
+    return null;
+  }
+  final durationMs = input.properties['durationMs'];
+  final cueId = input.properties['cueId'];
+  final ordinal = input.properties['cueOrdinal'];
+  if (durationMs is! int ||
+      durationMs < 300 ||
+      durationMs > 12000 ||
+      cueId is! String ||
+      !RegExp(r'^[A-Za-z0-9_-]{1,80}$').hasMatch(cueId.trim()) ||
+      ordinal is! int ||
+      ordinal < 1 ||
+      ordinal > 128) {
+    return null;
+  }
+  return _TimedCueSpec(
+    duration: Duration(milliseconds: durationMs),
+    cueId: cueId.trim(),
+    ordinal: ordinal,
+  );
+}
+
+final class _TimedCueSpec {
+  const _TimedCueSpec({
+    required this.duration,
+    required this.cueId,
+    required this.ordinal,
+  });
+
+  final Duration duration;
+  final String cueId;
+  final int ordinal;
+}
+
 final class _InputOverlay extends StatelessWidget {
   const _InputOverlay({
     required this.input,
     required this.validation,
     required this.inputEpoch,
     required this.onAction,
+    this.onCueProgress,
     this.onDirectManipulationChanged,
   });
 
@@ -440,6 +856,8 @@ final class _InputOverlay extends StatelessWidget {
   final PlayValidationDefinition validation;
   final int inputEpoch;
   final ValueChanged<PlayAction> onAction;
+  final void Function(String cueId, int ordinal, double progress)?
+  onCueProgress;
   final ValueChanged<bool>? onDirectManipulationChanged;
 
   @override
@@ -524,6 +942,20 @@ final class _InputOverlay extends StatelessWidget {
       );
     }
 
+    if (input.type == PlayInputType.multipleChoice) {
+      return Align(
+        alignment: Alignment.center,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          child: PlayMultipleChoiceInput(
+            key: ValueKey<String>('multiple-choice:$inputEpoch'),
+            options: input.options,
+            onSubmit: (values) => onAction(SequenceAction(values)),
+          ),
+        ),
+      );
+    }
+
     if (input.type == PlayInputType.pianoKey) {
       final spec = _safePianoSpec(input, validation);
       if (spec == null) {
@@ -556,11 +988,35 @@ final class _InputOverlay extends StatelessWidget {
       );
     }
 
+    if (input.type == PlayInputType.timedCue) {
+      final spec = _safeTimedCueSpec(input, validation);
+      if (spec == null) {
+        return const PlayInputUnavailable(type: 'timed_cue');
+      }
+      return Align(
+        alignment: AlignmentDirectional.centerEnd,
+        child: Padding(
+          padding: const EdgeInsetsDirectional.fromSTEB(20, 8, 20, 8),
+          child: PlayTimedCueInput(
+            key: ValueKey<String>('timed-cue:$inputEpoch'),
+            duration: spec.duration,
+            cueId: spec.cueId,
+            ordinal: spec.ordinal,
+            onProgress: (progress) =>
+                onCueProgress?.call(spec.cueId, spec.ordinal, progress),
+            onElapsed: () => onAction(
+              TimedCueAction(cueId: spec.cueId, ordinal: spec.ordinal),
+            ),
+          ),
+        ),
+      );
+    }
+
     return PlayInputUnavailable(type: input.type.name);
   }
 }
 
-final class _ControlButton extends StatelessWidget {
+final class _ControlButton extends StatefulWidget {
   const _ControlButton({
     required this.label,
     required this.onPressed,
@@ -571,29 +1027,98 @@ final class _ControlButton extends StatelessWidget {
   final bool compact;
 
   @override
-  Widget build(BuildContext context) => Semantics(
-    button: true,
-    label: label,
-    child: FilledButton(
-      onPressed: onPressed,
-      style: FilledButton.styleFrom(
-        foregroundColor: MosaicVisualTokens.foreground,
-        backgroundColor: MosaicVisualTokens.controlSurface,
-        minimumSize: const Size(48, 48),
-        padding: EdgeInsets.symmetric(
-          horizontal: compact ? 12 : 18,
-          vertical: 10,
-        ),
-        shape: const StadiumBorder(),
-      ),
-      child: compact
-          ? Text(
-              label,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            )
-          : Text(label),
-    ),
-  );
+  State<_ControlButton> createState() => _ControlButtonState();
 }
+
+final class _ControlButtonState extends State<_ControlButton> {
+  final _states = WidgetStatesController();
+  int? _pointer;
+  bool _pressed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _states.addListener(_updatePressed);
+  }
+
+  void _updatePressed() {
+    final pressed =
+        _pointer != null || _states.value.contains(WidgetState.pressed);
+    if (_pressed != pressed) setState(() => _pressed = pressed);
+  }
+
+  void _endPointer(PointerEvent event) {
+    if (_pointer != event.pointer) return;
+    _pointer = null;
+    _updatePressed();
+  }
+
+  @override
+  void dispose() {
+    _states
+      ..removeListener(_updatePressed)
+      ..dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final reduced = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    return Semantics(
+      button: true,
+      label: widget.label,
+      child: Listener(
+        onPointerDown: (event) {
+          _pointer ??= event.pointer;
+          _updatePressed();
+        },
+        onPointerUp: _endPointer,
+        onPointerCancel: _endPointer,
+        child: TweenAnimationBuilder<Offset>(
+          tween: Tween<Offset>(
+            begin: const Offset(1, 1),
+            end: _pressed && !reduced
+                ? const Offset(.98, .94)
+                : const Offset(1, 1),
+          ),
+          duration: reduced
+              ? Duration.zero
+              : Duration(milliseconds: _pressed ? 70 : 220),
+          curve: _pressed ? Curves.easeOutCubic : Curves.easeOutBack,
+          builder: (context, scale, child) => Transform.scale(
+            scaleX: scale.dx,
+            scaleY: scale.dy,
+            // Keep the minimum 48 px hit area stable while the surface compresses.
+            transformHitTests: false,
+            child: child,
+          ),
+          child: FilledButton(
+            statesController: _states,
+            onPressed: widget.onPressed,
+            style: FilledButton.styleFrom(
+              foregroundColor: MosaicVisualTokens.foreground,
+              backgroundColor: MosaicVisualTokens.controlSurface,
+              minimumSize: const Size(48, 48),
+              padding: EdgeInsets.symmetric(
+                horizontal: widget.compact ? 12 : 18,
+                vertical: 10,
+              ),
+              shape: const StadiumBorder(),
+            ),
+            child: widget.compact
+                ? Text(
+                    widget.label,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  )
+                : Text(widget.label),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+Widget _terminalOrEmpty(Widget? terminal) =>
+    terminal ?? const SizedBox.shrink();

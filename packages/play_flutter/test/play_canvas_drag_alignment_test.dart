@@ -11,11 +11,32 @@ const _dragOrigin = Offset(0.1, 0.2);
 const _dragSize = Size(0.1, 0.1);
 const _target = Rect.fromLTWH(0.7, 0.6, 0.2, 0.2);
 
-typedef _ViewportCase = ({String name, Size viewport});
+typedef _ViewportCase = ({
+  String name,
+  Size viewport,
+  double textScale,
+  bool disableAnimations,
+});
 
 const _viewportCases = <_ViewportCase>[
-  (name: 'phone portrait', viewport: Size(390, 844)),
-  (name: 'desktop landscape', viewport: Size(1440, 900)),
+  (
+    name: 'phone portrait',
+    viewport: Size(390, 844),
+    textScale: 1,
+    disableAnimations: false,
+  ),
+  (
+    name: 'phone portrait large text reduced motion',
+    viewport: Size(390, 844),
+    textScale: 2,
+    disableAnimations: true,
+  ),
+  (
+    name: 'desktop landscape',
+    viewport: Size(1440, 900),
+    textScale: 1,
+    disableAnimations: false,
+  ),
 ];
 
 PlayDocument _dragPlay() => PlayDocument.fromJson({
@@ -94,10 +115,17 @@ void main() {
 
         await tester.pumpWidget(
           MaterialApp(
-            home: Scaffold(
-              body: PlaySurface(
-                play: _dragPlay(),
-                mediaBuilder: (context, layer) => PlayCanvas(asset: canvas),
+            home: MediaQuery(
+              data: MediaQueryData(
+                size: viewportCase.viewport,
+                textScaler: TextScaler.linear(viewportCase.textScale),
+                disableAnimations: viewportCase.disableAnimations,
+              ),
+              child: Scaffold(
+                body: PlaySurface(
+                  play: _dragPlay(),
+                  mediaBuilder: (context, layer) => PlayCanvas(asset: canvas),
+                ),
               ),
             ),
           ),
@@ -106,6 +134,7 @@ void main() {
         final surfaceRect = tester.getRect(find.byType(PlaySurface));
         final composition = PlayViewportComposition.fromConstraints(
           BoxConstraints.tight(surfaceRect.size),
+          textScaler: TextScaler.linear(viewportCase.textScale),
         );
         final expectedStage = _fitStage(composition.stageRect);
         final canvasPaint = find.descendant(
@@ -137,6 +166,65 @@ void main() {
         await tester.pump();
 
         expect(find.text('Placed.'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      '${viewportCase.name} alternate activation uses the authored target',
+      (tester) async {
+        final semantics = tester.ensureSemantics();
+        try {
+          tester.view
+            ..physicalSize = viewportCase.viewport
+            ..devicePixelRatio = 1;
+          addTearDown(() {
+            tester.view.resetPhysicalSize();
+            tester.view.resetDevicePixelRatio();
+          });
+          final canvas = _dragCanvas();
+
+          await tester.pumpWidget(
+            MaterialApp(
+              home: MediaQuery(
+                data: MediaQueryData(
+                  size: viewportCase.viewport,
+                  textScaler: TextScaler.linear(viewportCase.textScale),
+                  disableAnimations: viewportCase.disableAnimations,
+                ),
+                child: Scaffold(
+                  body: PlaySurface(
+                    play: _dragPlay(),
+                    mediaBuilder: (context, layer) => PlayCanvas(asset: canvas),
+                  ),
+                ),
+              ),
+            ),
+          );
+
+          tester.semantics.tap(find.semantics.byLabel('Move tile'));
+          await tester.pump();
+
+          expect(find.text('Placed.'), findsNothing);
+          expect(find.bySemanticsLabel('Lower right area'), findsOneWidget);
+          final surfaceRect = tester.getRect(find.byType(PlaySurface));
+          final composition = PlayViewportComposition.fromConstraints(
+            BoxConstraints.tight(surfaceRect.size),
+            textScaler: TextScaler.linear(viewportCase.textScale),
+          );
+          final expectedStage = _fitStage(composition.stageRect);
+          final expectedTarget = _mapRect(expectedStage, _target);
+          _expectRectClose(
+            tester.getRect(find.bySemanticsLabel('Lower right area')),
+            expectedTarget,
+          );
+
+          tester.semantics.tap(find.semantics.byLabel('Lower right area'));
+          await tester.pumpAndSettle();
+
+          expect(find.text('Placed.'), findsOneWidget);
+        } finally {
+          semantics.dispose();
+        }
       },
     );
   }

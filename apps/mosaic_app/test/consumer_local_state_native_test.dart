@@ -5,9 +5,32 @@ import 'package:local_state/local_state.dart';
 import 'package:mosaic_app/consumer_api_client.dart';
 import 'package:mosaic_app/consumer_local_state.dart';
 import 'package:mosaic_app/consumer_local_state_native.dart';
+import 'package:mosaic_app/game_sound_preferences.dart';
 import 'package:mosaic_app/guest_engagement.dart';
 
 void main() {
+  test(
+    'native sound preferences persist locally with quiet defaults',
+    () async {
+      final store = MosaicLocalStore.openInMemory();
+      final state = SqliteConsumerLocalState(store);
+      expect((await state.readGameSoundPreferences()).musicEnabled, isFalse);
+      await state.writeGameSoundPreferences(
+        GameSoundPreferences(
+          masterMuted: false,
+          musicEnabled: true,
+          effectsEnabled: true,
+          themeId: 'orbital',
+        ),
+      );
+      final restored = await state.readGameSoundPreferences();
+      expect(restored.musicEnabled, isTrue);
+      expect(restored.effectsEnabled, isTrue);
+      expect(restored.themeId, 'orbital');
+      store.close();
+    },
+  );
+
   test(
     'guest engagement survives SQLite reopen and cleans corruption',
     () async {

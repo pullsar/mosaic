@@ -8,6 +8,7 @@ import 'package:event_delivery/event_delivery.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mosaic_app/consumer_local_state.dart';
 import 'package:mosaic_app/consumer_local_state_web.dart';
+import 'package:mosaic_app/game_sound_preferences.dart';
 import 'package:mosaic_app/guest_engagement.dart';
 
 String _databaseName() => 'mosaic_consumer_actions_${secureUuidV4()}';
@@ -105,4 +106,46 @@ void main() {
       await IndexedDbEventStore.deleteDatabase(name);
     }
   });
+
+  test(
+    'game sound preferences survive IndexedDB reopen and clear corruption',
+    () async {
+      final name = _databaseName();
+      var store = await IndexedDbEventStore.open(databaseName: name);
+      try {
+        var state = IndexedDbConsumerLocalState(store);
+        await state.writeGameSoundPreferences(
+          GameSoundPreferences(
+            masterMuted: true,
+            musicEnabled: true,
+            effectsEnabled: true,
+            themeId: 'arcade_neon',
+          ),
+        );
+        await store.close();
+
+        store = await IndexedDbEventStore.open(databaseName: name);
+        state = IndexedDbConsumerLocalState(store);
+        final restored = await state.readGameSoundPreferences();
+        expect(restored.masterMuted, isTrue);
+        expect(restored.musicEnabled, isTrue);
+        expect(restored.effectsEnabled, isTrue);
+        expect(restored.themeId, 'arcade_neon');
+
+        await store.writeConsumerMetadata('game_sound_preferences.v1', '{bad');
+        final fallback = await state.readGameSoundPreferences();
+        expect(fallback.masterMuted, isFalse);
+        expect(fallback.musicEnabled, isFalse);
+        expect(fallback.effectsEnabled, isFalse);
+        expect(fallback.themeId, isNull);
+        expect(
+          await store.readConsumerMetadata('game_sound_preferences.v1'),
+          isNull,
+        );
+      } finally {
+        await store.close();
+        await IndexedDbEventStore.deleteDatabase(name);
+      }
+    },
+  );
 }

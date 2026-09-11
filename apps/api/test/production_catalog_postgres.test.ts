@@ -4,8 +4,12 @@ import {test} from 'node:test';
 import {Pool} from 'pg';
 import {
   applyProductionCatalog,
+  productionCatalogIntegrityFixture,
+  productionStarterCount,
   verifyProductionCatalog,
 } from '../src/production_catalog.js';
+import {echoArchitectAudioAssets} from '../src/curated_audio.js';
+import {PostgresRepository} from '../src/repository.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 
@@ -70,31 +74,54 @@ test(
           order by catalog.play_id, catalog.revision_id`,
       );
 
-      assert.deepEqual(first, {eligiblePlays: 6, canvasAssets: 12});
+      assert.deepEqual(first, {
+        eligiblePlays: productionStarterCount,
+        canvasAssets: productionCatalogIntegrityFixture.canvasAssets.length,
+      });
       assert.deepEqual(second, first);
       assert.deepEqual(afterRetry.rows, beforeRetry.rows);
       assert.deepEqual(await verifyProductionCatalog(pool), first);
+      const rounds = await new PostgresRepository(pool).getNextGameRoundCandidates(
+        'mixli_starter_move_one_match', 'rev_4',
+      ) as Array<{id: string; revisionId: string; gameFamily: {id: string; revisionId: string}}>;
+      assert.ok(rounds.length > 0 && rounds.length <= 64);
+      assert.ok(rounds.every((round) => round.id !== 'mixli_starter_move_one_match' &&
+        round.gameFamily.id === 'one-move' && round.gameFamily.revisionId === 'rev_1'));
+      const eligibleRoundKeys = new Set(productionCatalogIntegrityFixture.plays
+        .map((play) => `${play.id}/${play.revisionId}`));
+      assert.ok(rounds.every((round) => eligibleRoundKeys.has(`${round.id}/${round.revisionId}`)));
 
       const releaseStates = await pool.query<{
+        play_id: string;
         revision_id: string;
         state: string;
       }>(
-        `select revision_id, state
+        `select play_id, revision_id, state
            from feed_catalog_entries
           where play_id like 'mixli_starter_%'`,
       );
-      assert.equal(
-        releaseStates.rows.filter(
-          (row) => row.revision_id === 'rev_2' && row.state === 'eligible',
-        ).length,
-        6,
+      assert.deepEqual(
+        releaseStates.rows.filter((row) => row.state === 'eligible')
+          .map((row) => `${row.play_id}/${row.revision_id}`).sort(),
+        productionCatalogIntegrityFixture.plays
+          .map((play) => `${play.id}/${play.revisionId}`).sort(),
       );
       assert.equal(
         releaseStates.rows.filter(
-          (row) => row.revision_id === 'rev_1' && row.state === 'suspended',
+          (row) =>
+            (row.revision_id === 'rev_1' || row.revision_id === 'rev_2') &&
+            row.state === 'suspended',
         ).length,
-        6,
+        18,
       );
+      assert.equal(releaseStates.rows.filter(
+        (row) => row.revision_id === 'rev_3' && row.state === 'suspended',
+      ).length, 3);
+      const preservedPattern = await pool.query<{document: {states: {choice: {presentation: {layers: Array<{value?: string}>}}}}}>(
+        `select document from play_revisions where play_id = 'mixli_starter_finish_pattern' and revision_id = 'rev_3'`,
+      );
+      assert.ok(preservedPattern.rows[0]!.document.states.choice.presentation.layers
+        .some((layer) => layer.value === 'Repeat the pattern.'));
 
       const eligible = await pool.query<{
         document: {
@@ -105,7 +132,7 @@ test(
             {
               input?: {type?: string};
               presentation?: {
-                layers?: Array<{type?: string; assetId?: string}>;
+                layers?: Array<{type?: string; assetId?: string; scene?: unknown}>;
               };
             }
           >;
@@ -119,16 +146,24 @@ test(
             and catalog.state = 'eligible'
           order by catalog.curated_order`,
       );
-      assert.equal(eligible.rows.length, 6);
+      assert.equal(eligible.rows.length, productionStarterCount);
       assert.equal(
         eligible.rows.filter((row) => {
-          const primaryAsset = row.document.assets?.[0];
-          return row.document.states?.reveal?.presentation?.layers?.some(
-            (layer) =>
-              layer.type === 'canvas' && layer.assetId === primaryAsset,
+          const playAssets = new Set(row.document.assets ?? []);
+          return Object.values(row.document.states ?? {}).some(
+            (state) => state.presentation?.layers?.some(
+              (layer) =>
+                (layer.type === 'canvas' &&
+                  layer.assetId !== undefined &&
+                  playAssets.has(layer.assetId)) ||
+                (layer.type === 'audio' &&
+                  layer.assetId !== undefined &&
+                  playAssets.has(layer.assetId)) ||
+                (layer.type === 'scene' && layer.scene !== undefined),
+            ),
           );
         }).length,
-        6,
+        productionStarterCount,
       );
       const interactionTypes = new Set(
         eligible.rows.map((row) => {
@@ -139,24 +174,36 @@ test(
         }),
       );
       assert.equal(interactionTypes.has('single_choice'), true);
-      assert.equal(interactionTypes.has('drag'), true);
-      for (let index = 1; index < eligible.rows.length; index += 1) {
-        assert.notEqual(
-          eligible.rows[index]?.document.topics?.[0],
-          eligible.rows[index - 1]?.document.topics?.[0],
-        );
+      assert.equal(interactionTypes.has('piece_move'), true);
+      assert.equal(interactionTypes.has('timed_cue'), true);
+      for (const row of eligible.rows) {
+        const topics = row.document.topics ?? [];
+        assert.ok(topics.length > 0);
+        assert.equal(new Set(topics).size, topics.length);
       }
 
-      const eligibleAssetIds = eligible.rows.flatMap(
-        (row) => row.document.assets ?? [],
-      );
+      const eligibleCanvasAssetIds = eligible.rows.flatMap((row) => {
+        const assets = new Set(row.document.assets ?? []);
+        return Object.values(row.document.states ?? {}).flatMap((state) =>
+          state.presentation?.layers?.flatMap((layer) =>
+            layer.type === 'canvas' &&
+                    layer.assetId !== undefined &&
+                    assets.has(layer.assetId)
+                ? [layer.assetId]
+                : [],
+          ) ?? [],
+        );
+      });
       const eligibleCanvases = await pool.query<{
         document: {palette?: Record<string, string>};
       }>(
         'select document from canvas_assets where id = any($1::text[])',
-        [eligibleAssetIds],
+        [eligibleCanvasAssetIds],
       );
-      assert.equal(eligibleCanvases.rows.length, 6);
+      assert.equal(
+        eligibleCanvases.rows.length,
+        new Set(eligibleCanvasAssetIds).size,
+      );
       assert.ok(
         new Set(
           eligibleCanvases.rows.map((row) => JSON.stringify(row.document.palette)),
@@ -165,13 +212,13 @@ test(
 
       const playSnapshot = await pool.query<{document: unknown}>(
         `select document from play_revisions
-          where play_id = 'mixli_starter_quick_logic' and revision_id = 'rev_2'`,
+          where play_id = 'mixli_starter_quick_logic' and revision_id = 'rev_3'`,
       );
       try {
         await pool.query(
           `update play_revisions
               set document = document - 'states'
-            where play_id = 'mixli_starter_quick_logic' and revision_id = 'rev_2'`,
+            where play_id = 'mixli_starter_quick_logic' and revision_id = 'rev_3'`,
         );
         await assert.rejects(
           verifyProductionCatalog(pool),
@@ -180,26 +227,26 @@ test(
       } finally {
         await pool.query(
           `update play_revisions set document = $1::jsonb
-            where play_id = 'mixli_starter_quick_logic' and revision_id = 'rev_2'`,
+            where play_id = 'mixli_starter_quick_logic' and revision_id = 'rev_3'`,
           [JSON.stringify(playSnapshot.rows[0]?.document)],
         );
       }
 
       const canvasSnapshot = await pool.query<{content_sha256: string}>(
         `select content_sha256 from canvas_assets
-          where id = 'mixli_canvas_quick_logic_v2'`,
+          where id = 'mixli_canvas_quick_logic_v3'`,
       );
       try {
         await pool.query(
           `update canvas_assets
               set content_sha256 = repeat('0', 64)
-            where id = 'mixli_canvas_quick_logic_v2'`,
+            where id = 'mixli_canvas_quick_logic_v3'`,
         );
         await assert.rejects(verifyProductionCatalog(pool), /content hash changed/);
       } finally {
         await pool.query(
           `update canvas_assets set content_sha256 = $1
-            where id = 'mixli_canvas_quick_logic_v2'`,
+            where id = 'mixli_canvas_quick_logic_v3'`,
           [canvasSnapshot.rows[0]?.content_sha256],
         );
       }
@@ -208,7 +255,7 @@ test(
         await pool.query(
           `delete from play_revision_topics
             where play_id = 'mixli_starter_city_instinct'
-              and revision_id = 'rev_2'
+              and revision_id = 'rev_3'
               and topic_id = 'travel'`,
         );
         await assert.rejects(
@@ -224,7 +271,7 @@ test(
           `update play_revision_topics
               set role = 'learning'
             where play_id = 'mixli_starter_quick_logic'
-              and revision_id = 'rev_2'
+              and revision_id = 'rev_3'
               and topic_id = 'logic'`,
         );
         await assert.rejects(
@@ -253,13 +300,19 @@ test(
       const assetIds = new Set(
         documents.rows.flatMap((row) => row.document.assets ?? []),
       );
+      const audioAssetIds = new Set(
+        echoArchitectAudioAssets.map((asset) => asset.assetId),
+      );
+      const canvasAssetIds = new Set(
+        [...assetIds].filter((assetId) => !audioAssetIds.has(assetId)),
+      );
       const registered = await pool.query<{id: string}>(
         'select id from canvas_assets where id = any($1::text[])',
-        [[...assetIds]],
+        [[...canvasAssetIds]],
       );
       assert.deepEqual(
         new Set(registered.rows.map((row) => row.id)),
-        assetIds,
+        canvasAssetIds,
       );
     } finally {
       await pool.query('delete from plays where id = $1', [unrelated]);

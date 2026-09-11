@@ -254,6 +254,7 @@ final class PlayMediaLayerBuilder {
     this.audioEngine,
     this.canvasResolver,
     this.active = true,
+    this.soundEnabled = true,
     this.semanticResumeEpoch = 0,
     this.onVideoPlaybackEvent,
     this.unsupportedBuilder,
@@ -269,6 +270,7 @@ final class PlayMediaLayerBuilder {
   final ActiveMediaCoordinator mediaCoordinator;
   final PlayVideoControllerFactory videoControllerFactory;
   final bool active;
+  final bool soundEnabled;
   final int semanticResumeEpoch;
   final PlayVideoPlaybackObserver? onVideoPlaybackEvent;
   final UnsupportedPlayMediaBuilder? unsupportedBuilder;
@@ -310,6 +312,7 @@ final class PlayMediaLayerBuilder {
             engine: engine,
             coordinator: mediaCoordinator,
             active: active,
+            soundEnabled: soundEnabled,
           );
   }
 

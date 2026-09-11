@@ -366,7 +366,7 @@ void main() {
 
     expect(find.text('First Play'), findsOneWidget);
     expect(find.text('What are you into?'), findsNothing);
-    expect(find.text('Your Mixli is getting good'), findsNothing);
+    expect(find.text('Early access'), findsNothing);
   });
 
   testWidgets('eligible guest sees a dismissible signup sheet', (tester) async {
@@ -378,7 +378,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Fifth Play'), findsOneWidget);
-    expect(find.text('Your Mixli is getting good'), findsOneWidget);
+    expect(find.text('Early access'), findsOneWidget);
     expect(find.text('Get early access'), findsOneWidget);
     expect(find.text('Join Mixli'), findsNothing);
     expect(find.text('Not now'), findsOneWidget);
@@ -386,7 +386,7 @@ void main() {
     await tester.tap(find.text('Not now'));
     await tester.pumpAndSettle();
     expect(find.text('Fifth Play'), findsOneWidget);
-    expect(find.text('Your Mixli is getting good'), findsNothing);
+    expect(find.text('Early access'), findsNothing);
   });
 
   testWidgets('Not now stays visible until prompt reset is durable', (
@@ -419,13 +419,13 @@ void main() {
     expect(store.blockedWriteStarted, isTrue);
     await tester.pump(const Duration(seconds: 1));
     await tester.pump();
-    expect(find.text('Your Mixli is getting good'), findsOneWidget);
+    expect(find.text('Early access'), findsOneWidget);
     expect(find.text('Not now'), findsOneWidget);
     if (!store.blockedWriteStarted) return;
     store.releaseWrite();
     await tester.pumpAndSettle();
 
-    expect(find.text('Your Mixli is getting good'), findsNothing);
+    expect(find.text('Early access'), findsNothing);
     expect(store.writes, writesBeforeDismissal + 1);
     expect(store.state?.seenIdentities, isEmpty);
     expect(store.state?.toJson()['hasMeaningfulInteraction'], isFalse);
@@ -458,14 +458,14 @@ void main() {
     expect(store.blockedWriteStarted, isTrue);
     await tester.pump(const Duration(seconds: 1));
     await tester.pump();
-    expect(find.text('Your Mixli is getting good'), findsOneWidget);
+    expect(find.text('Early access'), findsOneWidget);
     expect(store.writes, writesBeforeBack);
     if (!store.blockedWriteStarted) return;
     store.releaseWrite();
     await popFuture;
     await tester.pumpAndSettle();
 
-    expect(find.text('Your Mixli is getting good'), findsNothing);
+    expect(find.text('Early access'), findsNothing);
     expect(store.writes, writesBeforeBack + 1);
     expect(store.state?.seenIdentities, isEmpty);
   });
@@ -481,8 +481,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Accounts are opening soon'), findsOneWidget);
-    expect(find.text('Your guest feed stays right here.'), findsOneWidget);
-    expect(find.text('Back to exploring'), findsOneWidget);
+    expect(find.text('Continue playing'), findsOneWidget);
     expect(find.text('Account created'), findsNothing);
   });
 
@@ -531,7 +530,7 @@ void main() {
       _app(controller: restarted, child: const Text('Restarted Play')),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Your Mixli is getting good'), findsNothing);
+    expect(find.text('Early access'), findsNothing);
 
     clock = clock.add(const Duration(days: 7));
     for (var index = 0; index < 8; index += 1) {
@@ -554,13 +553,13 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Your Mixli is getting good'), findsNothing);
+    expect(find.text('Early access'), findsNothing);
 
     await tester.pumpWidget(
       _app(controller: controller, child: const Text('Fifth Play')),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Your Mixli is getting good'), findsOneWidget);
+    expect(find.text('Early access'), findsOneWidget);
   });
 
   testWidgets('compact home remains usable with RTL and large text', (

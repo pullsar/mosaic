@@ -332,6 +332,19 @@ final class MosaicLocalStore {
 
   String? loadGuestEngagementJson() => _metadata(_guestEngagementKey);
 
+  String? loadConsumerMetadata(String key) => _metadata(key);
+
+  void saveConsumerMetadata(String key, String value) {
+    if (key.trim().isEmpty || value.length > 16 * 1024) {
+      throw ArgumentError('Invalid consumer metadata.');
+    }
+    _setMetadata(key, value);
+  }
+
+  void clearConsumerMetadata(String key) {
+    _db.execute('delete from metadata where key = ?', [key]);
+  }
+
   void saveGuestEngagementJson(String value) {
     if (value.isEmpty) {
       throw ArgumentError.value(value, 'value', 'must not be empty');

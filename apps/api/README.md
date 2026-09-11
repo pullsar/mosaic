@@ -175,6 +175,24 @@ MEDIA_FFMPEG_PATH                 # optional
 
 The workers never expose raw source object keys for consumer delivery. Publication is separately gated on compatible managed derivatives; HEVC/HDR source media cannot become the only consumable video representation, and a registered caption plan blocks publication until a valid WebVTT derivative is ready.
 
+### Curated Echo Architect audio
+
+Echo Architect uses six short CC0 piano motifs checked into
+`curated_assets/echo_architect/` with source/output hashes and provenance.
+Before publishing its catalog rounds, import the immutable sources, let the
+normalization worker finish, then apply the catalog:
+
+```bash
+npm run import:curated-audio
+npm run worker:media
+npm run bootstrap:catalog
+```
+
+The feed asset-readiness gate withholds those rounds until the compatible AAC
+derivatives are ready. The importer does not fetch audio or bypass the worker;
+it puts the reviewed source bytes into the configured source store and registers
+the normal audio derivative plan.
+
 ## Scope boundary
 
 The current consumer ranker is deliberately a small weighted rules baseline with persisted explainability, not learned ranking infrastructure. This service still avoids creator Studio, Redis/queue infrastructure without measured need, payments, a generic ORM, pgvector/semantic ranking, and opaque engagement optimization. Account authentication/anonymous-to-user merge is intentionally separate from anonymous actor proof and is tracked independently. Add broader infrastructure only when a concrete milestone and measured need justify it.

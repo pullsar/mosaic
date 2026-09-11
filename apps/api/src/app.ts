@@ -27,6 +27,15 @@ import type {
 import type {ConsumerSignalProjector} from './consumer_signal_projector.js';
 import type {FeedAssetReadinessResolver} from './feed_asset_readiness.js';
 import {createApiMetrics} from './metrics.js';
+import {
+  ChallengeAuthorizationError,
+  ChallengeIdempotencyConflictError,
+  ChallengeInputError,
+  ChallengeNotFoundError,
+  ChallengeSubmissionConflictError,
+  ChallengeUnavailableError,
+  type PlayChallengeRepository,
+} from './play_challenge.js';
 import type {EventInput, MosaicRepository} from './repository.js';
 
 const ACTOR_ACCESS_TOKEN = /^[A-Za-z0-9_-]{43}$/;
@@ -40,6 +49,7 @@ export interface BuildAppOptions {
   consumerSearchRepository?: ConsumerSearchRepository;
   consumerSignalProjector?: ConsumerSignalProjector;
   feedAssetReadiness?: FeedAssetReadinessResolver;
+  challengeRepository?: PlayChallengeRepository;
   logLevel?: string;
   releaseSha?: string;
   allowedWebOrigins?: readonly string[];
@@ -225,6 +235,122 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     }
     return reply.send(document);
   });
+
+  app.get('/v1/public/plays/:playId/revisions/:revisionId', async (request, reply) => {
+    const params = request.params as {playId?: string; revisionId?: string};
+    const playId = boundedText(params.playId, 200);
+    const revisionId = boundedText(params.revisionId, 200);
+    if (playId === null || revisionId === null) {
+      return reply.code(400).send({error: 'invalid_public_play_request'});
+    }
+    const document = await options.repository.getPublicPlayRevision(playId, revisionId);
+    if (document === null) return reply.code(404).send({error: 'public_play_not_found'});
+    return reply.send(document);
+  });
+
+  app.post('/v1/plays/:playId/revisions/:revisionId/next-round', async (request, reply) => {
+    const params = request.params as {playId?: string; revisionId?: string};
+    const playId = boundedText(params.playId, 200);
+    const revisionId = boundedText(params.revisionId, 200);
+    const capabilities = parseClientCapabilities(request.body);
+    if (!playId || !revisionId || !capabilities) {
+      return reply.code(400).send({error: 'invalid_request'});
+    }
+    const source = await options.repository.getPublicPlayRevision(playId, revisionId);
+    if (!isRecord(source)) return reply.code(404).send({error: 'public_play_not_found'});
+    const family = source.gameFamily;
+    if (!isRecord(family)) return reply.code(204).send();
+    const candidates = await options.repository.getNextGameRoundCandidates?.(playId, revisionId) ?? [];
+    for (const candidate of candidates.slice(0, 64)) {
+      if (!isRecord(candidate) || candidate.id === playId || !isRecord(candidate.gameFamily)) continue;
+      if (candidate.gameFamily.id !== family.id ||
+          candidate.gameFamily.revisionId !== family.revisionId) continue;
+      if (checkPlayCompatibility(candidate, capabilities).compatible) {
+        return reply.send(candidate);
+      }
+    }
+    return reply.code(204).send();
+  });
+
+  const challenges = options.challengeRepository;
+  if (challenges) {
+    app.post('/v1/challenges', async (request, reply) => {
+      if (!isRecord(request.body)) return reply.code(400).send({error: 'invalid_challenge'});
+      const actorId = boundedText(request.body.actorId, 200);
+      if (actorId === null || !(await requireActorAccess(options.repository, request, reply, actorId))) return;
+      try {
+        const challenge = await challenges.create({
+          creatorActorId: actorId,
+          idempotencyKey: requiredRouteText(request.body.idempotencyKey, 200),
+          playId: requiredRouteText(request.body.playId, 200),
+          revisionId: requiredRouteText(request.body.revisionId, 200),
+          ...(request.body.presentation === undefined
+            ? {}
+            : {presentation: challengePresentation(request.body.presentation)}),
+          mode: request.body.mode as 'async_same_round',
+          scoringVersion: requiredRouteText(request.body.scoringVersion, 100),
+          revealPolicy: request.body.revealPolicy as 'after_participant_submission',
+          ...(request.body.creatorResult === undefined
+            ? {}
+            : {creatorResult: challengeResult(request.body.creatorResult)}),
+        });
+        return reply.code(201).send(challenge);
+      } catch (error) {
+        return challengeError(reply, error);
+      }
+    });
+
+    app.get('/v1/challenges/:inviteId', async (request, reply) => {
+      const inviteId = boundedText((request.params as {inviteId?: string}).inviteId, 200);
+      if (inviteId === null) return reply.code(400).send({error: 'invalid_challenge'});
+      try {
+        return await challenges.readInvite(inviteId);
+      } catch (error) {
+        return challengeError(reply, error);
+      }
+    });
+
+    app.post('/v1/challenges/:inviteId/submissions', async (request, reply) => {
+      if (!isRecord(request.body)) return reply.code(400).send({error: 'invalid_challenge_submission'});
+      const inviteId = boundedText((request.params as {inviteId?: string}).inviteId, 200);
+      const actorId = boundedText(request.body.actorId, 200);
+      if (inviteId === null || actorId === null || !(await requireActorAccess(options.repository, request, reply, actorId))) return;
+      try {
+        return await challenges.submit({
+          inviteId,
+          actorId,
+          result: challengeResult(request.body.result),
+        });
+      } catch (error) {
+        return challengeError(reply, error);
+      }
+    });
+
+    app.get('/v1/challenges/:inviteId/comparison/:actorId', async (request, reply) => {
+      const params = request.params as {inviteId?: string; actorId?: string};
+      const inviteId = boundedText(params.inviteId, 200);
+      const actorId = boundedText(params.actorId, 200);
+      if (inviteId === null || actorId === null || !(await requireActorAccess(options.repository, request, reply, actorId))) return;
+      try {
+        return await challenges.readComparison(inviteId, actorId);
+      } catch (error) {
+        return challengeError(reply, error);
+      }
+    });
+
+    app.post('/v1/challenges/:inviteId/revoke', async (request, reply) => {
+      if (!isRecord(request.body)) return reply.code(400).send({error: 'invalid_challenge'});
+      const inviteId = boundedText((request.params as {inviteId?: string}).inviteId, 200);
+      const actorId = boundedText(request.body.actorId, 200);
+      if (inviteId === null || actorId === null || !(await requireActorAccess(options.repository, request, reply, actorId))) return;
+      try {
+        await challenges.revoke(inviteId, actorId);
+        return reply.code(204).send();
+      } catch (error) {
+        return challengeError(reply, error);
+      }
+    });
+  }
 
   if (options.consumerRepository && feedService) {
     const consumerRepository = options.consumerRepository;
@@ -461,4 +587,38 @@ function optionalInteger(
 
 function isInputError(error: unknown): error is TypeError | RangeError {
   return error instanceof TypeError || error instanceof RangeError;
+}
+
+function requiredRouteText(value: unknown, maxLength: number): string {
+  const parsed = boundedText(value, maxLength);
+  if (parsed === null) throw new ChallengeInputError('Challenge input is invalid.');
+  return parsed;
+}
+
+function challengePresentation(value: unknown): Record<string, never> {
+  if (!isRecord(value)) throw new ChallengeInputError('Challenge presentation is invalid.');
+  return value as Record<string, never>;
+}
+
+function challengeResult(value: unknown): {
+  outcome: 'correct' | 'incorrect' | 'completed';
+  score: number;
+  wrongAnswerCount: number;
+} {
+  if (!isRecord(value)) throw new ChallengeInputError('Challenge result is invalid.');
+  return {
+    outcome: value.outcome as 'correct' | 'incorrect' | 'completed',
+    score: value.score as number,
+    wrongAnswerCount: value.wrongAnswerCount as number,
+  };
+}
+
+function challengeError(reply: FastifyReply, error: unknown): FastifyReply {
+  if (error instanceof ChallengeInputError) return reply.code(400).send({error: 'invalid_challenge'});
+  if (error instanceof ChallengeIdempotencyConflictError) return reply.code(409).send({error: 'challenge_idempotency_conflict'});
+  if (error instanceof ChallengeSubmissionConflictError) return reply.code(409).send({error: 'challenge_submission_conflict'});
+  if (error instanceof ChallengeAuthorizationError) return reply.code(403).send({error: 'challenge_forbidden'});
+  if (error instanceof ChallengeNotFoundError) return reply.code(404).send({error: 'challenge_not_found'});
+  if (error instanceof ChallengeUnavailableError) return reply.code(410).send({error: 'challenge_unavailable'});
+  throw error;
 }

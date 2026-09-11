@@ -15,6 +15,11 @@ PlayDocument fixture(String name) {
 PlayDocument playWithValidation({
   required String inputType,
   required Map<String, Object?> validation,
+  Map<String, Object?> inputProperties = const {},
+  Map<String, String> transition = const {
+    'correct': r'$end',
+    'incorrect': r'$end',
+  },
 }) => PlayDocument.fromJson({
   'schemaVersion': 1,
   'id': 'malformed_validator',
@@ -34,9 +39,9 @@ PlayDocument playWithValidation({
           {'type': 'text', 'role': 'prompt', 'value': 'Try it.'},
         ],
       },
-      'input': {'type': inputType},
+      'input': {'type': inputType, ...inputProperties},
       'validation': validation,
-      'transition': {'correct': r'$end', 'incorrect': r'$end'},
+      'transition': transition,
     },
   },
 });
@@ -79,6 +84,30 @@ void main() {
     expect(result.session.stateId, 'reveal');
   });
 
+  test('validates an exact option set independently of selection order', () {
+    final play = playWithValidation(
+      inputType: 'multiple_choice',
+      validation: {
+        'type': 'set_equality',
+        'value': ['beacon', 'orbit'],
+      },
+    );
+    final result = engine.apply(
+      engine.start(play),
+      const SequenceAction(['orbit', 'beacon']),
+    );
+
+    expect(result.wasCorrect, isTrue);
+    expect(result.session.ended, isTrue);
+    expect(
+      () => engine.apply(
+        engine.start(play),
+        const SequenceAction(['beacon', 'beacon', 'orbit']),
+      ),
+      throwsA(stateErrorMessage('set_equality action contains duplicates.')),
+    );
+  });
+
   test('validates typed drag target and rejects unrelated actions', () {
     final session = engine.start(fixture('move_one_match.json'));
     final result = engine.apply(session, const DragAction('solution_a'));
@@ -98,6 +127,102 @@ void main() {
     expect(result.wasCorrect, isFalse);
     expect(result.outcome, 'incorrect');
     expect(result.session.stateId, 'solve');
+  });
+
+  test('timed cue advances only from its explicit presentation action', () {
+    final play = playWithValidation(
+      inputType: 'timed_cue',
+      validation: {'type': 'none'},
+      transition: {'default': r'$end'},
+      inputProperties: {
+        'cueId': 'observe_1',
+        'cueOrdinal': 1,
+        'durationMs': 300,
+      },
+    );
+    final session = engine.start(play);
+
+    final result = engine.apply(
+      session,
+      const TimedCueAction(cueId: 'observe_1', ordinal: 1),
+    );
+    expect(result.outcome, 'default');
+    expect(result.session.ended, isTrue);
+    expect(
+      () => engine.apply(session, const TapAction()),
+      throwsA(isA<StateError>()),
+    );
+    expect(
+      () => engine.apply(
+        session,
+        const TimedCueAction(cueId: 'observe_2', ordinal: 2),
+      ),
+      throwsA(isA<StateError>()),
+    );
+  });
+
+  test('piece moves retain the engine-owned resulting configuration', () {
+    final play = playWithValidation(
+      inputType: 'piece_move',
+      validation: {
+        'type': 'legal_piece_move',
+        'value': [
+          {'pieceId': 'match', 'targetId': 'slot', 'correct': true},
+          {'pieceId': 'match', 'targetId': 'miss', 'correct': false},
+        ],
+      },
+    );
+    final result = engine.apply(
+      engine.start(play),
+      const PieceMoveAction(pieceId: 'match', targetId: 'slot'),
+    );
+
+    expect(result.wasCorrect, isTrue);
+    expect(result.session.piecePlacements, {'match': 'slot'});
+  });
+
+  test('piece moves reject unlisted source and destination pairs', () {
+    final play = playWithValidation(
+      inputType: 'piece_move',
+      validation: {
+        'type': 'legal_piece_move',
+        'value': [
+          {'pieceId': 'match', 'targetId': 'slot', 'correct': true},
+        ],
+      },
+    );
+
+    expect(
+      () => engine.apply(
+        engine.start(play),
+        const PieceMoveAction(pieceId: 'match', targetId: 'unknown_slot'),
+      ),
+      throwsA(
+        stateErrorMessage(
+          'piece_move action references an unknown piece or target.',
+        ),
+      ),
+    );
+  });
+
+  test('piece moves reject malformed legal move rules', () {
+    final play = playWithValidation(
+      inputType: 'piece_move',
+      validation: {
+        'type': 'legal_piece_move',
+        'value': [
+          {'pieceId': 'match', 'targetId': 'slot'},
+        ],
+      },
+    );
+
+    expect(
+      () => engine.apply(
+        engine.start(play),
+        const PieceMoveAction(pieceId: 'match', targetId: 'slot'),
+      ),
+      throwsA(stateErrorMessage('legal_piece_move payload is malformed.')),
+    );
   });
 
   test('unimplemented typed inputs reject arbitrary actions', () {

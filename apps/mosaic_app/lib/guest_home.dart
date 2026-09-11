@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:play_flutter/play_flutter.dart';
 
 import 'guest_engagement.dart';
@@ -12,6 +13,7 @@ final class GuestHome extends StatefulWidget {
     required this.engagement,
     required this.child,
     required this.onSearch,
+    this.onSaved,
     this.activeSearchLabel,
     this.onClearSearch,
     this.directManipulationActive = false,
@@ -24,6 +26,7 @@ final class GuestHome extends StatefulWidget {
   final GuestEngagementController engagement;
   final Widget child;
   final VoidCallback onSearch;
+  final VoidCallback? onSaved;
   final String? activeSearchLabel;
   final VoidCallback? onClearSearch;
   final bool directManipulationActive;
@@ -105,39 +108,45 @@ final class _GuestHomeState extends State<GuestHome> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    key: const ValueKey<String>('guest-home'),
-    backgroundColor: Colors.black,
-    body: LayoutBuilder(
-      builder: (context, constraints) {
-        final mediaQuery = MediaQuery.of(context);
-        final composition = PlayViewportComposition.fromConstraints(
-          constraints,
-          safeInsets: mediaQuery.padding,
-          textScaler: mediaQuery.textScaler,
-        );
-        return PlayViewportScope(
-          composition: composition,
-          child: Stack(
-            fit: StackFit.expand,
-            children: <Widget>[
-              widget.child,
-              Positioned.fromRect(
-                rect: composition.chromeRect,
-                child: _GuestChrome(
-                  onSearch: widget.onSearch,
-                  activeSearchLabel: widget.activeSearchLabel,
-                  onClearSearch: widget.onClearSearch,
+  Widget build(BuildContext context) => AnnotatedRegion<SystemUiOverlayStyle>(
+    value: SystemUiOverlayStyle.light.copyWith(
+      statusBarColor: Colors.transparent,
+      systemNavigationBarColor: Colors.black,
+    ),
+    child: Scaffold(
+      key: const ValueKey<String>('guest-home'),
+      backgroundColor: Colors.black,
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final mediaQuery = MediaQuery.of(context);
+          final composition = PlayViewportComposition.fromConstraints(
+            constraints,
+            safeInsets: mediaQuery.padding,
+            textScaler: mediaQuery.textScaler,
+          );
+          return PlayViewportScope(
+            composition: composition,
+            child: Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                widget.child,
+                Positioned.fromRect(
+                  rect: composition.chromeRect,
+                  child: _GuestChrome(
+                    onSearch: widget.onSearch,
+                    activeSearchLabel: widget.activeSearchLabel,
+                    onClearSearch: widget.onClearSearch,
+                  ),
                 ),
-              ),
-              Positioned.fromRect(
-                rect: composition.navigationRect,
-                child: const _GuestNavigation(),
-              ),
-            ],
-          ),
-        );
-      },
+                Positioned.fromRect(
+                  rect: composition.navigationRect,
+                  child: _GuestNavigation(onSaved: widget.onSaved),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
     ),
   );
 }
@@ -221,7 +230,9 @@ final class _GuestChrome extends StatelessWidget {
 }
 
 final class _GuestNavigation extends StatelessWidget {
-  const _GuestNavigation();
+  const _GuestNavigation({this.onSaved});
+
+  final VoidCallback? onSaved;
 
   static const _items = <_GuestNavigationItem>[
     _GuestNavigationItem('play', 'Play', Icons.play_circle_outline_rounded),
@@ -238,45 +249,50 @@ final class _GuestNavigation extends StatelessWidget {
       children: <Widget>[
         for (final item in _items)
           Expanded(
-            child: Semantics(
-              selected: item.id == 'play',
-              child: TextButton(
-                key: ValueKey<String>('guest-nav-${item.id}'),
-                onPressed: () {
-                  if (item.id == 'play') return;
-                  ScaffoldMessenger.of(context)
-                    ..hideCurrentSnackBar()
-                    ..showSnackBar(
-                      SnackBar(content: Text('${item.label} is coming soon.')),
-                    );
-                },
-                style: TextButton.styleFrom(
-                  foregroundColor: item.id == 'play'
-                      ? Colors.white
-                      : const Color(0xFFB9B9C0),
-                  minimumSize: const Size(48, 48),
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  shape: const RoundedRectangleBorder(),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: <Widget>[
-                    Icon(item.icon, size: 20),
-                    const SizedBox(height: 2),
-                    Text(
-                      item.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.fade,
-                      softWrap: false,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                      ),
+            child: Builder(
+              builder: (context) {
+                final enabled =
+                    item.id == 'play' ||
+                    (item.id == 'saved' && onSaved != null);
+                return Semantics(
+                  selected: item.id == 'play',
+                  child: TextButton(
+                    key: ValueKey<String>('guest-nav-${item.id}'),
+                    onPressed: enabled
+                        ? () {
+                            if (item.id == 'play') return;
+                            if (item.id == 'saved') onSaved?.call();
+                          }
+                        : null,
+                    style: TextButton.styleFrom(
+                      foregroundColor: item.id == 'play'
+                          ? Colors.white
+                          : const Color(0xFFB9B9C0),
+                      minimumSize: const Size(48, 48),
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      shape: const RoundedRectangleBorder(),
                     ),
-                  ],
-                ),
-              ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: <Widget>[
+                        Icon(item.icon, size: 20),
+                        const SizedBox(height: 2),
+                        Text(
+                          item.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.fade,
+                          softWrap: false,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
             ),
           ),
       ],
@@ -346,17 +362,12 @@ final class _GuestSignupSheetState extends State<_GuestSignupSheet> {
           ),
           const SizedBox(height: 24),
           Text(
-            'Your Mixli is getting good',
+            'Early access',
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
               color: Colors.white,
               fontWeight: FontWeight.w800,
               letterSpacing: -0.5,
             ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Keep this feed and your progress.',
-            style: TextStyle(color: Color(0xFFB9B9C0), fontSize: 16),
           ),
           const SizedBox(height: 24),
           SizedBox(
@@ -424,18 +435,12 @@ final class _EarlyAccessPage extends StatelessWidget {
               letterSpacing: -1,
             ),
           ),
-          const SizedBox(height: 12),
-          const Text(
-            'Your guest feed stays right here.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Color(0xFFB9B9C0), fontSize: 17),
-          ),
           const Spacer(),
           SizedBox(
             height: 52,
             child: FilledButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Back to exploring'),
+              child: const Text('Continue playing'),
             ),
           ),
         ],

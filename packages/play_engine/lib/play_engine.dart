@@ -25,18 +25,34 @@ final class DragAction extends PlayAction {
   final String targetId;
 }
 
+final class PieceMoveAction extends PlayAction {
+  const PieceMoveAction({required this.pieceId, required this.targetId});
+  final String pieceId;
+  final String targetId;
+}
+
+/// Emitted by a bounded presentation timer; the engine does not own a clock.
+final class TimedCueAction extends PlayAction {
+  const TimedCueAction({required this.cueId, required this.ordinal});
+
+  final String cueId;
+  final int ordinal;
+}
+
 final class PlaySession {
   const PlaySession({
     required this.play,
     required this.stateId,
     required this.ended,
     required this.attempts,
+    this.piecePlacements = const {},
   });
 
   final PlayDocument play;
   final String stateId;
   final bool ended;
   final int attempts;
+  final Map<String, String> piecePlacements;
 
   PlayStateDefinition get state {
     final value = play.states[stateId];
@@ -65,11 +81,12 @@ final class PlayEngine {
     stateId: play.entryState,
     ended: false,
     attempts: 0,
+    piecePlacements: const {},
   );
 
   PlayResolution apply(PlaySession session, PlayAction action) {
     if (session.ended) throw StateError('Cannot act on an ended Play.');
-    _assertCompatible(session.state.input.type, action);
+    _assertCompatible(session.state.input, action);
 
     final evaluation = _evaluate(session.state.validation, action);
     final transition =
@@ -93,6 +110,12 @@ final class PlayEngine {
         stateId: nextStateId,
         ended: ended,
         attempts: session.attempts + 1,
+        piecePlacements: action is PieceMoveAction
+            ? Map.unmodifiable({
+                ...session.piecePlacements,
+                action.pieceId: action.targetId,
+              })
+            : session.piecePlacements,
       ),
       outcome: evaluation.outcome,
       wasCorrect: evaluation.wasCorrect,
@@ -119,10 +142,15 @@ final class PlayEngine {
             )
             ? const _Evaluation(outcome: 'correct', wasCorrect: true)
             : const _Evaluation(outcome: 'incorrect', wasCorrect: false),
+      PlayValidatorType.setEquality => _setEquality(validation.value, value),
       PlayValidatorType.targetRegion =>
         value == _targetRegionPayload(validation.value)
             ? const _Evaluation(outcome: 'correct', wasCorrect: true)
             : const _Evaluation(outcome: 'incorrect', wasCorrect: false),
+      PlayValidatorType.legalPieceMove => _legalPieceMove(
+        validation.value,
+        action,
+      ),
       _ => throw UnsupportedError(
         'Validator ${validation.type.name} is not executable in M1.',
       ),
@@ -134,23 +162,61 @@ final class PlayEngine {
     ChoiceAction(:final optionId) => optionId,
     SequenceAction(:final values) => values,
     DragAction(:final targetId) => targetId,
+    PieceMoveAction() => null,
+    TimedCueAction() => null,
   };
 
-  void _assertCompatible(PlayInputType input, PlayAction action) {
+  void _assertCompatible(PlayInputDefinition input, PlayAction action) {
     final compatible = switch (input) {
-      PlayInputType.tap => action is TapAction,
-      PlayInputType.singleChoice => action is ChoiceAction,
-      PlayInputType.multipleChoice || PlayInputType.pianoKey =>
-        action is SequenceAction || action is ChoiceAction,
-      PlayInputType.drag => action is DragAction,
+      PlayInputDefinition(type: PlayInputType.tap) => action is TapAction,
+      PlayInputDefinition(type: PlayInputType.singleChoice) =>
+        action is ChoiceAction,
+      PlayInputDefinition(
+        type: PlayInputType.multipleChoice || PlayInputType.pianoKey,
+      ) =>
+        action is SequenceAction,
+      PlayInputDefinition(type: PlayInputType.drag) => action is DragAction,
+      PlayInputDefinition(type: PlayInputType.pieceMove) =>
+        action is PieceMoveAction,
+      PlayInputDefinition(type: PlayInputType.timedCue) => _matchesTimedCue(
+        input,
+        action,
+      ),
       _ => false,
     };
     if (!compatible) {
       throw StateError(
-        'Action ${action.runtimeType} is incompatible with ${input.name}.',
+        'Action ${action.runtimeType} is incompatible with ${input.type.name}.',
       );
     }
   }
+}
+
+bool _matchesTimedCue(PlayInputDefinition input, PlayAction action) {
+  if (action is! TimedCueAction) return false;
+  return input.properties['cueId'] == action.cueId &&
+      input.properties['cueOrdinal'] == action.ordinal;
+}
+
+_Evaluation _legalPieceMove(Object? raw, PlayAction action) {
+  if (action is! PieceMoveAction || raw is! List) {
+    throw StateError('legal_piece_move payload is malformed.');
+  }
+  for (final entry in raw) {
+    if (entry is! Map ||
+        entry['pieceId'] is! String ||
+        entry['targetId'] is! String ||
+        entry['correct'] is! bool) {
+      throw StateError('legal_piece_move payload is malformed.');
+    }
+    if (entry['pieceId'] == action.pieceId &&
+        entry['targetId'] == action.targetId) {
+      return (entry['correct'] as bool)
+          ? const _Evaluation(outcome: 'correct', wasCorrect: true)
+          : const _Evaluation(outcome: 'incorrect', wasCorrect: false);
+    }
+  }
+  throw StateError('piece_move action references an unknown piece or target.');
 }
 
 final class _Evaluation {
@@ -189,4 +255,31 @@ bool _listEquals(List<String> a, List<String> b) {
     if (a[index] != b[index]) return false;
   }
   return true;
+}
+
+_Evaluation _setEquality(Object? raw, Object? value) {
+  final expected = _setEqualityPayload(raw);
+  if (value is! List<String>) {
+    throw StateError('set_equality action is malformed.');
+  }
+  if (value.toSet().length != value.length) {
+    throw StateError('set_equality action contains duplicates.');
+  }
+  return expected.length == value.length && expected.containsAll(value)
+      ? const _Evaluation(outcome: 'correct', wasCorrect: true)
+      : const _Evaluation(outcome: 'incorrect', wasCorrect: false);
+}
+
+Set<String> _setEqualityPayload(Object? raw) {
+  if (raw is! List ||
+      raw.isEmpty ||
+      raw.length > 24 ||
+      raw.any((value) => value is! String || value.trim().isEmpty)) {
+    throw StateError('set_equality payload is malformed.');
+  }
+  final values = raw.cast<String>();
+  if (values.toSet().length != values.length) {
+    throw StateError('set_equality payload is malformed.');
+  }
+  return values.toSet();
 }

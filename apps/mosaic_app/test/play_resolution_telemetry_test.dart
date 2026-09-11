@@ -31,6 +31,8 @@ void main() {
       attempts: 2,
       completed: false,
       correct: true,
+      attemptId: 'attempt-a',
+      attemptMode: 'first',
     );
 
     expect(telemetry.events, hasLength(1));
@@ -40,6 +42,8 @@ void main() {
       'outcome': 'correct',
       'attempt': 2,
       'correct': true,
+      'attemptId': 'attempt-a',
+      'attemptMode': 'first',
     });
   });
 
@@ -54,6 +58,8 @@ void main() {
         outcome: 'option_a',
         attempts: 1,
         completed: true,
+        attemptId: 'attempt-b',
+        attemptMode: 'practice',
       );
 
       expect(telemetry.events.map((event) => event.name), <String>[
@@ -64,6 +70,8 @@ void main() {
       expect(telemetry.events.last.payload, <String, Object?>{
         'playId': 'play_choose',
         'attempts': 1,
+        'attemptId': 'attempt-b',
+        'attemptMode': 'practice',
       });
     },
   );
@@ -79,6 +87,8 @@ void main() {
         outcome: 'correct',
         attempts: 1,
         completed: true,
+        attemptId: 'attempt-c',
+        attemptMode: 'first',
       );
       recordPlayResolutionTelemetry(
         telemetry,
@@ -86,6 +96,8 @@ void main() {
         outcome: 'correct',
         attempts: 0,
         completed: true,
+        attemptId: 'attempt-d',
+        attemptMode: 'first',
       );
 
       expect(telemetry.events, isEmpty);

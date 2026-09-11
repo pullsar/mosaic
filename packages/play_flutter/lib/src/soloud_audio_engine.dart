@@ -7,7 +7,7 @@ import 'package:platform_contracts/platform_contracts.dart';
 /// singleton. Sources are loaded into memory for the short piano/rhythm assets
 /// used by Plays, while individual playing instances remain owned by SoLoud's
 /// source handle set.
-final class SoLoudAudioEngine implements AudioEngine {
+final class SoLoudAudioEngine implements VoiceAudioEngine {
   factory SoLoudAudioEngine() => _instance;
 
   SoLoudAudioEngine._();
@@ -21,6 +21,8 @@ final class SoLoudAudioEngine implements AudioEngine {
   final Map<String, Uri> _sourceUris = <String, Uri>{};
   final Map<String, Future<AudioSource>> _pendingLoads =
       <String, Future<AudioSource>>{};
+  final Map<int, SoundHandle> _voices = <int, SoundHandle>{};
+  var _nextVoiceId = 0;
   Future<void>? _initialization;
 
   SoLoud get _soloud => _backend ??= SoLoud.instance;
@@ -70,6 +72,42 @@ final class SoLoudAudioEngine implements AudioEngine {
   Future<void> play(String assetId) async {
     final source = _source(assetId);
     _soloud.play(source);
+  }
+
+  @override
+  Future<AudioVoice> startVoice(String assetId, {double gain = 1}) async {
+    _requireGain(gain);
+    final handle = _soloud.play(_source(assetId), volume: gain);
+    final voice = AudioVoice(_nextVoiceId++);
+    _voices[voice.id] = handle;
+    return voice;
+  }
+
+  @override
+  Future<void> setVoiceGain(AudioVoice voice, double gain) async {
+    _requireGain(gain);
+    final handle = _voices[voice.id];
+    if (handle != null) _soloud.setVolume(handle, gain);
+  }
+
+  @override
+  Future<void> fadeVoice(
+    AudioVoice voice,
+    double gain,
+    Duration duration,
+  ) async {
+    _requireGain(gain);
+    if (duration.isNegative) {
+      throw ArgumentError.value(duration, 'duration', 'must not be negative');
+    }
+    final handle = _voices[voice.id];
+    if (handle != null) _soloud.fadeVolume(handle, gain, duration);
+  }
+
+  @override
+  Future<void> stopVoice(AudioVoice voice) async {
+    final handle = _voices.remove(voice.id);
+    if (handle != null) await _soloud.stop(handle);
   }
 
   @override
@@ -154,6 +192,7 @@ final class SoLoudAudioEngine implements AudioEngine {
     _sources.clear();
     _sourceUris.clear();
     _pendingLoads.clear();
+    _voices.clear();
     _initialization = null;
     _backend = null;
   }
@@ -200,5 +239,11 @@ String _assetId(String value) {
 void _requireHttps(Uri uri) {
   if (!uri.isAbsolute || uri.scheme != 'https' || uri.host.isEmpty) {
     throw ArgumentError.value(uri, 'uri', 'must be an absolute HTTPS URI');
+  }
+}
+
+void _requireGain(double gain) {
+  if (!gain.isFinite || gain < 0 || gain > 1) {
+    throw ArgumentError.value(gain, 'gain', 'must be finite from 0 to 1');
   }
 }

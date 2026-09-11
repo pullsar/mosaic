@@ -5,13 +5,41 @@ import 'package:play_schema/play_schema.dart';
 
 import 'consumer_api_client.dart';
 import 'consumer_local_state.dart';
+import 'game_sound_preferences.dart';
 import 'guest_engagement.dart';
 
 final class SqliteConsumerLocalState
-    implements ConsumerLocalState, GuestEngagementStore {
+    implements
+        ConsumerLocalState,
+        GuestEngagementStore,
+        GameSoundPreferencesStore {
   const SqliteConsumerLocalState(this._store);
 
   final MosaicLocalStore _store;
+  static const _soundPreferencesKey = 'game_sound_preferences.v1';
+  static const _pinnedFamiliesKey = 'pinned_game_families.v1';
+
+  @override
+  Future<GameSoundPreferences> readGameSoundPreferences() async {
+    final encoded = _store.loadConsumerMetadata(_soundPreferencesKey);
+    if (encoded == null) return GameSoundPreferences();
+    try {
+      final decoded = jsonDecode(encoded);
+      if (decoded is! Map) throw const FormatException('sound preferences');
+      return GameSoundPreferences.fromJson(decoded.cast<String, Object?>());
+    } on Object {
+      _store.clearConsumerMetadata(_soundPreferencesKey);
+      return GameSoundPreferences();
+    }
+  }
+
+  @override
+  Future<void> writeGameSoundPreferences(
+    GameSoundPreferences preferences,
+  ) async => _store.saveConsumerMetadata(
+    _soundPreferencesKey,
+    jsonEncode(preferences.toJson()),
+  );
 
   @override
   Future<ConsumerPreferences> readPreferences() async => ConsumerPreferences(
@@ -150,6 +178,29 @@ final class SqliteConsumerLocalState
       _store.replaceConsumerMutedTopics(topicIds);
 
   @override
+  Future<List<String>> readPinnedGameFamilyIds() async {
+    final encoded = _store.loadConsumerMetadata(_pinnedFamiliesKey);
+    if (encoded == null) return const [];
+    try {
+      final decoded = jsonDecode(encoded);
+      if (decoded is! List || decoded.length > 6) {
+        throw const FormatException('pinned game families');
+      }
+      return _pinnedFamilyIds(decoded.cast<Object?>());
+    } on Object {
+      _store.clearConsumerMetadata(_pinnedFamiliesKey);
+      return const [];
+    }
+  }
+
+  @override
+  Future<void> writePinnedGameFamilyIds(Iterable<String> familyIds) async =>
+      _store.saveConsumerMetadata(
+        _pinnedFamiliesKey,
+        jsonEncode(_pinnedFamilyIds(familyIds)),
+      );
+
+  @override
   Future<GuestEngagementState?> readGuestEngagement() async {
     final encoded = _store.loadGuestEngagementJson();
     if (encoded == null) return null;
@@ -170,4 +221,18 @@ final class SqliteConsumerLocalState
   @override
   Future<void> writeGuestEngagement(GuestEngagementState state) async =>
       _store.saveGuestEngagementJson(jsonEncode(state.toJson()));
+}
+
+List<String> _pinnedFamilyIds(Iterable<Object?> values) {
+  final result = <String>[];
+  for (final value in values) {
+    if (value is! String) throw const FormatException('pinned family ID');
+    final id = value.trim();
+    if (id.isEmpty || id.length > 200 || result.contains(id)) {
+      throw const FormatException('pinned family ID');
+    }
+    result.add(id);
+    if (result.length > 6) throw const FormatException('pinned family limit');
+  }
+  return List<String>.unmodifiable(result);
 }

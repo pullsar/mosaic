@@ -52,6 +52,35 @@ final class _FakeAudioEngine implements AudioEngine {
   }
 }
 
+final class _VoiceEngine extends _FakeAudioEngine implements VoiceAudioEngine {
+  var nextVoiceId = 0;
+  final List<int> stoppedVoices = <int>[];
+  Completer<void>? voiceStartGate;
+
+  @override
+  Future<AudioVoice> startVoice(String assetId, {double gain = 1}) async {
+    events.add('voice:$assetId:$gain');
+    final gate = voiceStartGate;
+    if (gate != null) await gate.future;
+    return AudioVoice(nextVoiceId++);
+  }
+
+  @override
+  Future<void> stopVoice(AudioVoice voice) async {
+    stoppedVoices.add(voice.id);
+  }
+
+  @override
+  Future<void> setVoiceGain(AudioVoice voice, double gain) async {}
+
+  @override
+  Future<void> fadeVoice(
+    AudioVoice voice,
+    double gain,
+    Duration duration,
+  ) async {}
+}
+
 final class _ReplacementHandle implements ManagedMediaHandle {
   var pauseCount = 0;
   var releaseCount = 0;
@@ -76,6 +105,7 @@ Future<void> _pumpAudio(
   required _FakeAudioEngine engine,
   required ActiveMediaCoordinator coordinator,
   bool active = true,
+  bool soundEnabled = true,
   PlayAudioErrorCallback? onError,
 }) async {
   await tester.pumpWidget(
@@ -86,6 +116,7 @@ Future<void> _pumpAudio(
         engine: engine,
         coordinator: coordinator,
         active: active,
+        soundEnabled: soundEnabled,
         onError: onError,
       ),
     ),
@@ -95,6 +126,41 @@ Future<void> _pumpAudio(
 }
 
 void main() {
+  test(
+    'sound session bounds voices and stops them exactly once on release',
+    () async {
+      final engine = _VoiceEngine();
+      final session = PlaySoundSession(engine, maxVoices: 2);
+
+      await session.play('tap');
+      await session.play('place');
+      await session.play('overflow');
+      await session.release();
+      await session.release();
+      await session.play('late');
+
+      expect(engine.events, ['voice:tap:1.0', 'voice:place:1.0']);
+      expect(engine.stoppedVoices, [0, 1]);
+    },
+  );
+
+  test('sound session serializes concurrent starts at its voice cap', () async {
+    final engine = _VoiceEngine()..voiceStartGate = Completer<void>();
+    final session = PlaySoundSession(engine, maxVoices: 1);
+
+    final first = session.play('tap');
+    final second = session.play('place');
+    await Future<void>.delayed(Duration.zero);
+    expect(engine.events, ['voice:tap:1.0']);
+
+    engine.voiceStartGate!.complete();
+    await Future.wait([first, second]);
+    await session.release();
+
+    expect(engine.events, ['voice:tap:1.0']);
+    expect(engine.stoppedVoices, [0]);
+  });
+
   test('audio assets require absolute HTTPS', () {
     expect(
       () => PlayAudioAsset(id: 'a', uri: Uri.parse('http://example.com/a.m4a')),
@@ -143,6 +209,43 @@ void main() {
     expect(coordinator.ownerId, 'play_a');
     expect(coordinator.hasActiveMedia, isTrue);
     expect(find.text('Replay'), findsOneWidget);
+  });
+
+  testWidgets('sound policy stops active audio and blocks a later replay', (
+    tester,
+  ) async {
+    final engine = _FakeAudioEngine();
+    final coordinator = ActiveMediaCoordinator();
+    final asset = _asset('audio_a');
+
+    await _pumpAudio(
+      tester,
+      ownerId: 'play_a',
+      asset: asset,
+      engine: engine,
+      coordinator: coordinator,
+    );
+    await tester.tap(find.text('Hear'));
+    await tester.pumpAndSettle();
+
+    await _pumpAudio(
+      tester,
+      ownerId: 'play_a',
+      asset: asset,
+      engine: engine,
+      coordinator: coordinator,
+      soundEnabled: false,
+    );
+    await tester.pumpAndSettle();
+
+    expect(engine.events, [
+      'load:audio_a',
+      'play:audio_a',
+      'stop:audio_a',
+      'release:audio_a',
+    ]);
+    expect(coordinator.hasActiveMedia, isFalse);
+    expect(find.text('Sound off'), findsOneWidget);
   });
 
   testWidgets(

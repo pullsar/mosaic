@@ -1,3 +1,5 @@
+import 'game_scene.dart';
+
 enum PlayFormat { guess, choose, solve, play, discover }
 
 enum PlayClassification { fact, opinion, preference, fantasy, challenge }
@@ -13,6 +15,8 @@ enum PlayInputType {
   draw,
   rhythmTap,
   pianoKey,
+  pieceMove,
+  timedCue,
   mapPoint,
   recordAudio,
 }
@@ -27,6 +31,7 @@ enum PlayValidatorType {
   targetRegion,
   scoreThreshold,
   patternComparator,
+  legalPieceMove,
 }
 
 T _enumFromWire<T extends Enum>(List<T> values, Object? raw, String field) {
@@ -122,6 +127,7 @@ final class PresentationLayer {
     this.role,
     this.value,
     this.assetId,
+    this.scene,
     Map<String, Object?> properties = const {},
   }) : properties = _freezeJsonMap(properties);
 
@@ -129,6 +135,7 @@ final class PresentationLayer {
   final String? role;
   final String? value;
   final String? assetId;
+  final GameSceneDefinition? scene;
   final Map<String, Object?> properties;
 
   factory PresentationLayer.fromJson(Map<String, Object?> json) {
@@ -136,12 +143,16 @@ final class PresentationLayer {
       ..remove('type')
       ..remove('role')
       ..remove('value')
-      ..remove('assetId');
+      ..remove('assetId')
+      ..remove('scene');
     return PresentationLayer(
       type: json['type'] as String,
       role: json['role'] as String?,
       value: json['value'] as String?,
       assetId: json['assetId'] as String?,
+      scene: json['scene'] == null
+          ? null
+          : GameSceneDefinition.fromJson(_map(json['scene'], 'scene')),
       properties: properties,
     );
   }
@@ -152,6 +163,7 @@ final class PresentationLayer {
     if (role != null) 'role': role,
     if (value != null) 'value': value,
     if (assetId != null) 'assetId': assetId,
+    if (scene != null) 'scene': scene!.toJson(),
   };
 }
 
@@ -307,6 +319,46 @@ final class PlaySource {
   };
 }
 
+final class PlayGameFamilyReference {
+  const PlayGameFamilyReference({required this.id, required this.revisionId});
+
+  final String id;
+  final String revisionId;
+
+  factory PlayGameFamilyReference.fromJson(Map<String, Object?> json) =>
+      PlayGameFamilyReference(
+        id: json['id'] as String,
+        revisionId: json['revisionId'] as String,
+      );
+
+  Map<String, Object?> toJson() => {'id': id, 'revisionId': revisionId};
+}
+
+final class PlayPresentationReference {
+  const PlayPresentationReference({
+    required this.themeId,
+    required this.themeRevisionId,
+    required this.variantId,
+  });
+
+  final String themeId;
+  final String themeRevisionId;
+  final String variantId;
+
+  factory PlayPresentationReference.fromJson(Map<String, Object?> json) =>
+      PlayPresentationReference(
+        themeId: json['themeId'] as String,
+        themeRevisionId: json['themeRevisionId'] as String,
+        variantId: json['variantId'] as String,
+      );
+
+  Map<String, Object?> toJson() => {
+    'themeId': themeId,
+    'themeRevisionId': themeRevisionId,
+    'variantId': variantId,
+  };
+}
+
 final class PlayDocument {
   PlayDocument({
     required this.schemaVersion,
@@ -319,12 +371,16 @@ final class PlayDocument {
     required this.estimatedDurationSec,
     required List<String> assets,
     required List<PlaySource> sources,
+    List<String> requiredPlatformFlags = const [],
+    this.gameFamily,
+    this.presentation,
     required this.entryState,
     required Map<String, PlayStateDefinition> states,
   }) : topics = List<String>.unmodifiable(topics),
        learningTopics = List<String>.unmodifiable(learningTopics),
        assets = List<String>.unmodifiable(assets),
        sources = List<PlaySource>.unmodifiable(sources),
+       requiredPlatformFlags = List<String>.unmodifiable(requiredPlatformFlags),
        states = Map<String, PlayStateDefinition>.unmodifiable(states);
 
   final int schemaVersion;
@@ -337,6 +393,9 @@ final class PlayDocument {
   final int estimatedDurationSec;
   final List<String> assets;
   final List<PlaySource> sources;
+  final List<String> requiredPlatformFlags;
+  final PlayGameFamilyReference? gameFamily;
+  final PlayPresentationReference? presentation;
   final String entryState;
   final Map<String, PlayStateDefinition> states;
 
@@ -362,6 +421,20 @@ final class PlayDocument {
           : (rawSources as List)
                 .map((source) => PlaySource.fromJson(_map(source, 'sources[]')))
                 .toList(growable: false),
+      requiredPlatformFlags: _strings(
+        json['requiredPlatformFlags'],
+        'requiredPlatformFlags',
+      ),
+      gameFamily: json['gameFamily'] == null
+          ? null
+          : PlayGameFamilyReference.fromJson(
+              _map(json['gameFamily'], 'gameFamily'),
+            ),
+      presentation: json['presentation'] == null
+          ? null
+          : PlayPresentationReference.fromJson(
+              _map(json['presentation'], 'presentation'),
+            ),
       entryState: json['entryState'] as String,
       states: rawStates.map(
         (key, value) => MapEntry(
@@ -383,6 +456,10 @@ final class PlayDocument {
     'estimatedDurationSec': estimatedDurationSec,
     'assets': assets,
     'sources': sources.map((source) => source.toJson()).toList(),
+    if (requiredPlatformFlags.isNotEmpty)
+      'requiredPlatformFlags': requiredPlatformFlags,
+    if (gameFamily != null) 'gameFamily': gameFamily!.toJson(),
+    if (presentation != null) 'presentation': presentation!.toJson(),
     'entryState': entryState,
     'states': states.map((key, value) => MapEntry(key, value.toJson())),
   };

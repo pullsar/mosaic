@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:analytics_contract/analytics_contract.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:platform_contracts/platform_contracts.dart';
@@ -18,15 +19,25 @@ import 'consumer_api_client.dart';
 import 'consumer_feed.dart';
 import 'consumer_runtime.dart';
 import 'consumer_search.dart';
+import 'continuous_game_host.dart';
 import 'event_runtime_resources_factory.dart';
+import 'game_attempt_controller.dart';
+import 'game_sound_controller.dart';
+import 'game_sound_preferences.dart';
 import 'guest_engagement.dart';
 import 'guest_home.dart';
 import 'onboarding_localizations.dart';
 import 'play_resolution_telemetry.dart';
+import 'play_share.dart';
+import 'saved_games.dart';
 
 const _apiBaseUrl = String.fromEnvironment('MOSAIC_API_BASE_URL');
 const _allowInsecureLocalApi = bool.fromEnvironment(
   'MOSAIC_ALLOW_INSECURE_LOCAL_API',
+);
+const _shareOriginValue = String.fromEnvironment(
+  'MIXLI_SHARE_ORIGIN',
+  defaultValue: 'https://mixli.app',
 );
 
 Future<void> main() async {
@@ -49,10 +60,22 @@ Future<void> main() async {
 }
 
 final class MosaicApp extends StatefulWidget {
-  const MosaicApp({this.eventRuntime, this.locale, super.key});
+  const MosaicApp({
+    this.eventRuntime,
+    this.locale,
+    this.shareGateway,
+    this.shareOrigin,
+    this.consumerApi,
+    this.initialRoute,
+    super.key,
+  });
 
   final AppEventRuntime? eventRuntime;
   final Locale? locale;
+  final ShareGateway? shareGateway;
+  final Uri? shareOrigin;
+  final ConsumerApiClient? consumerApi;
+  final String? initialRoute;
 
   @override
   State<MosaicApp> createState() => _MosaicAppState();
@@ -64,11 +87,15 @@ final class _MosaicAppState extends State<MosaicApp> {
   final ConsumerFeedController _feedController = ConsumerFeedController();
   late final AppEventRuntime _eventRuntime;
   late final ConsumerApiClient? _consumerApi;
+  late final ShareGateway _shareGateway;
+  late final Uri _shareOrigin;
+  late final String _initialRoute;
   late final ConsumerActionController _actionController;
   late final AssetDeliveryClient? _assetDelivery;
   late final AssetMetadataWarmController? _metadataWarmer;
   late final ConsumerRuntime _consumerRuntime;
   late final GuestEngagementController _guestEngagement;
+  late final GameSoundController? _gameSoundController;
   late final CachingPlayVisualAssetResolver _visualResolver;
   late final PlayVideoAssetResolver _videoResolver;
   late final PlayVideoPosterResolver? _videoPosterResolver;
@@ -85,6 +112,11 @@ final class _MosaicAppState extends State<MosaicApp> {
   void initState() {
     super.initState();
     _eventRuntime = widget.eventRuntime ?? AppEventRuntime.disabled();
+    _shareGateway = widget.shareGateway ?? SharePlusGateway();
+    _shareOrigin = _resolveShareOrigin();
+    _initialRoute =
+        widget.initialRoute ??
+        WidgetsBinding.instance.platformDispatcher.defaultRouteName;
     _assetDelivery = _createAssetDeliveryClient();
     final binaryDelivery = _assetDelivery?.supportsBinaryNetworkAssets ?? false;
     final assetDelivery = _assetDelivery;
@@ -118,7 +150,7 @@ final class _MosaicAppState extends State<MosaicApp> {
             ),
           );
 
-    _consumerApi = _createConsumerApi(_eventRuntime);
+    _consumerApi = widget.consumerApi ?? _createConsumerApi(_eventRuntime);
     _actionController = ConsumerActionController(
       eventRuntime: _eventRuntime,
       localState: _eventRuntime.resources.consumerLocalState,
@@ -142,6 +174,18 @@ final class _MosaicAppState extends State<MosaicApp> {
         operation: 'guest_engagement_storage',
       ),
     );
+    _gameSoundController = localState is GameSoundPreferencesStore
+        ? GameSoundController(
+            store: localState as GameSoundPreferencesStore,
+            onError: (error, stackTrace) => _reportEventRuntimeError(
+              error,
+              stackTrace,
+              operation: 'game_sound_preferences',
+            ),
+          )
+        : null;
+    _gameSoundController?.addListener(_onGameSoundChanged);
+    unawaited(_gameSoundController?.initialize() ?? Future<void>.value());
     unawaited(_guestEngagement.initialize());
     _visualPrefetch = PlayVisualPrefetchController(
       resolver: _visualResolver,
@@ -161,10 +205,36 @@ final class _MosaicAppState extends State<MosaicApp> {
     );
   }
 
+  Uri _resolveShareOrigin() {
+    final configured = widget.shareOrigin ?? Uri.tryParse(_shareOriginValue);
+    if (configured != null) {
+      try {
+        return PlayShareLink.canonicalOrigin(configured);
+      } on ArgumentError catch (error, stackTrace) {
+        _reportEventRuntimeError(
+          error,
+          stackTrace,
+          operation: 'play_share_origin',
+        );
+      }
+    } else {
+      _reportEventRuntimeError(
+        StateError('MIXLI_SHARE_ORIGIN is not a URI.'),
+        StackTrace.current,
+        operation: 'play_share_origin',
+      );
+    }
+    return Uri(scheme: 'https', host: 'mixli.app');
+  }
+
   void _resumeSemanticMedia() {
     _eventRuntime.requestDrain();
     if (!mounted) return;
     setState(() => _semanticResumeEpoch += 1);
+  }
+
+  void _onGameSoundChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -173,6 +243,8 @@ final class _MosaicAppState extends State<MosaicApp> {
     _lifecycle.dispose();
     _actionController.dispose();
     _guestEngagement.dispose();
+    _gameSoundController?.removeListener(_onGameSoundChanged);
+    _gameSoundController?.dispose();
     _consumerRuntime.close();
     _assetDelivery?.close();
     unawaited(_disposeResources());
@@ -223,43 +295,98 @@ final class _MosaicAppState extends State<MosaicApp> {
     required bool active,
     required ValueChanged<bool> onDirectManipulationChanged,
     VoidCallback? onMeaningfulInteraction,
+    Widget Function(BuildContext, PlayDocument, Widget)? decorate,
   }) {
-    final videoDiagnostics = PlayVideoDiagnosticObserver(
-      telemetry: telemetry,
-      runtimeDiagnostics: const FlutterRuntimeDiagnostics(),
-    );
-    final media = PlayMediaLayerBuilder(
-      ownerId: playMediaOwnerId(play),
-      visualResolver: _visualResolver,
-      videoResolver: _videoResolver,
-      videoPosterResolver: _videoPosterResolver,
-      audioResolver: _audioResolver,
-      audioEngine: _audioEngine,
-      canvasResolver: _canvasResolver,
-      mediaCoordinator: _mediaCoordinator,
-      videoControllerFactory: VideoPlayerPlayController.new,
+    return ContinuousGameHost(
+      key: ValueKey<String>('attempt:$playId:$revisionId'),
+      play: play,
       active: active,
-      semanticResumeEpoch: _semanticResumeEpoch,
-      onVideoPlaybackEvent: videoDiagnostics.call,
-    );
-    return MixliAuthoredPlayDirection(
-      child: PlaySurface(
-        key: ValueKey<String>('play:$playId:$revisionId'),
-        play: play,
-        mediaBuilder: media.call,
-        onResolved: (resolution) {
-          onMeaningfulInteraction?.call();
-          recordPlayResolutionTelemetry(
-            telemetry,
-            playId: playId,
-            outcome: resolution.outcome,
-            attempts: resolution.session.attempts,
-            completed: resolution.session.ended,
-            correct: resolution.wasCorrect,
-          );
-        },
-        onDirectManipulationChanged: onDirectManipulationChanged,
-      ),
+      effectsEnabled:
+          _gameSoundController?.preferences.effectsEnabled == true &&
+          _gameSoundController?.preferences.masterMuted != true,
+      prepareNext: (current) async {
+        final next = await _consumerApi?.fetchNextGameRound(
+          current: current,
+          capabilities: _consumerRuntime.capabilities,
+        );
+        if (next == null) return null;
+        // The one successor uses the existing bounded metadata warmer.
+        await _metadataWarmer?.warm(buildAssetWarmPlan([next]));
+        return next;
+      },
+      builder: (context, attempt, feedback) {
+        final current = attempt.session.play;
+        final roundWasResolved = attempt.roundResolved;
+        final playId = current.id;
+        final revisionId = current.revisionId;
+        final roundTelemetry =
+            current.id == play.id && current.revisionId == play.revisionId
+            ? telemetry
+            : _eventRuntime.telemetryForStandalonePlay(
+                playRevisionId: revisionId,
+              );
+        final videoDiagnostics = PlayVideoDiagnosticObserver(
+          telemetry: roundTelemetry,
+          runtimeDiagnostics: const FlutterRuntimeDiagnostics(),
+        );
+        final media = PlayMediaLayerBuilder(
+          ownerId: playMediaOwnerIdForAttempt(
+            playId,
+            revisionId,
+            attempt.attemptId,
+          ),
+          visualResolver: _visualResolver,
+          videoResolver: _videoResolver,
+          videoPosterResolver: _videoPosterResolver,
+          audioResolver: _audioResolver,
+          audioEngine: _audioEngine,
+          canvasResolver: _canvasResolver,
+          mediaCoordinator: _mediaCoordinator,
+          videoControllerFactory: VideoPlayerPlayController.new,
+          active: active,
+          soundEnabled: _gameSoundController?.preferences.masterMuted != true,
+          semanticResumeEpoch: _semanticResumeEpoch,
+          onVideoPlaybackEvent: videoDiagnostics.call,
+        );
+        final surface = MixliAuthoredPlayDirection(
+          child: PlaySurface.controlled(
+            key: ValueKey<String>(
+              'play:$playId:$revisionId:${attempt.attemptId}',
+            ),
+            session: attempt.session,
+            onAction: attempt.captureActionHandler(
+              onResolved: (resolution) {
+                onMeaningfulInteraction?.call();
+                recordPlayResolutionTelemetry(
+                  roundTelemetry,
+                  playId: playId,
+                  outcome: resolution.outcome,
+                  attempts: resolution.session.attempts,
+                  completed: attempt.roundResolved && !roundWasResolved,
+                  correct: resolution.wasCorrect,
+                  attemptId: attempt.attemptId,
+                  attemptMode: attempt.mode.wireName,
+                );
+              },
+            ),
+            mediaBuilder: media.call,
+            resolvedFeedback: feedback,
+            terminal: Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: Padding(
+                padding: const EdgeInsetsDirectional.fromSTEB(20, 8, 20, 8),
+                child: FilledButton.icon(
+                  onPressed: attempt.replay,
+                  icon: const Icon(Icons.replay_rounded),
+                  label: const Text('Replay'),
+                ),
+              ),
+            ),
+            onDirectManipulationChanged: onDirectManipulationChanged,
+          ),
+        );
+        return decorate?.call(context, current, surface) ?? surface;
+      },
     );
   }
 
@@ -292,7 +419,7 @@ final class _MosaicAppState extends State<MosaicApp> {
       feedRequestId: feedRequestId,
       playRevisionId: item.revisionId,
     );
-    final surface = _buildPlaySurface(
+    return _buildPlaySurface(
       context,
       playId: item.playId,
       revisionId: item.revisionId,
@@ -302,24 +429,78 @@ final class _MosaicAppState extends State<MosaicApp> {
       onDirectManipulationChanged: onDirectManipulationChanged,
       onMeaningfulInteraction: () =>
           _recordMeaningfulInteraction(item.playId, item.revisionId),
+      decorate: (context, current, surface) => ConsumerActionControls(
+        child: surface,
+        item: current.id == item.playId && current.revisionId == item.revisionId
+            ? item
+            : ConsumerFeedItem.fromJson(
+                {
+                  'playId': current.id,
+                  'revisionId': current.revisionId,
+                  'sourceBucket': 'curated_fallback',
+                  'document': current.toJson(),
+                },
+                compatibilityChecker: const PlayCompatibilityChecker(),
+                capabilities: _consumerRuntime.capabilities,
+              ),
+        feedRequestId: feedRequestId,
+        controller: _actionController,
+        onAdvance: _feedController.advance,
+        onShare: _sharePlay,
+        soundController: _gameSoundController,
+        active: active,
+      ),
     );
-    return ConsumerActionControls(
-      child: surface,
-      item: item,
-      feedRequestId: feedRequestId,
-      controller: _actionController,
-      onAdvance: _feedController.advance,
-      onShare: (_) {
-        final messenger = ScaffoldMessenger.maybeOf(context);
-        if (messenger == null) return;
-        messenger
-          ..hideCurrentSnackBar()
-          ..showSnackBar(
-            const SnackBar(content: Text('Share links are opening soon')),
-          );
-      },
-      active: active,
-    );
+  }
+
+  Future<void> _sharePlay(
+    ConsumerFeedItem item,
+    BuildContext actionContext,
+  ) async {
+    late final Uri link;
+    try {
+      link = PlayShareLink.build(
+        origin: _shareOrigin,
+        playId: item.playId,
+        revisionId: item.revisionId,
+      );
+    } on Object catch (error, stackTrace) {
+      _reportEventRuntimeError(error, stackTrace, operation: 'play_share_link');
+      return;
+    }
+    ShareDisposition disposition;
+    try {
+      disposition = await _shareGateway.share(link);
+    } on Object catch (error, stackTrace) {
+      _reportEventRuntimeError(error, stackTrace, operation: 'play_share');
+      disposition = ShareDisposition.unavailable;
+    }
+    if (!mounted) return;
+    if (disposition == ShareDisposition.dismissed) return;
+    if (disposition == ShareDisposition.unavailable) {
+      try {
+        await Clipboard.setData(ClipboardData(text: link.toString()));
+      } on Object catch (error, stackTrace) {
+        _reportEventRuntimeError(
+          error,
+          stackTrace,
+          operation: 'play_share_copy',
+        );
+        return;
+      }
+      if (!mounted) return;
+      _showShareFeedback(actionContext, 'Link copied');
+      return;
+    }
+    _showShareFeedback(actionContext, 'Shared');
+  }
+
+  void _showShareFeedback(BuildContext context, String message) {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _openSearch(BuildContext context) async {
@@ -345,16 +526,23 @@ final class _MosaicAppState extends State<MosaicApp> {
           );
         });
       case ConsumerPlaySearchSelection():
-        await _openSearchPlay(context, selection.result);
+        await _openPlay(
+          context,
+          playId: selection.result.playId,
+          revisionId: selection.result.revisionId,
+          play: selection.result.play,
+        );
     }
   }
 
-  Future<void> _openSearchPlay(
-    BuildContext context,
-    ConsumerSearchPlayResult result,
-  ) {
+  Future<void> _openPlay(
+    BuildContext context, {
+    required String playId,
+    required String revisionId,
+    required PlayDocument play,
+  }) {
     final telemetry = _eventRuntime.telemetryForStandalonePlay(
-      playRevisionId: result.revisionId,
+      playRevisionId: revisionId,
     );
     return Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
@@ -365,9 +553,9 @@ final class _MosaicAppState extends State<MosaicApp> {
             children: <Widget>[
               _buildPlaySurface(
                 routeContext,
-                playId: result.playId,
-                revisionId: result.revisionId,
-                play: result.play,
+                playId: playId,
+                revisionId: revisionId,
+                play: play,
                 telemetry: telemetry,
                 active: true,
                 onDirectManipulationChanged: (_) {},
@@ -391,6 +579,42 @@ final class _MosaicAppState extends State<MosaicApp> {
       ),
     );
   }
+
+  Future<List<SavedGameEntry>> _loadSavedGames() async {
+    final recovered = await _consumerRuntime.recoverRecentFeed();
+    if (recovered == null) return const <SavedGameEntry>[];
+    final entries = <SavedGameEntry>[];
+    for (final item in recovered.items) {
+      final state = await _actionController.load(
+        playId: item.playId,
+        revisionId: item.revisionId,
+      );
+      if (state.saved && state.savedRevisionId == item.revisionId) {
+        entries.add(SavedGameEntry(item: item, updatedAt: state.updatedAt));
+      }
+    }
+    entries.sort((left, right) => right.updatedAt.compareTo(left.updatedAt));
+    return List<SavedGameEntry>.unmodifiable(entries);
+  }
+
+  Future<void> _openSaved(BuildContext context) => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (routeContext) => SavedGamesPage(
+        loadEntries: _loadSavedGames,
+        onUnsave: (entry) => _actionController.toggleSave(
+          playId: entry.item.playId,
+          revisionId: entry.item.revisionId,
+          feedRequestId: 'saved:${entry.item.revisionId}',
+        ),
+        onOpen: (item) => _openPlay(
+          routeContext,
+          playId: item.playId,
+          revisionId: item.revisionId,
+          play: item.play,
+        ),
+      ),
+    ),
+  );
 
   void _recordFeedEvent(
     String event, {
@@ -435,13 +659,103 @@ final class _MosaicAppState extends State<MosaicApp> {
     _visualPrefetch.cancel();
   }
 
-  @override
-  Widget build(BuildContext context) {
+  Future<ConsumerApiResult<ConsumerPublicPlay>> _loadSharedPlay(
+    PlayShareTarget target,
+  ) {
+    final api = _consumerApi;
+    if (api == null) {
+      return Future<ConsumerApiResult<ConsumerPublicPlay>>.value(
+        const ConsumerApiFailure(ConsumerApiFailureKind.rejected),
+      );
+    }
+    return api.fetchPublicPlay(
+      playId: target.playId,
+      revisionId: target.revisionId,
+      capabilities: consumerCapabilitiesForAssetDelivery(_assetDelivery),
+    );
+  }
+
+  Route<dynamic>? _sharedPlayRoute(RouteSettings settings) {
+    final target = PlayShareLink.parsePath(settings.name ?? '');
+    if (target == null) return null;
+    return MaterialPageRoute<void>(
+      settings: settings,
+      builder: (routeContext) => _SharedPlayPage(
+        load: () => _loadSharedPlay(target),
+        onClose: () => _replaceWithHome(routeContext),
+        surfaceBuilder: (context, shared) => _buildPlaySurface(
+          context,
+          playId: shared.playId,
+          revisionId: shared.revisionId,
+          play: shared.play,
+          telemetry: _eventRuntime.telemetryForStandalonePlay(
+            playRevisionId: shared.revisionId,
+          ),
+          active: true,
+          onDirectManipulationChanged: (_) {},
+        ),
+      ),
+    );
+  }
+
+  List<Route<dynamic>> _initialRoutes(String initialRoute) {
+    final shared = _sharedPlayRoute(RouteSettings(name: initialRoute));
+    if (shared != null) return <Route<dynamic>>[shared];
+    return <Route<dynamic>>[
+      MaterialPageRoute<void>(
+        settings: const RouteSettings(name: '/'),
+        builder: (_) => _buildHome(),
+      ),
+    ];
+  }
+
+  void _replaceWithHome(BuildContext context) {
+    unawaited(
+      Navigator.of(context).pushAndRemoveUntil<void>(
+        MaterialPageRoute<void>(builder: (_) => _buildHome()),
+        (route) => false,
+      ),
+    );
+  }
+
+  Widget _buildHome() {
     final scope = _searchScope;
     final conversionPromptBlocked = _conversionPromptDeferredFor != null;
     final feedKey = scope == null
         ? 'consumer-feed:default'
         : 'consumer-feed:${scope.intent.intent.wireName}:${scope.intent.topicId}';
+    return Builder(
+      builder: (homeContext) => GuestHome(
+        engagement: _guestEngagement,
+        directManipulationActive:
+            _directManipulationActive || conversionPromptBlocked,
+        onSearch: () => unawaited(_openSearch(homeContext)),
+        onSaved: () => unawaited(_openSaved(homeContext)),
+        activeSearchLabel: scope?.label,
+        onClearSearch: scope == null
+            ? null
+            : () => setState(() => _searchScope = null),
+        child: ConsumerFeed(
+          key: ValueKey<String>(feedKey),
+          runtime: _consumerRuntime,
+          itemBuilder: _buildFeedPlay,
+          controller: _feedController,
+          searchIntent: scope?.intent,
+          persistRecovery: scope == null,
+          onEvent: _recordFeedEvent,
+          onWarmWindow: _warmFeedWindow,
+          onCancelWarmWindow: _cancelWarmWindow,
+          onDirectManipulationChanged: (active) {
+            if (_directManipulationActive == active) return;
+            setState(() => _directManipulationActive = active);
+          },
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Mixli',
       debugShowCheckedModeBanner: false,
@@ -456,6 +770,9 @@ final class _MosaicAppState extends State<MosaicApp> {
       ],
       darkTheme: mixliTheme(Brightness.dark),
       theme: mixliTheme(Brightness.light),
+      initialRoute: _initialRoute,
+      onGenerateInitialRoutes: _initialRoutes,
+      onGenerateRoute: _sharedPlayRoute,
       routes: {
         MosaicSettingsRoute.privacy: (_) =>
             const _ReservedSettingsPage('Privacy'),
@@ -464,35 +781,81 @@ final class _MosaicAppState extends State<MosaicApp> {
         MosaicSettingsRoute.deleteAccount: (_) =>
             const _ReservedSettingsPage('Delete account'),
       },
-      home: Builder(
-        builder: (homeContext) => GuestHome(
-          engagement: _guestEngagement,
-          directManipulationActive:
-              _directManipulationActive || conversionPromptBlocked,
-          onSearch: () => unawaited(_openSearch(homeContext)),
-          activeSearchLabel: scope?.label,
-          onClearSearch: scope == null
-              ? null
-              : () => setState(() => _searchScope = null),
-          child: ConsumerFeed(
-            key: ValueKey<String>(feedKey),
-            runtime: _consumerRuntime,
-            itemBuilder: _buildFeedPlay,
-            controller: _feedController,
-            searchIntent: scope?.intent,
-            persistRecovery: scope == null,
-            onEvent: _recordFeedEvent,
-            onWarmWindow: _warmFeedWindow,
-            onCancelWarmWindow: _cancelWarmWindow,
-            onDirectManipulationChanged: (active) {
-              if (_directManipulationActive == active) return;
-              setState(() => _directManipulationActive = active);
-            },
-          ),
-        ),
-      ),
     );
   }
+}
+
+typedef _SharedPlaySurfaceBuilder =
+    Widget Function(BuildContext context, ConsumerPublicPlay shared);
+
+final class _SharedPlayPage extends StatefulWidget {
+  const _SharedPlayPage({
+    required this.load,
+    required this.surfaceBuilder,
+    required this.onClose,
+  });
+
+  final Future<ConsumerApiResult<ConsumerPublicPlay>> Function() load;
+  final _SharedPlaySurfaceBuilder surfaceBuilder;
+  final VoidCallback onClose;
+
+  @override
+  State<_SharedPlayPage> createState() => _SharedPlayPageState();
+}
+
+final class _SharedPlayPageState extends State<_SharedPlayPage> {
+  late final Future<ConsumerApiResult<ConsumerPublicPlay>> _shared = widget
+      .load();
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    key: const ValueKey<String>('shared-play'),
+    backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+    body: FutureBuilder<ConsumerApiResult<ConsumerPublicPlay>>(
+      future: _shared,
+      builder: (context, snapshot) {
+        final result = snapshot.data;
+        if (result is ConsumerApiSuccess<ConsumerPublicPlay>) {
+          return Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              widget.surfaceBuilder(context, result.value),
+              SafeArea(
+                minimum: const EdgeInsets.all(12),
+                child: Align(
+                  alignment: AlignmentDirectional.topStart,
+                  child: IconButton.filledTonal(
+                    tooltip: MaterialLocalizations.of(
+                      context,
+                    ).backButtonTooltip,
+                    onPressed: widget.onClose,
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ),
+              ),
+            ],
+          );
+        }
+        if (snapshot.connectionState != ConnectionState.done) {
+          return Center(
+            child: Semantics(
+              label: 'Loading',
+              child: const SizedBox.square(
+                dimension: 22,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          );
+        }
+        return Center(
+          child: FilledButton(
+            onPressed: widget.onClose,
+            child: const Text('Play'),
+          ),
+        );
+      },
+    ),
+  );
 }
 
 /// Keeps today's English-authored Plays independent from surrounding app chrome.
@@ -565,7 +928,7 @@ final class _ConsumerSearchScope {
 PlayCapabilityEnvelope consumerCapabilitiesForAssetDelivery(
   AssetDeliveryClient? assetDelivery,
 ) {
-  final presentationTypes = <String>{'text'};
+  final presentationTypes = <String>{'text', 'scene'};
   if (assetDelivery != null) {
     presentationTypes.add('canvas');
     if (assetDelivery.supportsBinaryNetworkAssets) {
@@ -575,13 +938,24 @@ PlayCapabilityEnvelope consumerCapabilitiesForAssetDelivery(
   return PlayCapabilityEnvelope(
     schemaVersions: const {1},
     presentationTypes: Set.unmodifiable(presentationTypes),
-    inputTypes: const {'tap', 'single_choice', 'piano_key', 'drag'},
+    inputTypes: const {
+      'tap',
+      'single_choice',
+      'multiple_choice',
+      'piano_key',
+      'drag',
+      'piece_move',
+      'timed_cue',
+    },
     validatorTypes: const {
       'none',
       'equals',
+      'set_equality',
       'ordered_sequence',
       'target_region',
+      'legal_piece_move',
     },
+    platformFlags: const {'timed_scene_v1'},
   );
 }
 

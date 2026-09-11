@@ -8,7 +8,10 @@ void main() {
     'production capability envelope widens only for installed delivery kinds',
     () {
       final noDelivery = consumerCapabilitiesForAssetDelivery(null);
-      expect(noDelivery.presentationTypes, <String>{'text'});
+      expect(noDelivery.presentationTypes, <String>{'text', 'scene'});
+      expect(noDelivery.platformFlags, contains('timed_scene_v1'));
+      expect(noDelivery.inputTypes, contains('multiple_choice'));
+      expect(noDelivery.validatorTypes, contains('set_equality'));
 
       final secure = AssetDeliveryClient(
         baseUri: Uri.parse('https://api.example.test/'),
@@ -21,6 +24,7 @@ void main() {
         'image',
         'video_clip',
         'audio',
+        'scene',
       });
       secure.close();
 
@@ -30,7 +34,11 @@ void main() {
         client: MockClient((_) async => throw StateError('unused')),
       );
       final localCapabilities = consumerCapabilitiesForAssetDelivery(local);
-      expect(localCapabilities.presentationTypes, <String>{'text', 'canvas'});
+      expect(localCapabilities.presentationTypes, <String>{
+        'text',
+        'canvas',
+        'scene',
+      });
       local.close();
     },
   );

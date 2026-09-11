@@ -51,6 +51,12 @@ final class _MemoryState implements ConsumerLocalState {
   Future<List<String>> readMutedTopicIds() async => const <String>[];
   @override
   Future<void> writeMutedTopicIds(Iterable<String> topicIds) async {}
+
+  @override
+  Future<List<String>> readPinnedGameFamilyIds() async => const <String>[];
+
+  @override
+  Future<void> writePinnedGameFamilyIds(Iterable<String> familyIds) async {}
 }
 
 final class _RecordingTelemetry implements Telemetry {

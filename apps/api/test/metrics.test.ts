@@ -14,6 +14,7 @@ class MetricsRepository implements MosaicRepository {
   async verifyActorAccess(): Promise<boolean> { return false; }
   async bindActorToUser(_actorId: string, _userId: string): Promise<void> {}
   async getPlayRevision(_playId: string, _revisionId: string): Promise<unknown | null> { return null; }
+  async getPublicPlayRevision(_playId: string, _revisionId: string): Promise<unknown | null> { return null; }
   async insertEvent(_event: EventInput): Promise<'inserted' | 'duplicate'> { return 'inserted'; }
 }
 

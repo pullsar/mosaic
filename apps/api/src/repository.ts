@@ -34,6 +34,15 @@ export interface MosaicRepository {
   verifyActorAccess(actorId: string, credentialDigest: string): Promise<boolean>;
   bindActorToUser(actorId: string, userId: string): Promise<void>;
   getPlayRevision(playId: string, revisionId: string): Promise<unknown | null>;
+  /**
+   * Resolves a revision that has been deliberately published to the catalog.
+   * Suspended catalog entries remain reachable by their immutable identity so
+   * old links preserve their original result; a future withdrawal state must
+   * be modeled explicitly before it can make an already-published revision
+   * unavailable.
+   */
+  getPublicPlayRevision(playId: string, revisionId: string): Promise<unknown | null>;
+  getNextGameRoundCandidates?(playId: string, revisionId: string): Promise<unknown[]>;
   insertEvent(event: EventInput): Promise<'inserted' | 'duplicate'>;
 }
 
@@ -150,6 +159,44 @@ export class PostgresRepository implements MosaicRepository {
       [playId, revisionId],
     );
     return result.rows[0]?.document ?? null;
+  }
+
+  async getPublicPlayRevision(playId: string, revisionId: string): Promise<unknown | null> {
+    const result = await this.pool.query<{document: unknown}>(
+      `select revision.document
+         from play_revisions revision
+         join feed_catalog_entries catalog
+           on catalog.play_id = revision.play_id
+          and catalog.revision_id = revision.revision_id
+        where revision.play_id = $1
+          and revision.revision_id = $2
+          and catalog.state in ('eligible', 'suspended')`,
+      [playId, revisionId],
+    );
+    return result.rows[0]?.document ?? null;
+  }
+
+  async getNextGameRoundCandidates(playId: string, revisionId: string): Promise<unknown[]> {
+    const result = await this.pool.query<{document: unknown}>(
+      `select candidate.document
+         from play_revisions source
+         join game_family_revisions family
+           on family.id = source.document->'gameFamily'->>'id'
+          and family.revision_id = source.document->'gameFamily'->>'revisionId'
+         cross join lateral jsonb_array_elements(family.document->'playRevisions') member
+         join play_revisions candidate
+           on candidate.play_id = member->>'playId'
+          and candidate.revision_id = member->>'revisionId'
+         join feed_catalog_entries catalog
+           on catalog.play_id = candidate.play_id
+          and catalog.revision_id = candidate.revision_id
+        where source.play_id = $1 and source.revision_id = $2
+          and candidate.play_id <> $1 and catalog.state = 'eligible'
+        order by (candidate.play_id > $1) desc, candidate.play_id, candidate.revision_id
+        limit 64`,
+      [playId, revisionId],
+    );
+    return result.rows.map((row) => row.document);
   }
 
   async insertEvent(event: EventInput): Promise<'inserted' | 'duplicate'> {

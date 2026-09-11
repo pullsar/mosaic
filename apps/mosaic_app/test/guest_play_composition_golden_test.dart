@@ -396,7 +396,7 @@ Future<_ScenarioHandle> _pumpScenario(
               feedRequestId: 'golden_feed',
               controller: harness.actions,
               onAdvance: (_) async => true,
-              onShare: (_) {},
+              onShare: (_, _) {},
               child: MixliAuthoredPlayDirection(child: playSurface),
             ),
           ),
@@ -415,6 +415,11 @@ Future<_ScenarioHandle> _pumpScenario(
     final semantics = tester.ensureSemantics();
     try {
       tester.semantics.tap(find.semantics.byLabel('Move match'));
+      await tester.pumpAndSettle();
+      expect(find.text('8 − 4 = 4'), findsNothing);
+      expect(find.bySemanticsLabel('Left area'), findsOneWidget);
+
+      tester.semantics.tap(find.semantics.byLabel('Left area'));
       await tester.pumpAndSettle();
       expect(find.text('8 − 4 = 4'), findsOneWidget);
       expect(

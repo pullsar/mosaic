@@ -267,6 +267,10 @@ abstract interface class ConsumerLocalState {
   Future<List<String>> readMutedTopicIds();
 
   Future<void> writeMutedTopicIds(Iterable<String> topicIds);
+
+  Future<List<String>> readPinnedGameFamilyIds();
+
+  Future<void> writePinnedGameFamilyIds(Iterable<String> familyIds);
 }
 
 final class DisabledConsumerLocalState implements ConsumerLocalState {
@@ -316,6 +320,12 @@ final class DisabledConsumerLocalState implements ConsumerLocalState {
 
   @override
   Future<void> writeMutedTopicIds(Iterable<String> topicIds) async {}
+
+  @override
+  Future<List<String>> readPinnedGameFamilyIds() async => const [];
+
+  @override
+  Future<void> writePinnedGameFamilyIds(Iterable<String> familyIds) async {}
 }
 
 String _requiredJsonString(

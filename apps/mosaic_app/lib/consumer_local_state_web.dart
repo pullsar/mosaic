@@ -6,22 +6,49 @@ import 'package:play_schema/play_schema.dart';
 
 import 'consumer_api_client.dart';
 import 'consumer_local_state.dart';
+import 'game_sound_preferences.dart';
 import 'guest_engagement.dart';
 
 const _preferencesKey = 'preferences.v1';
+const _soundPreferencesKey = 'game_sound_preferences.v1';
 const _onboardingCompletedKey = 'onboarding_completed.v1';
 const _feedResumeKey = 'feed_resume.v1';
 const _recentFeedKey = 'recent_feed.v1';
 const _mutedTopicsKey = 'muted_topics.v1';
+const _pinnedFamiliesKey = 'pinned_game_families.v1';
 const _playActionPrefix = 'play_action.v1.';
 const _guestEngagementKey = 'guest_engagement.v1';
 const _maxMutedTopics = 512;
 
 final class IndexedDbConsumerLocalState
-    implements ConsumerLocalState, GuestEngagementStore {
+    implements
+        ConsumerLocalState,
+        GuestEngagementStore,
+        GameSoundPreferencesStore {
   const IndexedDbConsumerLocalState(this._store);
 
   final IndexedDbEventStore _store;
+
+  @override
+  Future<GameSoundPreferences> readGameSoundPreferences() async {
+    final encoded = await _store.readConsumerMetadata(_soundPreferencesKey);
+    if (encoded == null) return GameSoundPreferences();
+    try {
+      final decoded = jsonDecode(encoded);
+      if (decoded is! Map) throw const FormatException('sound preferences');
+      return GameSoundPreferences.fromJson(decoded.cast<String, Object?>());
+    } on Object {
+      await _store.deleteConsumerMetadata(_soundPreferencesKey);
+      return GameSoundPreferences();
+    }
+  }
+
+  @override
+  Future<void> writeGameSoundPreferences(GameSoundPreferences preferences) =>
+      _store.writeConsumerMetadata(
+        _soundPreferencesKey,
+        jsonEncode(preferences.toJson()),
+      );
 
   @override
   Future<ConsumerPreferences> readPreferences() async {
@@ -158,6 +185,29 @@ final class IndexedDbConsumerLocalState
       );
 
   @override
+  Future<List<String>> readPinnedGameFamilyIds() async {
+    final encoded = await _store.readConsumerMetadata(_pinnedFamiliesKey);
+    if (encoded == null) return const [];
+    try {
+      final decoded = jsonDecode(encoded);
+      if (decoded is! List || decoded.length > 6) {
+        throw const FormatException('pinned game families');
+      }
+      return _pinnedFamilyIds(decoded.cast<Object?>());
+    } on Object {
+      await _store.deleteConsumerMetadata(_pinnedFamiliesKey);
+      return const [];
+    }
+  }
+
+  @override
+  Future<void> writePinnedGameFamilyIds(Iterable<String> familyIds) =>
+      _store.writeConsumerMetadata(
+        _pinnedFamiliesKey,
+        jsonEncode(_pinnedFamilyIds(familyIds)),
+      );
+
+  @override
   Future<GuestEngagementState?> readGuestEngagement() async {
     final encoded = await _store.readConsumerMetadata(_guestEngagementKey);
     if (encoded == null) return null;
@@ -204,4 +254,18 @@ List<String> _normalizeTopicIds(Iterable<Object?> values) {
     }
   }
   return result.toList(growable: false)..sort();
+}
+
+List<String> _pinnedFamilyIds(Iterable<Object?> values) {
+  final result = <String>[];
+  for (final value in values) {
+    if (value is! String) throw const FormatException('pinned family ID');
+    final id = value.trim();
+    if (id.isEmpty || id.length > 200 || result.contains(id)) {
+      throw const FormatException('pinned family ID');
+    }
+    result.add(id);
+    if (result.length > 6) throw const FormatException('pinned family limit');
+  }
+  return List<String>.unmodifiable(result);
 }

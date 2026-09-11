@@ -14,6 +14,7 @@ class MemoryRepository implements MosaicRepository {
   bindings = new Map<string, string>();
   events = new Map<string, EventInput>();
   plays = new Map<string, unknown>();
+  publicPlays = new Map<string, unknown>();
 
   async ping(): Promise<void> {}
   async createActor(actorId: string): Promise<void> {
@@ -39,6 +40,9 @@ class MemoryRepository implements MosaicRepository {
   async getPlayRevision(playId: string, revisionId: string): Promise<unknown | null> {
     return this.plays.get(`${playId}/${revisionId}`) ?? null;
   }
+  async getPublicPlayRevision(playId: string, revisionId: string): Promise<unknown | null> {
+    return this.publicPlays.get(`${playId}/${revisionId}`) ?? null;
+  }
   async insertEvent(event: EventInput): Promise<'inserted' | 'duplicate'> {
     if (this.events.has(event.eventId)) return 'duplicate';
     this.events.set(event.eventId, event);
@@ -56,6 +60,30 @@ const capabilities = {
   validatorTypes: ['none', 'equals'],
   platformFlags: [],
 };
+
+test('next round is a different compatible published family revision', async () => {
+  const repo = new MemoryRepository();
+  const raw = JSON.parse(await readFile(
+    '../../packages/play_schema/fixtures/where_is_this.json', 'utf8',
+  )) as Record<string, unknown>;
+  const first = {...raw, gameFamily: {id: 'observation', revisionId: 'rev_1'}};
+  const next = {...first, id: 'next_round'};
+  repo.publicPlays.set(`${raw.id}/${raw.revisionId}`, first);
+  const app = buildApp({repository: Object.assign(repo, {
+    async getNextGameRoundCandidates() { return [first, next]; },
+  }), logLevel: 'silent'});
+  const url = `/v1/plays/${raw.id}/revisions/${raw.revisionId}/next-round`;
+  const result = await app.inject({method: 'POST', url, payload: capabilities});
+  assert.equal(result.statusCode, 200);
+  assert.deepEqual(result.json(), next);
+  const unsupported = await app.inject({method: 'POST', url,
+    payload: {...capabilities, presentationTypes: ['text']}});
+  assert.equal(unsupported.statusCode, 204);
+  const hidden = await app.inject({method: 'POST',
+    url: '/v1/plays/private/revisions/rev_1/next-round', payload: capabilities});
+  assert.equal(hidden.statusCode, 404);
+  await app.close();
+});
 
 test('actor ownership protects registration, binding and idempotent events', async () => {
   const repo = new MemoryRepository();
@@ -216,6 +244,31 @@ test('Play read route enforces requesting client capabilities', async () => {
   });
   assert.equal(unsupported.statusCode, 409);
   assert.deepEqual(unsupported.json().missing, ['presentation:video_clip']);
+
+  await app.close();
+});
+
+test('public Play route exposes only cataloged immutable revisions', async () => {
+  const repo = new MemoryRepository();
+  const raw = JSON.parse(
+    await readFile('../../packages/play_schema/fixtures/where_is_this.json', 'utf8'),
+  ) as Record<string, unknown>;
+  repo.publicPlays.set(`${raw.id}/${raw.revisionId}`, raw);
+  const app = buildApp({repository: repo, logLevel: 'silent'});
+
+  const publicRevision = await app.inject({
+    method: 'GET',
+    url: `/v1/public/plays/${raw.id}/revisions/${raw.revisionId}`,
+  });
+  assert.equal(publicRevision.statusCode, 200);
+  assert.deepEqual(publicRevision.json(), raw);
+
+  const unavailable = await app.inject({
+    method: 'GET',
+    url: '/v1/public/plays/not_cataloged/revisions/rev_1',
+  });
+  assert.equal(unavailable.statusCode, 404);
+  assert.deepEqual(unavailable.json(), {error: 'public_play_not_found'});
 
   await app.close();
 });

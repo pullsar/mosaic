@@ -95,6 +95,7 @@ Future<Map<String, Color>> _renderTonePixels(
   WidgetTester tester, {
   required PlayCanvasAsset asset,
   required ThemeData theme,
+  Map<String, Offset> samplePoints = _toneSamplePoints,
 }) async {
   final boundaryKey = GlobalKey();
   await tester.pumpWidget(
@@ -139,7 +140,7 @@ Future<Map<String, Color>> _renderTonePixels(
     throw StateError('Canvas image capture did not complete.');
   }
   final colors = <String, Color>{};
-  for (final sample in _toneSamplePoints.entries) {
+  for (final sample in samplePoints.entries) {
     final globalPoint =
         paintRect.topLeft +
         Offset(
@@ -423,6 +424,71 @@ void main() {
     expect(pixels['accent'], const Color(0xFFFFCC00));
     expect(pixels['muted'], const Color(0xFF8090A0));
     expect(pixels['surface'], const Color(0xFF405060));
+  });
+
+  testWidgets('filled game geometry keeps a distinct static depth edge', (
+    tester,
+  ) async {
+    final asset = PlayCanvasAsset.fromJson({
+      'schemaVersion': 1,
+      'id': 'tactile_circle',
+      'palette': _authoredPalette,
+      'elements': [
+        {
+          'type': 'circle',
+          'x': 0.5,
+          'y': 0.5,
+          'radius': 0.2,
+          'fill': true,
+          'tone': 'accent',
+        },
+      ],
+    });
+    final pixels = await _renderTonePixels(
+      tester,
+      asset: asset,
+      theme: ThemeData.light(),
+      samplePoints: const {
+        'face': Offset(0.5, 0.5),
+        'depth': Offset(0.5, 0.665),
+      },
+    );
+
+    expect(pixels['face'], const Color(0xFFFFCC00));
+    expect(pixels['depth'], isNot(const Color(0xFF102030)));
+  });
+
+  testWidgets('thick game strokes keep a distinct static depth edge', (
+    tester,
+  ) async {
+    final asset = PlayCanvasAsset.fromJson({
+      'schemaVersion': 1,
+      'id': 'tactile_matchstick',
+      'palette': _authoredPalette,
+      'elements': [
+        {
+          'type': 'line',
+          'x1': 0.2,
+          'y1': 0.5,
+          'x2': 0.8,
+          'y2': 0.5,
+          'width': 0.06,
+          'tone': 'accent',
+        },
+      ],
+    });
+    final pixels = await _renderTonePixels(
+      tester,
+      asset: asset,
+      theme: ThemeData.light(),
+      samplePoints: const {
+        'face': Offset(0.5, 0.5),
+        'depth': Offset(0.5, 0.53),
+      },
+    );
+
+    expect(pixels['face'], const Color(0xFFFFCC00));
+    expect(pixels['depth'], isNot(const Color(0xFF102030)));
   });
 
   testWidgets('legacy canvas tones continue to fall back to the theme', (

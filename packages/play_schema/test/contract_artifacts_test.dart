@@ -26,6 +26,13 @@ void main() {
       (playSchema['properties'] as Map)['schemaVersion'],
       containsPair('const', 1),
     );
+    final playProperties = playSchema['properties'] as Map;
+    expect(playProperties, contains('gameFamily'));
+    expect(playProperties, contains('presentation'));
+    expect(
+      (playSchema[r'$defs'] as Map).keys,
+      containsAll(['gameFamily', 'presentation']),
+    );
     expect(
       capabilitySchema['required'],
       containsAll([

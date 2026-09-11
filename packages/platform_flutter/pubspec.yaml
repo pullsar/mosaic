@@ -12,6 +12,7 @@ dependencies:
   image_picker: ^1.2.3
   permission_handler: ^13.0.1
   platform_contracts: ^0.1.0
+  share_plus: ^13.3.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -14,6 +14,7 @@ import {registerMediaDeliveryRoutes} from './media_delivery_routes.js';
 import {S3MediaDeliveryObjectReader} from './media_delivery_s3_storage.js';
 import {PostgresMediaPublicationGate} from './media_publication.js';
 import {PostgresRepository} from './repository.js';
+import {PostgresPlayChallengeRepository} from './play_challenge.js';
 
 const config = loadConfig();
 const mediaDeliveryConfig = loadMediaDeliveryStorageConfig();
@@ -31,6 +32,7 @@ const app = buildApp({
   consumerSearchRepository,
   consumerSignalProjector,
   feedAssetReadiness,
+  challengeRepository: new PostgresPlayChallengeRepository(pool),
   logLevel: config.logLevel,
   releaseSha: config.releaseSha,
   allowedWebOrigins: config.allowedWebOrigins,

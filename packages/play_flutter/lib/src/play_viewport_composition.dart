@@ -120,6 +120,7 @@ final class PlayViewportComposition {
       ),
     );
     final useRail =
+        safeRect.width >= 600 &&
         railStageSize.width >= _minimumRailStage.width &&
         railStageSize.height >= _minimumRailStage.height;
 

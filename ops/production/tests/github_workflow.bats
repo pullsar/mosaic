@@ -44,6 +44,22 @@ setup() {
   done
 }
 
+@test "dispatch SSH identity files normalize escaped newlines before SSH" {
+  for workflow in "$REVIEW_WORKFLOW" "$DEPLOY_WORKFLOW"; do
+    grep -Fq 'write_ssh_file()' "$workflow"
+    grep -Fq 'value="${value//\\r/}"' "$workflow"
+    grep -Fq 'value="${value//$'"'"'\r'"'"'/}"' "$workflow"
+    grep -Fq 'value="${value//\\n/$' "$workflow"
+    grep -Fq 'ssh-keygen -y -f' "$workflow"
+    grep -Fq '[[ "$value" == *$' "$workflow"
+    grep -Fq "printf '\\n' >>\"\$path\"" "$workflow"
+  done
+  grep -Fq 'write_ssh_file "$HOME/.ssh/mixli-review" "$REVIEW_KEY"' \
+    "$REVIEW_WORKFLOW"
+  grep -Fq 'write_ssh_file "$HOME/.ssh/mixli-deploy" "$DEPLOY_KEY"' \
+    "$DEPLOY_WORKFLOW"
+}
+
 @test "automatic production deploys originate only from main" {
   grep -Fq 'branches: [main]' "$DEPLOY_WORKFLOW"
   grep -Fq 'pull_request_target:' "$REVIEW_WORKFLOW"

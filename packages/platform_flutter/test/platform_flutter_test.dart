@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:platform_contracts/platform_contracts.dart';
 import 'package:platform_flutter/platform_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 
 final class _Handle implements ManagedMediaHandle {
   _Handle({this.pauseGate});
@@ -162,5 +163,31 @@ void main() {
     final state = await gateway.check(MosaicPermission.notifications);
 
     expect(state, MosaicPermissionState.unsupported);
+  });
+
+  test('share adapter preserves the platform outcome', () async {
+    final gateway = SharePlusGateway(
+      share: (_) async =>
+          const ShareResult('target', ShareResultStatus.success),
+    );
+
+    final outcome = await gateway.share(
+      Uri.parse('https://mixli.app/p/play_1/rev_1'),
+    );
+
+    expect(outcome, ShareDisposition.shared);
+  });
+
+  test('share adapter maps unavailable platform results', () async {
+    final gateway = SharePlusGateway(
+      share: (_) async =>
+          const ShareResult('unavailable', ShareResultStatus.unavailable),
+    );
+
+    final outcome = await gateway.share(
+      Uri.parse('https://mixli.app/p/play_1/rev_1'),
+    );
+
+    expect(outcome, ShareDisposition.unavailable);
   });
 }

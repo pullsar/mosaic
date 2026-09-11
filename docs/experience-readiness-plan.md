@@ -6,6 +6,10 @@ This plan turns Mixli's product, experience, runtime, visual-language, accessibi
 
 The evolving execution tracker remains GitHub issue #48. This document defines the experience bar that implementation must satisfy.
 
+The [continuous-round implementation](2026-09-11-continuous-rounds.md) replaces
+Done/Replay in family games with immediate scoring and a prepared successor.
+API/catalog rollout and physical pacing checks remain explicit release gates.
+
 ## Current repository reality
 
 As of 2026-08-29, the upstream repository is already the real Flutter + Dart implementation—not a design shell or Next.js prototype. The shared client/runtime architecture is:
@@ -276,7 +280,64 @@ Every release claim should point to evidence, not aspiration:
 
 A checkbox without current evidence is not a launch gate passed.
 
+## Catalog Trust Gate
+
+Initial starter-catalog review now requires a pure integrity record before a revision can become the eligible release set. The first checked record covers:
+
+- `mixli_starter_move_one_match/rev_3` — source equation `6 + 4 = 4`, three authored destinations, unique valid move `operator.vertical → left.b`, derived result `8 - 4 = 4`, source and solved canvases generated from the occupied segment sets, and explicit drag destination-selection coverage at primitive, viewport, and app-composition levels pending pinned-SDK validation.
+- `mixli_starter_city_instinct/rev_3` — preference classification, no manufactured correct answer, distinct Lisbon and Marrakech visual evidence, and reveal copy comparing both choices.
+- `mixli_starter_finish_pattern/rev_4` — three equally sized, equally contrasted shapes and a neutral missing-slot marker; accepted answer `square`; reveal replaces only that marker with the solved square.
+- `mixli_starter_find_orbit/rev_4` — labeled A/B/C route-continuity task with equal stroke weight and contrast, symmetric endpoint-coordinate descriptions, and only path B connecting both marked endpoints.
+- `mixli_starter_color_energy/rev_3` — preference classification, no manufactured correct answer, distinct electric, soft, and afterglow palette evidence.
+- `mixli_starter_quick_logic/rev_3` — sequence `2, 6, 12, 20`, displayed gap evidence `+4, +6, +8`, accepted answer `30`.
+
+Historical `rev_1` and `rev_2` starter revisions, plus the replaced pattern and route `rev_3` revisions, remain immutable and suspended from new feed eligibility. The other four `rev_3` games remain eligible. PostgreSQL publication verification runs against a disposable PostgreSQL 18 container; a missing database still records the test as skipped, not passed.
+
+The 2026-09-10 mechanics pass adds session-fenced input callbacks, fresh replay identities, bounded recovery without an action-limit trap, 48 px alternate drag targets, and interruptible 140 ms missed-drop return motion. Completed drags retain their placed piece while releasing input and focus. Pinned-SDK checks passed: 75 focused interaction/app tests, analyzer, format, and web release build. Full Flutter suites passed 328 tests with ten pre-existing Windows golden mismatches; canonical goldens were preserved.
+
+This is a mechanics and asset quality tranche, not completion of the game program. Scene-owned movable pieces, the new game families, curated audio, physical 60/120 Hz and screen-reader checks remain outstanding. The legacy matchstick canvas still draws its static source segment beneath the movable handle. New piece games require the planned stable-object scene contract before eligibility. Persistence, collections, sharing and operational work are outside this pass at the user's request.
+
+### 2026-09-11 touch and motion follow-up
+
+The scene renderer now tracks only the held object's translation without an
+interpolation delay. Ordinary pointer updates rebuild its transform; destination
+changes rebuild the scene controls. Placement hit testing starts at the current
+placement. Return motion can be interrupted by catching the moving object, and
+second-touch cancellation cannot release another object's gesture lease. Scene
+replacement clears selection; teardown releases the lease and animation resources.
+
+Answer controls compress on contact and settle on release while keeping their
+48 px hit area. Native button activation remains the scoring path, including
+keyboard activation and pointer cancellation. Reduced motion disables this
+deformation and scene return animation. Timed cues restart on cue identity or
+ordinal changes even when their durations match, and stale progress callbacks
+are fenced by generation.
+
+Regression coverage includes same-frame pointer tracking, stationary neighbors,
+placed-object drags, catching a return, competing touches, reduced motion,
+cancelled answers, cue reuse, and 100 interrupted scene lifecycles with no active
+tickers or outstanding gesture leases afterward. These are automated lifecycle
+checks, not physical frame-time or touch-to-sound measurements.
+
+Pinned-SDK verification: enforced-lockfile dependency resolution, repository
+formatting, analyzer, and the web release build pass. The baseline package/app
+suites pass 504 tests, with the four screenshot failures below remaining.
+
+The four shared-renderer Windows golden mismatches documented by the earlier
+mechanics pass remain under `play_surface_golden_test.dart`; this follow-up does
+not replace those reference images. Physical 60/120 Hz profiles, audio-route
+latency, VoiceOver/TalkBack, and the supported-host mobile release gates still
+require their own evidence before release.
+
+Asset review used the shared Flutter renderer in a release browser preview at 390×844 and 320×640, including the pattern's answer transition. Square geometry accounts for the renderer's 4:5 canvas stage; circles and squares now have equal physical extents. The corrected routes have readable labels and uniform strokes. This review does not replace physical-device or first-time-user evidence.
+
 ## Definition of done
+
+The [2026-09-11 Android visual review](2026-09-11-device-visual-review.md)
+records the material palette, phone layout, canvas/scene alignment and system-bar
+fixes, reviewed screenshot references, and a bounded 120 Hz device capture.
+It supersedes the earlier four-golden-mismatch status. The live catalog still
+serves older starter revisions; the newer catalog requires publication.
 
 Mixli is experience-ready when it feels like a polished, calm, playful instrument: content is beautiful, the action is obvious, feedback is immediate, motion is purposeful, state reconciliation is trustworthy, accessibility is native to the interaction, resources remain bounded, and the user can always swipe away.
 

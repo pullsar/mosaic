@@ -33,8 +33,18 @@ jobs:
           install -d -m 0700 "$HOME/.ssh"
           install -m 0600 /dev/null "$HOME/.ssh/mixli-review"
           install -m 0600 /dev/null "$HOME/.ssh/known_hosts"
-          printf '%s\n' "$REVIEW_KEY" >"$HOME/.ssh/mixli-review"
-          printf '%s\n' "$REVIEW_KNOWN_HOST" >"$HOME/.ssh/known_hosts"
+          write_ssh_file() {
+            local path="$1"
+            local value="$2"
+            value="${value//\\r/}"
+            value="${value//$'\r'/}"
+            value="${value//\\n/$'\n'}"
+            printf '%s' "$value" >"$path"
+            [[ "$value" == *$'\n' ]] || printf '\n' >>"$path"
+          }
+          write_ssh_file "$HOME/.ssh/mixli-review" "$REVIEW_KEY"
+          ssh-keygen -y -f "$HOME/.ssh/mixli-review" >/dev/null
+          write_ssh_file "$HOME/.ssh/known_hosts" "$REVIEW_KNOWN_HOST"
       - name: Queue isolated server review
         run: >-
           ssh -i "$HOME/.ssh/mixli-review"

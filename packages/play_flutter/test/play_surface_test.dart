@@ -130,7 +130,492 @@ PlayCanvasAsset _continuousCanvas() => PlayCanvasAsset(
   ],
 );
 
+PlayDocument _timedCuePlay({int durationMs = 300}) => PlayDocument.fromJson({
+  'schemaVersion': 1,
+  'id': 'timed_cue',
+  'revisionId': 'timed_cue_rev_1',
+  'format': 'guess',
+  'classification': 'challenge',
+  'topics': ['observation'],
+  'learningTopics': <String>[],
+  'estimatedDurationSec': 8,
+  'assets': <String>[],
+  'sources': <Object>[],
+  'entryState': 'cue',
+  'states': {
+    'cue': {
+      'presentation': {
+        'layers': [
+          {
+            'type': 'scene',
+            'role': 'media',
+            'scene': {
+              'version': 1,
+              'objects': [
+                {
+                  'id': 'coin',
+                  'semanticLabel': 'Coin',
+                  'shape': 'circle',
+                  'x': .1,
+                  'y': .3,
+                  'width': .1,
+                  'height': .1,
+                },
+              ],
+              'targets': const <Object?>[],
+              'cues': [
+                {
+                  'id': 'observe_1',
+                  'objectId': 'coin',
+                  'durationMs': 300,
+                  'keyframes': [
+                    {'timeMs': 0, 'x': .1, 'y': .3, 'width': .1, 'height': .1},
+                    {
+                      'timeMs': 300,
+                      'x': .7,
+                      'y': .3,
+                      'width': .1,
+                      'height': .1,
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+          {'type': 'text', 'role': 'prompt', 'value': 'Look closer.'},
+        ],
+      },
+      'input': {
+        'type': 'timed_cue',
+        'cueId': 'observe_1',
+        'cueOrdinal': 1,
+        'durationMs': durationMs,
+      },
+      'validation': {'type': 'none'},
+      'transition': {'default': 'choose'},
+    },
+    'choose': {
+      'presentation': {
+        'layers': [
+          {'type': 'text', 'role': 'prompt', 'value': 'Pick one.'},
+        ],
+      },
+      'input': {'type': 'tap', 'label': 'Done'},
+      'validation': {'type': 'none'},
+      'transition': {'default': r'$end'},
+    },
+  },
+});
+
+PlayDocument _exactSetPlay() => PlayDocument.fromJson({
+  'schemaVersion': 1,
+  'id': 'exact_set_surface',
+  'revisionId': 'rev_1',
+  'format': 'guess',
+  'classification': 'challenge',
+  'topics': <String>[],
+  'learningTopics': <String>[],
+  'estimatedDurationSec': 10,
+  'assets': <String>[],
+  'sources': <Object>[],
+  'entryState': 'choose',
+  'states': {
+    'choose': {
+      'presentation': {
+        'layers': [
+          {'type': 'text', 'role': 'prompt', 'value': 'Pick two.'},
+        ],
+      },
+      'input': {
+        'type': 'multiple_choice',
+        'options': [
+          {'id': 'beacon', 'label': 'Beacon'},
+          {'id': 'orbit', 'label': 'Orbit'},
+          {'id': 'comet', 'label': 'Comet'},
+        ],
+      },
+      'validation': {
+        'type': 'set_equality',
+        'value': ['beacon', 'orbit'],
+      },
+      'transition': {'correct': 'reveal', 'incorrect': 'choose'},
+    },
+    'reveal': {
+      'presentation': {
+        'layers': [
+          {'type': 'text', 'role': 'reveal_title', 'value': 'Both paths.'},
+        ],
+      },
+      'input': {'type': 'tap', 'label': 'Done'},
+      'validation': {'type': 'none'},
+      'transition': {'default': r'$end'},
+    },
+  },
+});
+
 void main() {
+  testWidgets('movable scenes share the authored canvas coordinate space', (
+    tester,
+  ) async {
+    final raw = _timedCuePlay(durationMs: 2000).toJson();
+    raw['assets'] = ['continuous_canvas'];
+    final states = raw['states']! as Map<String, Object?>;
+    final cue = states['cue']! as Map<String, Object?>;
+    final presentation = cue['presentation']! as Map<String, Object?>;
+    final layers = presentation['layers']! as List<Object?>;
+    layers.insert(0, {
+      'type': 'canvas',
+      'role': 'media',
+      'assetId': 'continuous_canvas',
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PlaySurface(
+          play: PlayDocument.fromJson(raw),
+          mediaBuilder: (_, _) => PlayCanvas(asset: _continuousCanvas()),
+        ),
+      ),
+    );
+    final paintedCanvas = find.descendant(
+      of: find.byType(PlayCanvas),
+      matching: find.byType(CustomPaint),
+    );
+    expect(
+      tester.getRect(find.byType(PlaySceneRenderer)),
+      tester.getRect(paintedCanvas),
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('dark Play objects remain legible in either app brightness', (
+    tester,
+  ) async {
+    final colors = <ColorScheme>[];
+    for (final brightness in Brightness.values) {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(brightness: brightness),
+          home: PlaySurface(play: _timedCuePlay(durationMs: 2000)),
+        ),
+      );
+      final palette = Theme.of(
+        tester.element(find.byType(PlaySceneRenderer)),
+      ).colorScheme;
+      colors.add(palette);
+      for (final ink in [palette.onSurface, palette.primary]) {
+        final contrast =
+            (ink.computeLuminance() + .05) /
+            (MosaicVisualTokens.surface.computeLuminance() + .05);
+        expect(contrast, greaterThanOrEqualTo(4.5));
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
+    }
+    expect(colors.first, colors.last);
+  });
+
+  testWidgets(
+    'answer contact compresses without submitting and cancellation restores it',
+    (tester) async {
+      var resolutions = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: PlaySurface(
+              play: _continuousRevealPlay(),
+              onResolved: (_) => resolutions++,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final label = find.text('Solve');
+      final original = tester.getRect(label);
+      final gesture = await tester.startGesture(tester.getCenter(label));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
+      expect(tester.getRect(label).height, lessThan(original.height));
+      expect(resolutions, 0);
+      await gesture.cancel();
+      await tester.pumpAndSettle();
+      expect(tester.getRect(label).height, closeTo(original.height, .01));
+      expect(resolutions, 0);
+      expect(tester.binding.transientCallbackCount, 0);
+    },
+  );
+
+  testWidgets('reduced-motion answer contact retains its geometry', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(disableAnimations: true),
+          child: Scaffold(body: PlaySurface(play: _continuousRevealPlay())),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final label = find.text('Solve');
+    final original = tester.getRect(label);
+    final gesture = await tester.startGesture(tester.getCenter(label));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(tester.getRect(label), original);
+    await gesture.cancel();
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('exact set selection resolves through the shared Play surface', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: PlaySurface(play: _exactSetPlay())),
+      ),
+    );
+
+    await tester.tap(find.bySemanticsLabel('Orbit'));
+    await tester.pump();
+    await tester.tap(find.bySemanticsLabel('Beacon'));
+    await tester.pump();
+    await tester.tap(find.byTooltip('Submit selection'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Both paths.'), findsOneWidget);
+  });
+
+  testWidgets('timed cue advances through an explicit engine action', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: PlaySurface(play: _timedCuePlay())),
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('play-timed-cue')),
+      findsOneWidget,
+    );
+    expect(find.text('Look closer.'), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump();
+
+    expect(find.text('Pick one.'), findsOneWidget);
+  });
+
+  testWidgets('timed cue accepts the 12-second trajectory ceiling', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PlaySurface(play: _timedCuePlay(durationMs: 12000)),
+        ),
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('play-timed-cue')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('timed cue samples its matching scene trajectory', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: PlaySurface(play: _timedCuePlay())),
+      ),
+    );
+
+    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump();
+
+    final position = tester.widget<AnimatedPositioned>(
+      find.byKey(const ValueKey<String>('scene-object:coin')),
+    );
+    final bounds = tester.getSize(find.byType(PlaySceneRenderer));
+    expect(position.left, greaterThan(bounds.width * .15));
+    expect(position.left, lessThan(bounds.width * .65));
+  });
+
+  testWidgets('timed cue stops motion when reduced motion changes', (
+    tester,
+  ) async {
+    Widget cue(bool reduced) => MaterialApp(
+      home: MediaQuery(
+        data: MediaQueryData(disableAnimations: reduced),
+        child: Center(
+          child: PlayTimedCueInput(
+            key: const ValueKey<String>('cue'),
+            duration: const Duration(milliseconds: 300),
+            cueId: 'observe_1',
+            ordinal: 1,
+            onElapsed: () {},
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(cue(false));
+    await tester.pump(const Duration(milliseconds: 80));
+    final before = tester.widget<LinearProgressIndicator>(
+      find.byType(LinearProgressIndicator),
+    );
+    expect(before.value, greaterThan(0));
+
+    await tester.pumpWidget(cue(true));
+    final reduced = tester.widget<LinearProgressIndicator>(
+      find.byType(LinearProgressIndicator),
+    );
+    expect(reduced.value, 1);
+  });
+
+  testWidgets('timed cue reports bounded visual progress before completion', (
+    tester,
+  ) async {
+    final progress = <double>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: PlayTimedCueInput(
+            duration: const Duration(milliseconds: 300),
+            cueId: 'observe_1',
+            ordinal: 1,
+            onElapsed: () {},
+            onProgress: progress.add,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(progress.first, 0);
+    expect(progress.last, inInclusiveRange(0.35, 0.45));
+  });
+
+  testWidgets('fades a new stage state without duplicating the stage', (
+    tester,
+  ) async {
+    final play = PlayDocument.fromJson({
+      'schemaVersion': 1,
+      'id': 'observation_transition',
+      'revisionId': 'rev_1',
+      'format': 'guess',
+      'classification': 'challenge',
+      'topics': ['observation'],
+      'learningTopics': <String>[],
+      'estimatedDurationSec': 8,
+      'assets': <String>[],
+      'sources': <Object>[],
+      'entryState': 'observe',
+      'states': {
+        'observe': {
+          'presentation': {
+            'layers': [
+              {'type': 'text', 'role': 'prompt', 'value': 'Remember this.'},
+            ],
+          },
+          'input': {'type': 'tap', 'label': 'Ready'},
+          'validation': {'type': 'none'},
+          'transition': {'default': 'choose'},
+        },
+        'choose': {
+          'presentation': {
+            'layers': [
+              {'type': 'text', 'role': 'prompt', 'value': 'What changed?'},
+            ],
+          },
+          'input': {'type': 'tap', 'label': 'Done'},
+          'validation': {'type': 'none'},
+          'transition': {'default': r'$end'},
+        },
+      },
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: PlaySurface(play: play)),
+      ),
+    );
+    await tester.tap(find.text('Ready'));
+    await tester.pump();
+
+    final transition = tester.widget<FadeTransition>(
+      find.byKey(const ValueKey<String>('play-stage-state-transition')),
+    );
+    expect(transition.opacity.value, lessThan(1));
+    expect(find.byKey(const ValueKey<String>('play-stage')), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<FadeTransition>(
+            find.byKey(const ValueKey<String>('play-stage-state-transition')),
+          )
+          .opacity
+          .value,
+      1,
+    );
+  });
+
+  testWidgets('renders the frozen game-theme backdrop', (tester) async {
+    final play = PlayDocument.fromJson({
+      'schemaVersion': 1,
+      'id': 'themed_demo',
+      'revisionId': 'rev_1',
+      'format': 'guess',
+      'classification': 'challenge',
+      'topics': ['observation'],
+      'learningTopics': <String>[],
+      'estimatedDurationSec': 8,
+      'assets': <String>[],
+      'sources': <Object>[],
+      'gameFamily': {'id': 'quiet-switch', 'revisionId': 'family_1'},
+      'presentation': {
+        'themeId': 'paper-studio',
+        'themeRevisionId': 'theme_1',
+        'variantId': 'felt-ivory',
+      },
+      'entryState': 'guess',
+      'states': {
+        'guess': {
+          'presentation': {
+            'layers': [
+              {'type': 'text', 'role': 'prompt', 'value': 'Look closer.'},
+            ],
+          },
+          'input': {
+            'type': 'single_choice',
+            'options': [
+              {'id': 'a', 'label': 'A'},
+              {'id': 'b', 'label': 'B'},
+            ],
+          },
+          'validation': {'type': 'equals', 'value': 'a'},
+          'transition': {'correct': r'$end', 'incorrect': r'$end'},
+        },
+      },
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: PlaySurface(play: play)),
+      ),
+    );
+
+    expect(
+      find.byKey(
+        const ValueKey<String>(
+          'play-theme-backdrop:paper-studio:theme_1:felt-ivory',
+        ),
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('renders concise prompt and advances a choice', (tester) async {
     final play = PlayDocument.fromJson({
       'schemaVersion': 1,
@@ -262,66 +747,68 @@ void main() {
   testWidgets('matchstick Play renders and resolves entirely from data', (
     tester,
   ) async {
-    final play = _fixture('move_one_match.json');
-    final unsolved = _canvasFixture('puzzle_match_01.json');
-    final solved = _canvasFixture('puzzle_match_01_solved.json');
-    final manipulation = <bool>[];
-    final media = PlayMediaLayerBuilder(
-      ownerId: playMediaOwnerId(play),
-      visualResolver: MapPlayVisualAssetResolver(const {}),
-      videoResolver: MapPlayVideoAssetResolver(const {}),
-      canvasResolver: MapPlayCanvasAssetResolver({
-        unsolved.id: unsolved,
-        solved.id: solved,
-      }),
-      mediaCoordinator: ActiveMediaCoordinator(),
-      videoControllerFactory: (_) =>
-          throw StateError('Video controller must not be requested.'),
-    );
+    final semantics = tester.ensureSemantics();
+    try {
+      final play = _fixture('move_one_match.json');
+      final unsolved = _canvasFixture('puzzle_match_01.json');
+      final solved = _canvasFixture('puzzle_match_01_solved.json');
+      final manipulation = <bool>[];
+      final media = PlayMediaLayerBuilder(
+        ownerId: playMediaOwnerId(play),
+        visualResolver: MapPlayVisualAssetResolver(const {}),
+        videoResolver: MapPlayVideoAssetResolver(const {}),
+        canvasResolver: MapPlayCanvasAssetResolver({
+          unsolved.id: unsolved,
+          solved.id: solved,
+        }),
+        mediaCoordinator: ActiveMediaCoordinator(),
+        videoControllerFactory: (_) =>
+            throw StateError('Video controller must not be requested.'),
+      );
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Center(
-            child: SizedBox.square(
-              dimension: 400,
-              child: PlaySurface(
-                play: play,
-                mediaBuilder: media.call,
-                onDirectManipulationChanged: manipulation.add,
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox.square(
+                dimension: 400,
+                child: PlaySurface(
+                  play: play,
+                  mediaBuilder: media.call,
+                  onDirectManipulationChanged: manipulation.add,
+                ),
               ),
             ),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.text('Move one match.'), findsOneWidget);
-    expect(
-      find.bySemanticsLabel('Matchstick equation: 6 plus 4 equals 4'),
-      findsOneWidget,
-    );
+      expect(find.text('Move one match.'), findsOneWidget);
+      expect(
+        find.bySemanticsLabel('Matchstick equation: 6 plus 4 equals 4'),
+        findsOneWidget,
+      );
 
-    final canvasStage = tester.getSize(
-      find.descendant(
-        of: find.byType(PlayCanvas),
-        matching: find.byType(CustomPaint),
-      ),
-    );
-    await tester.drag(
-      find.bySemanticsLabel('Move match'),
-      Offset(-0.14 * canvasStage.width, -0.06 * canvasStage.height),
-    );
-    await tester.pumpAndSettle();
+      tester.semantics.tap(find.semantics.byLabel('Move match'));
+      await tester.pump();
 
-    expect(manipulation, [true, false]);
-    expect(find.text('8 − 4 = 4'), findsOneWidget);
-    expect(
-      find.bySemanticsLabel('Solved matchstick equation: 8 minus 4 equals 4'),
-      findsOneWidget,
-    );
-    expect(find.text('Done'), findsOneWidget);
+      expect(find.text('8 − 4 = 4'), findsNothing);
+      expect(find.bySemanticsLabel('Left area'), findsOneWidget);
+
+      tester.semantics.tap(find.semantics.byLabel('Left area'));
+      await tester.pumpAndSettle();
+
+      expect(manipulation, isEmpty);
+      expect(find.text('8 − 4 = 4'), findsOneWidget);
+      expect(
+        find.bySemanticsLabel('Solved matchstick equation: 8 minus 4 equals 4'),
+        findsOneWidget,
+      );
+      expect(find.text('Done'), findsOneWidget);
+    } finally {
+      semantics.dispose();
+    }
   });
 
   testWidgets('reveal preserves the dominant canvas element in place', (
@@ -458,6 +945,22 @@ void main() {
       identical(canvasElementBefore, tester.element(find.byType(PlayCanvas))),
       isTrue,
     );
+  });
+
+  testWidgets('reduced-motion stage disposal does not create a ticker', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(disableAnimations: true),
+          child: Scaffold(body: PlaySurface(play: _continuousRevealPlay())),
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
   });
 
   testWidgets(

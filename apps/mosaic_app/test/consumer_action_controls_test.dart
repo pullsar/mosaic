@@ -9,6 +9,8 @@ import 'package:mosaic_app/consumer_api_client.dart';
 import 'package:mosaic_app/consumer_feed.dart';
 import 'package:mosaic_app/consumer_local_state.dart';
 import 'package:mosaic_app/event_runtime_resources.dart';
+import 'package:mosaic_app/game_sound_controller.dart';
+import 'package:mosaic_app/game_sound_preferences.dart';
 import 'package:play_flutter/play_flutter.dart';
 import 'package:play_schema/play_schema.dart';
 
@@ -40,6 +42,7 @@ final class _MemoryOutbox implements EventOutbox {
 final class _MemoryState implements ConsumerLocalState {
   final actions = <String, ConsumerPlayActionState>{};
   final mutedTopics = <String>{};
+  final pinnedFamilies = <String>[];
 
   @override
   Future<ConsumerPreferences> readPreferences() async => ConsumerPreferences();
@@ -78,6 +81,28 @@ final class _MemoryState implements ConsumerLocalState {
       ..clear()
       ..addAll(topicIds);
   }
+
+  @override
+  Future<List<String>> readPinnedGameFamilyIds() async =>
+      List<String>.unmodifiable(pinnedFamilies);
+
+  @override
+  Future<void> writePinnedGameFamilyIds(Iterable<String> familyIds) async {
+    pinnedFamilies
+      ..clear()
+      ..addAll(familyIds);
+  }
+}
+
+final class _MemorySoundStore implements GameSoundPreferencesStore {
+  GameSoundPreferences preferences = GameSoundPreferences();
+
+  @override
+  Future<GameSoundPreferences> readGameSoundPreferences() async => preferences;
+
+  @override
+  Future<void> writeGameSoundPreferences(GameSoundPreferences value) async =>
+      preferences = value;
 }
 
 final class _Harness {
@@ -156,6 +181,57 @@ void main() {
     await tester.tap(find.byKey(const ValueKey<String>('play-action-save')));
     await tester.pumpAndSettle();
     expect(harness.outbox.events.last.event, MosaicEventName.playSaved);
+  });
+
+  testWidgets('sound stays in More and opens its compact controls', (
+    tester,
+  ) async {
+    final harness = _Harness();
+    final soundController = GameSoundController(store: _MemorySoundStore());
+    addTearDown(harness.close);
+    addTearDown(soundController.dispose);
+    await soundController.initialize();
+
+    await tester.pumpWidget(_app(harness, soundController: soundController));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('game-sound-control')),
+      findsNothing,
+    );
+
+    await tester.tap(find.byKey(const ValueKey<String>('play-action-more')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Sound'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Mute'), findsOneWidget);
+  });
+
+  testWidgets('a seventh game pin asks which pin to replace', (tester) async {
+    final harness = _Harness();
+    harness.state.pinnedFamilies.addAll(<String>[
+      'one-move',
+      'quiet-switch',
+      'sleight',
+      'constellation',
+      'counterexample',
+      'echo-architect',
+    ]);
+    addTearDown(harness.close);
+
+    await tester.pumpWidget(_app(harness, familyId: 'evidence-lens'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey<String>('play-action-more')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Pin game'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Replace a pin'), findsOneWidget);
+    await tester.tap(find.text('One Move'));
+    await tester.pumpAndSettle();
+
+    expect(harness.controller.pinnedGameFamilyIds.first, 'evidence-lens');
+    expect(harness.outbox.events.last.event, MosaicEventName.gamePinsChanged);
   });
 
   for (final viewportCase in _utilityViewportCases) {
@@ -319,12 +395,18 @@ void main() {
   });
 }
 
-Widget _app(_Harness harness, {bool active = true}) => MaterialApp(
+Widget _app(
+  _Harness harness, {
+  bool active = true,
+  GameSoundController? soundController,
+  String? familyId,
+}) => MaterialApp(
   home: ConsumerActionControls(
-    item: _item(),
+    item: _item(familyId: familyId),
     feedRequestId: 'feed_controls',
     controller: harness.controller,
     onAdvance: harness.advance,
+    soundController: soundController,
     active: active,
     child: const ColoredBox(color: Colors.black),
   ),
@@ -385,7 +467,7 @@ Widget _composedApp(
           feedRequestId: 'feed_controls',
           controller: harness.controller,
           onAdvance: harness.advance,
-          onShare: (_) {},
+          onShare: (_, _) {},
           child: Stack(
             fit: StackFit.expand,
             children: <Widget>[
@@ -412,7 +494,7 @@ void _expectContained(Rect outer, Rect inner) {
   expect(inner.bottom, lessThanOrEqualTo(outer.bottom));
 }
 
-ConsumerFeedItem _item() => ConsumerFeedItem.fromJson(
+ConsumerFeedItem _item({String? familyId}) => ConsumerFeedItem.fromJson(
   <String, Object?>{
     'playId': 'play_controls',
     'revisionId': 'revision_controls',
@@ -426,6 +508,11 @@ ConsumerFeedItem _item() => ConsumerFeedItem.fromJson(
       'topics': <String>['testing'],
       'learningTopics': <String>[],
       'estimatedDurationSec': 5,
+      if (familyId != null)
+        'gameFamily': <String, Object?>{
+          'id': familyId,
+          'revisionId': '${familyId}_v1',
+        },
       'assets': <String>[],
       'sources': <Object>[],
       'entryState': 'entry',

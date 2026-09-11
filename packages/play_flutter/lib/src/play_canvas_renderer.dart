@@ -402,16 +402,22 @@ final class _PlayCanvasPainter extends CustomPainter {
     for (final element in asset.elements) {
       switch (element) {
         case PlayCanvasLine():
-          final paint = Paint()
-            ..color = _color(element.tone)
-            ..strokeWidth = element.width * shortest
+          final start = _point(element.start, size);
+          final end = _point(element.end, size);
+          final strokeWidth = element.width * shortest;
+          final depth = Offset(0, _depthOffset(strokeWidth, shortest));
+          final depthPaint = Paint()
+            ..color = _depthColor(element.tone)
+            ..strokeWidth = strokeWidth
             ..strokeCap = element.cap
             ..style = PaintingStyle.stroke;
-          canvas.drawLine(
-            _point(element.start, size),
-            _point(element.end, size),
-            paint,
-          );
+          final paint = Paint()
+            ..color = _color(element.tone)
+            ..strokeWidth = strokeWidth
+            ..strokeCap = element.cap
+            ..style = PaintingStyle.stroke;
+          canvas.drawLine(start + depth, end + depth, depthPaint);
+          canvas.drawLine(start, end, paint);
         case PlayCanvasRect():
           final rect = Rect.fromLTWH(
             element.rect.left * size.width,
@@ -419,27 +425,36 @@ final class _PlayCanvasPainter extends CustomPainter {
             element.rect.width * size.width,
             element.rect.height * size.height,
           );
+          final shape = RRect.fromRectAndRadius(
+            rect,
+            Radius.circular(element.radius * shortest),
+          );
+          if (element.fill) {
+            canvas.drawRRect(
+              shape.shift(Offset(0, _depthOffset(rect.height, shortest))),
+              Paint()..color = _depthColor(element.tone),
+            );
+          }
           final paint = Paint()
             ..color = _color(element.tone)
             ..strokeWidth = element.strokeWidth * shortest
             ..style = element.fill ? PaintingStyle.fill : PaintingStyle.stroke;
-          canvas.drawRRect(
-            RRect.fromRectAndRadius(
-              rect,
-              Radius.circular(element.radius * shortest),
-            ),
-            paint,
-          );
+          canvas.drawRRect(shape, paint);
         case PlayCanvasCircle():
+          final radius = element.radius * shortest;
+          if (element.fill) {
+            canvas.drawCircle(
+              _point(element.center, size) +
+                  Offset(0, _depthOffset(radius, shortest)),
+              radius,
+              Paint()..color = _depthColor(element.tone),
+            );
+          }
           final paint = Paint()
             ..color = _color(element.tone)
             ..strokeWidth = element.strokeWidth * shortest
             ..style = element.fill ? PaintingStyle.fill : PaintingStyle.stroke;
-          canvas.drawCircle(
-            _point(element.center, size),
-            element.radius * shortest,
-            paint,
-          );
+          canvas.drawCircle(_point(element.center, size), radius, paint);
         case PlayCanvasLabel():
           final painter = TextPainter(
             text: TextSpan(
@@ -482,6 +497,14 @@ final class _PlayCanvasPainter extends CustomPainter {
       PlayCanvasTone.accent => colorScheme.primary,
       PlayCanvasTone.surface => colorScheme.surfaceContainerHighest,
     };
+  }
+
+  double _depthOffset(double extent, double shortest) =>
+      math.min(shortest * 0.012, extent * 0.22);
+
+  Color _depthColor(PlayCanvasTone tone) {
+    final background = asset.palette?.background ?? colorScheme.surface;
+    return Color.alphaBlend(background.withValues(alpha: 0.42), _color(tone));
   }
 
   @override

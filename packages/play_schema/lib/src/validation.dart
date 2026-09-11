@@ -1,4 +1,5 @@
 import 'capability.dart';
+import 'game_scene.dart';
 import 'interaction_defaults.dart';
 import 'model.dart';
 
@@ -49,6 +50,8 @@ final class PlaySchemaValidator {
         ),
       );
     }
+    _validateThemeReferences(play, issues);
+    _validatePlatformFlags(play.requiredPlatformFlags, issues);
     if (play.estimatedDurationSec <= 0 || play.estimatedDurationSec > 180) {
       issues.add(
         const PlayValidationIssue(
@@ -90,6 +93,7 @@ final class PlaySchemaValidator {
     }
 
     var hasTerminalPath = false;
+    var hasTimedSceneCue = false;
     for (final entry in play.states.entries) {
       final stateId = entry.key;
       final state = entry.value;
@@ -118,10 +122,32 @@ final class PlaySchemaValidator {
         );
       }
 
-      _validateValidator(stateId, state.validation, issues);
+      _validateValidator(stateId, state, issues);
       _validateInput(stateId, state, issues);
 
       for (final layer in state.presentation) {
+        if (layer.scene?.cues.isNotEmpty ?? false) {
+          hasTimedSceneCue = true;
+        }
+        if (layer.type == 'scene' &&
+            (layer.role != 'media' || layer.scene == null)) {
+          issues.add(
+            PlayValidationIssue(
+              code: 'scene_layer',
+              path: 'states.$stateId.presentation',
+              message: 'scene layers require media role and a bounded scene.',
+            ),
+          );
+        }
+        if (layer.type != 'scene' && layer.scene != null) {
+          issues.add(
+            PlayValidationIssue(
+              code: 'scene_layer_type',
+              path: 'states.$stateId.presentation',
+              message: 'Only scene layers may define scene data.',
+            ),
+          );
+        }
         if (layer.assetId != null && !play.assets.contains(layer.assetId)) {
           issues.add(
             PlayValidationIssue(
@@ -147,6 +173,17 @@ final class PlaySchemaValidator {
           );
         }
       }
+    }
+
+    if (hasTimedSceneCue &&
+        !play.requiredPlatformFlags.contains('timed_scene_v1')) {
+      issues.add(
+        const PlayValidationIssue(
+          code: 'timed_scene_capability',
+          path: 'requiredPlatformFlags',
+          message: 'Timed scene cues require the timed_scene_v1 capability.',
+        ),
+      );
     }
 
     final reachable = <String>{};
@@ -188,11 +225,69 @@ final class PlaySchemaValidator {
     return issues;
   }
 
-  void _validateValidator(
-    String stateId,
-    PlayValidationDefinition validation,
+  void _validateThemeReferences(
+    PlayDocument play,
     List<PlayValidationIssue> issues,
   ) {
+    final family = play.gameFamily;
+    if (family != null &&
+        (!_referenceText(family.id) || !_referenceText(family.revisionId))) {
+      issues.add(
+        const PlayValidationIssue(
+          code: 'game_family_reference',
+          path: 'gameFamily',
+          message: 'gameFamily requires bounded identifiers.',
+        ),
+      );
+    }
+
+    final presentation = play.presentation;
+    if (presentation != null &&
+        (!_referenceText(presentation.themeId) ||
+            !_referenceText(presentation.themeRevisionId) ||
+            !_referenceText(presentation.variantId))) {
+      issues.add(
+        const PlayValidationIssue(
+          code: 'presentation_reference',
+          path: 'presentation',
+          message: 'presentation requires bounded immutable identifiers.',
+        ),
+      );
+    }
+    if (presentation != null && family == null) {
+      issues.add(
+        const PlayValidationIssue(
+          code: 'presentation_family_required',
+          path: 'presentation',
+          message: 'presentation requires a gameFamily reference.',
+        ),
+      );
+    }
+  }
+
+  void _validatePlatformFlags(
+    List<String> flags,
+    List<PlayValidationIssue> issues,
+  ) {
+    if (flags.length > 64 ||
+        flags.any((flag) => !_referenceText(flag)) ||
+        flags.toSet().length != flags.length) {
+      issues.add(
+        const PlayValidationIssue(
+          code: 'platform_flags',
+          path: 'requiredPlatformFlags',
+          message: 'Platform flags must be unique bounded identifiers.',
+        ),
+      );
+    }
+  }
+
+  void _validateValidator(
+    String stateId,
+    PlayStateDefinition state,
+    List<PlayValidationIssue> issues,
+  ) {
+    final validation = state.validation;
     final path = 'states.$stateId.validation.value';
     if (validation.type == PlayValidatorType.equals &&
         validation.value == null) {
@@ -225,6 +320,30 @@ final class PlaySchemaValidator {
       return;
     }
 
+    if (validation.type == PlayValidatorType.setEquality) {
+      final value = validation.value;
+      final ids = state.input.options.map((option) => option.id).toSet();
+      final valid =
+          state.input.type == PlayInputType.multipleChoice &&
+          value is List &&
+          value.isNotEmpty &&
+          value.length <= 24 &&
+          value.every((item) => item is String && item.trim().isNotEmpty) &&
+          value.toSet().length == value.length &&
+          value.every((item) => ids.contains(item));
+      if (!valid) {
+        issues.add(
+          PlayValidationIssue(
+            code: 'set_equality_options',
+            path: path,
+            message:
+                'set_equality requires 1–24 unique visible multiple-choice option ids.',
+          ),
+        );
+      }
+      return;
+    }
+
     if (validation.type == PlayValidatorType.targetRegion &&
         _nonEmptyString(validation.value) == null) {
       issues.add(
@@ -247,8 +366,119 @@ final class PlaySchemaValidator {
         _validatePianoInput(stateId, state, issues);
       case PlayInputType.drag:
         _validateDragInput(stateId, state, issues);
+      case PlayInputType.pieceMove:
+        _validatePieceMoveInput(stateId, state, issues);
+      case PlayInputType.timedCue:
+        _validateTimedCueInput(stateId, state, issues);
       default:
         break;
+    }
+  }
+
+  void _validateTimedCueInput(
+    String stateId,
+    PlayStateDefinition state,
+    List<PlayValidationIssue> issues,
+  ) {
+    final path = 'states.$stateId.input';
+    final durationMs = state.input.properties['durationMs'];
+    final cueId = state.input.properties['cueId'];
+    final cueOrdinal = state.input.properties['cueOrdinal'];
+    if (cueId is! String ||
+        !RegExp(r'^[A-Za-z0-9_-]{1,80}$').hasMatch(cueId.trim()) ||
+        cueOrdinal is! int ||
+        cueOrdinal < 1 ||
+        cueOrdinal > 128) {
+      issues.add(
+        PlayValidationIssue(
+          code: 'timed_cue_identity',
+          path: path,
+          message:
+              'timed_cue requires a bounded cue ID and ordinal from 1 to 128.',
+        ),
+      );
+    }
+    if (durationMs is! int || durationMs < 300 || durationMs > 12000) {
+      issues.add(
+        PlayValidationIssue(
+          code: 'timed_cue_duration',
+          path: '$path.durationMs',
+          message:
+              'timed_cue requires a duration from 300 to 12000 milliseconds.',
+        ),
+      );
+    }
+    if (state.validation.type != PlayValidatorType.none) {
+      issues.add(
+        PlayValidationIssue(
+          code: 'timed_cue_validator',
+          path: 'states.$stateId.validation.type',
+          message: 'timed_cue requires none validation.',
+        ),
+      );
+    }
+  }
+
+  void _validatePieceMoveInput(
+    String stateId,
+    PlayStateDefinition state,
+    List<PlayValidationIssue> issues,
+  ) {
+    final path = 'states.$stateId';
+    final scene = state.presentation
+        .where((layer) => layer.type == 'scene')
+        .map((layer) => layer.scene)
+        .whereType<GameSceneDefinition>()
+        .firstOrNull;
+    if (scene == null ||
+        state.validation.type != PlayValidatorType.legalPieceMove) {
+      issues.add(
+        PlayValidationIssue(
+          code: 'piece_move_scene',
+          path: path,
+          message:
+              'piece_move requires a scene and legal_piece_move validation.',
+        ),
+      );
+      return;
+    }
+    final raw = state.validation.value;
+    if (raw is! List || raw.isEmpty || raw.length > 24) {
+      issues.add(
+        PlayValidationIssue(
+          code: 'piece_move_rules',
+          path: '$path.validation.value',
+          message: 'legal_piece_move requires 1–24 legal moves.',
+        ),
+      );
+      return;
+    }
+    final movable = scene.objects
+        .where((object) => object.movable)
+        .map((object) => object.id)
+        .toSet();
+    final targets = scene.targets.map((target) => target.id).toSet();
+    final pairs = <String>{};
+    final valid = raw.every(
+      (entry) =>
+          entry is Map &&
+          entry['pieceId'] is String &&
+          entry['targetId'] is String &&
+          entry['correct'] is bool &&
+          movable.contains(entry['pieceId']) &&
+          targets.contains(entry['targetId']) &&
+          pairs.add('${entry['pieceId']}\u0000${entry['targetId']}'),
+    );
+    if (!valid ||
+        !raw.any((entry) => entry is Map && entry['correct'] == true)) {
+      issues.add(
+        PlayValidationIssue(
+          code: 'piece_move_rules',
+          path: '$path.validation.value',
+          message:
+              'Piece moves must name unique real movable objects, targets, and a solution.',
+        ),
+      );
     }
   }
 
@@ -361,6 +591,19 @@ final class PlaySchemaValidator {
       );
     }
 
+    final handleStyle = state.input.properties['handleStyle'];
+    if (handleStyle != null &&
+        handleStyle != 'rounded' &&
+        handleStyle != 'matchstick') {
+      issues.add(
+        PlayValidationIssue(
+          code: 'drag_handle_style',
+          path: '$path.handleStyle',
+          message: 'drag handleStyle must be rounded or matchstick.',
+        ),
+      );
+    }
+
     final targetsRaw = state.input.properties['targets'];
     final parsedTargets = _targets(targetsRaw);
     if (parsedTargets == null || parsedTargets.isEmpty) {
@@ -439,6 +682,9 @@ String? _nonEmptyString(Object? value) {
   final normalized = value.trim();
   return normalized.isEmpty ? null : normalized;
 }
+
+bool _referenceText(String value) =>
+    value.trim().isNotEmpty && value.length <= 200;
 
 Set<String>? _uniqueStrings(Object? raw) {
   if (raw is! List) return null;

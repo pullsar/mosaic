@@ -1,14 +1,21 @@
+import 'dart:convert';
+
 import 'package:analytics_contract/analytics_contract.dart';
 import 'package:event_delivery/event_delivery.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:mosaic_app/app_event_runtime.dart';
 import 'package:mosaic_app/consumer_api_client.dart';
 import 'package:mosaic_app/consumer_local_state.dart';
 import 'package:mosaic_app/event_runtime_resources.dart';
 import 'package:mosaic_app/main.dart';
+import 'package:platform_contracts/platform_contracts.dart';
 import 'package:play_schema/play_schema.dart';
+
+import 'continuous_game_host_test.dart' as game_fixture;
 
 final class _AppOutbox implements EventOutbox {
   @override
@@ -38,10 +45,24 @@ final class _AppOutbox implements EventOutbox {
   Future<void> close() async {}
 }
 
+final class _ShareGateway implements ShareGateway {
+  Uri? sharedUri;
+
+  @override
+  Future<ShareDisposition> share(
+    Uri canonicalPlayUri, {
+    String? message,
+  }) async {
+    sharedUri = canonicalPlayUri;
+    return ShareDisposition.shared;
+  }
+}
+
 final class _SeededAppState implements ConsumerLocalState {
-  _SeededAppState(this.cache);
+  _SeededAppState(this.cache, {this.saved = false});
 
   final ConsumerFeedCache cache;
+  final bool saved;
 
   @override
   Future<ConsumerPreferences> readPreferences() async => ConsumerPreferences();
@@ -77,7 +98,14 @@ final class _SeededAppState implements ConsumerLocalState {
 
   @override
   Future<ConsumerPlayActionState?> readPlayActionState(String playId) async =>
-      null;
+      saved
+      ? ConsumerPlayActionState(
+          playId: playId,
+          savedRevisionId: 'revision_app_share',
+          saved: true,
+          updatedAt: DateTime.utc(2026, 9, 11),
+        )
+      : null;
 
   @override
   Future<void> writePlayActionState(ConsumerPlayActionState state) async {}
@@ -87,6 +115,12 @@ final class _SeededAppState implements ConsumerLocalState {
 
   @override
   Future<void> writeMutedTopicIds(Iterable<String> topicIds) async {}
+
+  @override
+  Future<List<String>> readPinnedGameFamilyIds() async => const <String>[];
+
+  @override
+  Future<void> writePinnedGameFamilyIds(Iterable<String> familyIds) async {}
 }
 
 ConsumerFeedItem _seededItem() => ConsumerFeedItem.fromJson(
@@ -129,6 +163,71 @@ ConsumerFeedItem _seededItem() => ConsumerFeedItem.fromJson(
 );
 
 void main() {
+  testWidgets('continuous round updates the shared immutable revision', (
+    tester,
+  ) async {
+    final first = game_fixture.round('First');
+    final second = game_fixture.round('Second');
+    final item = ConsumerFeedItem.fromJson(
+      {
+        'playId': first.id,
+        'revisionId': first.revisionId,
+        'sourceBucket': 'known',
+        'document': first.toJson(),
+      },
+      compatibilityChecker: const PlayCompatibilityChecker(),
+      capabilities: PlayCapabilityEnvelope.m1(),
+    );
+    final runtime = AppEventRuntime.create(
+      resources: AppEventResources(
+        outbox: _AppOutbox(),
+        consumerLocalState: _SeededAppState(
+          ConsumerFeedCache(
+            requestId: 'continuous',
+            items: [item],
+            updatedAt: DateTime.now().toUtc(),
+          ),
+        ),
+        actorId: 'continuous_actor',
+        actorAccessToken: 'A' * 43,
+        close: () async {},
+      ),
+    );
+    final share = _ShareGateway();
+    final api = ConsumerApiClient(
+      baseUri: Uri.parse('https://api.example.test/'),
+      actorAccess: ActorAccessIdentity(
+        actorId: 'continuous_actor',
+        accessToken: 'A' * 43,
+      ),
+      client: MockClient(
+        (request) async => request.url.path.endsWith('/next-round')
+            ? http.Response(jsonEncode(second.toJson()), 200)
+            : http.Response('{}', 503),
+      ),
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MosaicApp(
+          eventRuntime: runtime,
+          consumerApi: api,
+          shareGateway: share,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('A'));
+    await tester.pump();
+    expect(find.text('Done'), findsNothing);
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+    expect(find.text('Second'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey<String>('play-action-share')));
+    await tester.pump();
+    expect(share.sharedUri, Uri.parse('https://mixli.app/p/Second/rev_1'));
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+  });
   testWidgets('first launch opens the guest discovery feed', (tester) async {
     await tester.pumpWidget(const ProviderScope(child: MosaicApp()));
     await tester.pumpAndSettle();
@@ -141,9 +240,49 @@ void main() {
     );
   });
 
+  testWidgets(
+    'an exact public route resolves its shared Play without actor registration',
+    (tester) async {
+      final paths = <String>[];
+      final api = ConsumerApiClient(
+        baseUri: Uri.parse('https://api.example.test/'),
+        actorAccess: ActorAccessIdentity(
+          actorId: 'actor_shared_route',
+          accessToken: 'B' * 43,
+        ),
+        client: MockClient((request) async {
+          paths.add(request.url.path);
+          return http.Response(
+            jsonEncode(<String, Object?>{
+              ..._seededItem().validatedDocumentJson,
+            }),
+            200,
+          );
+        }),
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MosaicApp(
+            consumerApi: api,
+            initialRoute: '/p/play_app_share/revision_app_share',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(paths, <String>[
+        '/v1/public/plays/play_app_share/revisions/revision_app_share',
+      ]);
+      expect(find.byKey(const ValueKey<String>('shared-play')), findsOneWidget);
+      expect(find.text('Pick one.'), findsOneWidget);
+    },
+  );
+
   testWidgets('real guest feed exposes exact Save Share More utilities', (
     tester,
   ) async {
+    final shareGateway = _ShareGateway();
     final state = _SeededAppState(
       ConsumerFeedCache(
         requestId: 'request_app_share',
@@ -162,7 +301,13 @@ void main() {
     );
 
     await tester.pumpWidget(
-      ProviderScope(child: MosaicApp(eventRuntime: runtime)),
+      ProviderScope(
+        child: MosaicApp(
+          eventRuntime: runtime,
+          shareGateway: shareGateway,
+          shareOrigin: Uri.parse('https://mixli.app'),
+        ),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -185,7 +330,101 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey<String>('play-action-share')));
     await tester.pump();
-    expect(find.text('Share links are opening soon'), findsOneWidget);
+    expect(
+      shareGateway.sharedUri,
+      Uri.parse('https://mixli.app/p/play_app_share/revision_app_share'),
+    );
+    expect(find.text('Shared'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+
+  testWidgets('invalid share origin falls back to the public Mixli origin', (
+    tester,
+  ) async {
+    final reported = <FlutterErrorDetails>[];
+    final previousOnError = FlutterError.onError;
+    FlutterError.onError = reported.add;
+    addTearDown(() => FlutterError.onError = previousOnError);
+    final shareGateway = _ShareGateway();
+    final runtime = AppEventRuntime.create(
+      resources: AppEventResources(
+        outbox: _AppOutbox(),
+        consumerLocalState: _SeededAppState(
+          ConsumerFeedCache(
+            requestId: 'request_invalid_share_origin',
+            items: <ConsumerFeedItem>[_seededItem()],
+            updatedAt: DateTime.now().toUtc(),
+          ),
+        ),
+        actorId: 'actor_invalid_share_origin',
+        actorAccessToken: 'A' * 43,
+        close: () async {},
+      ),
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MosaicApp(
+          eventRuntime: runtime,
+          shareGateway: shareGateway,
+          shareOrigin: Uri.parse('http://staging.mixli.app'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey<String>('play-action-share')));
+    await tester.pump();
+
+    expect(
+      shareGateway.sharedUri,
+      Uri.parse('https://mixli.app/p/play_app_share/revision_app_share'),
+    );
+    expect(reported, hasLength(1));
+    expect(reported.single.exception, isA<ArgumentError>());
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+
+  testWidgets('Saved opens a retained local round', (tester) async {
+    final state = _SeededAppState(
+      ConsumerFeedCache(
+        requestId: 'request_app_saved',
+        items: <ConsumerFeedItem>[_seededItem()],
+        updatedAt: DateTime.now().toUtc(),
+      ),
+      saved: true,
+    );
+    final runtime = AppEventRuntime.create(
+      resources: AppEventResources(
+        outbox: _AppOutbox(),
+        consumerLocalState: state,
+        actorId: 'actor_app_saved',
+        actorAccessToken: 'A' * 43,
+        close: () async {},
+      ),
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(child: MosaicApp(eventRuntime: runtime)),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey<String>('guest-nav-saved')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Saved'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('saved-game:play_app_share')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('saved-game:play_app_share')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Pick one.'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();

@@ -17,3 +17,15 @@ String playMediaOwnerIdFor(String playId, String revisionId) {
   }
   return '${playId.length}:$playId${revisionId.length}:$revisionId';
 }
+
+String playMediaOwnerIdForAttempt(
+  String playId,
+  String revisionId,
+  String attemptId,
+) {
+  final revisionOwner = playMediaOwnerIdFor(playId, revisionId);
+  if (attemptId.trim().isEmpty) {
+    throw ArgumentError.value(attemptId, 'attemptId', 'must not be empty');
+  }
+  return '$revisionOwner${attemptId.length}:$attemptId';
+}

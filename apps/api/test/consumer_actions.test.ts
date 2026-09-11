@@ -60,6 +60,15 @@ test(
          values ($1, $2, 1, $3::jsonb)`,
         [playId, revisionId, JSON.stringify({schemaVersion: 1, id: playId, revisionId})],
       );
+      const familyOne = `family_one_${suffix}`;
+      const familyTwo = `family_two_${suffix}`;
+      for (const familyId of [familyOne, familyTwo]) {
+        await pool.query(
+          `insert into game_family_revisions (id, revision_id, content_sha256, document)
+           values ($1, 'rev_1', repeat('0', 64), $2::jsonb)`,
+          [familyId, JSON.stringify({id: familyId, revisionId: 'rev_1'})],
+        );
+      }
 
       // A deliberately future-skewed client clock must not make this Save
       // authoritative forever. The later server receipt wins even though its
@@ -166,6 +175,58 @@ test(
         [report.eventId],
       );
       assert.equal(reportStored.rows[0]?.event_name, 'play_reported');
+
+      const pins = action(
+        'pins',
+        'game_pins_changed',
+        '2040-01-01T00:00:00.000Z',
+        {familyIds: [familyTwo, familyOne]},
+        false,
+      );
+      assert.equal(await repository.insertEvent(pins), 'inserted');
+      assert.equal(await repository.insertEvent(pins), 'duplicate');
+      const projectedPins = await pool.query<{family_ids: string[]; event_id: string}>(
+        `select family_ids, event_id from actor_game_pins where actor_id = $1`,
+        [actorId],
+      );
+      assert.deepEqual(projectedPins.rows[0], {
+        family_ids: [familyTwo, familyOne],
+        event_id: pins.eventId,
+      });
+
+      const changedPins = action(
+        'pins_changed',
+        'game_pins_changed',
+        '1990-01-01T00:00:00.000Z',
+        {familyIds: [familyOne]},
+        false,
+      );
+      assert.equal(await repository.insertEvent(changedPins), 'inserted');
+      const reorderedPins = await pool.query<{family_ids: string[]; event_id: string}>(
+        `select family_ids, event_id from actor_game_pins where actor_id = $1`,
+        [actorId],
+      );
+      assert.deepEqual(reorderedPins.rows[0], {
+        family_ids: [familyOne],
+        event_id: changedPins.eventId,
+      });
+
+      await assert.rejects(
+        repository.insertEvent(
+          action('pins_too_many', 'game_pins_changed', '2040-02-01T00:00:00.000Z', {
+            familyIds: Array.from({length: 7}, (_, index) => `family_${index}`),
+          }, false),
+        ),
+        ConsumerActionEventError,
+      );
+      await assert.rejects(
+        repository.insertEvent(
+          action('pins_duplicate', 'game_pins_changed', '2040-02-02T00:00:00.000Z', {
+            familyIds: [familyOne, familyOne],
+          }, false),
+        ),
+        ConsumerActionEventError,
+      );
 
       const badReport = action('bad_report', 'play_reported', '2030-06-01T00:00:00.000Z', {
         playId,
