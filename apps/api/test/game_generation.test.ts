@@ -114,6 +114,25 @@ test('a curated theme changes generated One Move material without changing its a
   notEqual(paper.drafts[0]!.canonicalHash, orbital.drafts[0]!.canonicalHash);
 });
 
+test('every generated theme emits publication-valid canvas material', () => {
+  for (const themePreference of [
+    'paper-studio',
+    'night-museum',
+    'glass-garden',
+    'orbital',
+  ]) {
+    const draft = generateOneMoveMatchstickDrafts({
+      seed: 103,
+      count: 1,
+      themePreference,
+    }).drafts[0]!;
+    equal(draft.themeId, themePreference);
+    for (const asset of draft.canvasAssets) {
+      deepEqual(normalizeCanvasAssetDocument(asset), asset);
+    }
+  }
+});
+
 test('One Move generation rejects unbounded requests', () => {
   throws(() => generateOneMoveMatchstickDrafts({seed: 1, count: 0}), /count/);
   throws(() => generateOneMoveMatchstickDrafts({seed: 1, count: 25}), /count/);
