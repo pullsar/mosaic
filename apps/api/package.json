@@ -19,6 +19,7 @@
     "migrate:down": "tsx src/db/migrate.ts down",
     "migrate:status": "tsx src/db/migrate.ts status",
     "bootstrap:catalog": "tsx src/bootstrap_catalog.ts apply",
+    "generate:games": "tsx src/game_generation_cli.ts",
     "seed": "tsx src/seed.ts"
   },
   "dependencies": {
