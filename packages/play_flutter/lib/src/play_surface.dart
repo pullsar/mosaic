@@ -8,6 +8,7 @@ import 'package:play_schema/play_schema.dart';
 import 'play_canvas_renderer.dart';
 import 'play_input_primitives.dart';
 import 'play_media_layer_renderer.dart';
+import 'play_scene_renderer.dart';
 import 'play_viewport_composition.dart';
 import 'visual_tokens.dart';
 
@@ -116,6 +117,7 @@ final class _PlaySurfaceState extends State<PlaySurface> {
           .where((layer) => layer.type == 'text')
           .toList(growable: false);
       final isDragInput = state.input.type == PlayInputType.drag;
+      final isPieceMoveInput = state.input.type == PlayInputType.pieceMove;
       final usesCanvasStage = media.any((layer) => layer.type == 'canvas');
       final input = _InputOverlay(
         input: state.input,
@@ -161,7 +163,24 @@ final class _PlaySurfaceState extends State<PlaySurface> {
                         for (final slot in mediaSlots)
                           KeyedSubtree(
                             key: ValueKey<String>(slot.key),
-                            child: _buildMedia(context, slot.layer),
+                            child:
+                                slot.layer.type == 'scene' &&
+                                    slot.layer.scene != null
+                                ? IgnorePointer(
+                                    ignoring: _session.ended,
+                                    child: PlaySceneRenderer(
+                                      scene: slot.layer.scene!,
+                                      placements: _session.piecePlacements,
+                                      onPieceMove: (pieceId, targetId) =>
+                                          _apply(
+                                            PieceMoveAction(
+                                              pieceId: pieceId,
+                                              targetId: targetId,
+                                            ),
+                                          ),
+                                    ),
+                                  )
+                                : _buildMedia(context, slot.layer),
                           ),
                         if (isDragInput)
                           if (usesCanvasStage)
@@ -180,7 +199,7 @@ final class _PlaySurfaceState extends State<PlaySurface> {
                 key: const ValueKey<String>('play-input'),
                 child: _session.ended
                     ? _terminalOrEmpty(widget.terminal)
-                    : isDragInput
+                    : isDragInput || isPieceMoveInput
                     ? const SizedBox.shrink()
                     : input,
               ),

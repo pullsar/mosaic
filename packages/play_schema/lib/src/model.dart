@@ -15,6 +15,7 @@ enum PlayInputType {
   draw,
   rhythmTap,
   pianoKey,
+  pieceMove,
   mapPoint,
   recordAudio,
 }
@@ -29,6 +30,7 @@ enum PlayValidatorType {
   targetRegion,
   scoreThreshold,
   patternComparator,
+  legalPieceMove,
 }
 
 T _enumFromWire<T extends Enum>(List<T> values, Object? raw, String field) {

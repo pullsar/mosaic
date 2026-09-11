@@ -25,18 +25,26 @@ final class DragAction extends PlayAction {
   final String targetId;
 }
 
+final class PieceMoveAction extends PlayAction {
+  const PieceMoveAction({required this.pieceId, required this.targetId});
+  final String pieceId;
+  final String targetId;
+}
+
 final class PlaySession {
   const PlaySession({
     required this.play,
     required this.stateId,
     required this.ended,
     required this.attempts,
+    this.piecePlacements = const {},
   });
 
   final PlayDocument play;
   final String stateId;
   final bool ended;
   final int attempts;
+  final Map<String, String> piecePlacements;
 
   PlayStateDefinition get state {
     final value = play.states[stateId];
@@ -65,6 +73,7 @@ final class PlayEngine {
     stateId: play.entryState,
     ended: false,
     attempts: 0,
+    piecePlacements: const {},
   );
 
   PlayResolution apply(PlaySession session, PlayAction action) {
@@ -93,6 +102,12 @@ final class PlayEngine {
         stateId: nextStateId,
         ended: ended,
         attempts: session.attempts + 1,
+        piecePlacements: action is PieceMoveAction
+            ? Map.unmodifiable({
+                ...session.piecePlacements,
+                action.pieceId: action.targetId,
+              })
+            : session.piecePlacements,
       ),
       outcome: evaluation.outcome,
       wasCorrect: evaluation.wasCorrect,
@@ -123,6 +138,10 @@ final class PlayEngine {
         value == _targetRegionPayload(validation.value)
             ? const _Evaluation(outcome: 'correct', wasCorrect: true)
             : const _Evaluation(outcome: 'incorrect', wasCorrect: false),
+      PlayValidatorType.legalPieceMove => _legalPieceMove(
+        validation.value,
+        action,
+      ),
       _ => throw UnsupportedError(
         'Validator ${validation.type.name} is not executable in M1.',
       ),
@@ -134,6 +153,7 @@ final class PlayEngine {
     ChoiceAction(:final optionId) => optionId,
     SequenceAction(:final values) => values,
     DragAction(:final targetId) => targetId,
+    PieceMoveAction() => null,
   };
 
   void _assertCompatible(PlayInputType input, PlayAction action) {
@@ -143,6 +163,7 @@ final class PlayEngine {
       PlayInputType.multipleChoice || PlayInputType.pianoKey =>
         action is SequenceAction || action is ChoiceAction,
       PlayInputType.drag => action is DragAction,
+      PlayInputType.pieceMove => action is PieceMoveAction,
       _ => false,
     };
     if (!compatible) {
@@ -151,6 +172,26 @@ final class PlayEngine {
       );
     }
   }
+}
+
+_Evaluation _legalPieceMove(Object? raw, PlayAction action) {
+  if (action is! PieceMoveAction || raw is! List) {
+    throw StateError('legal_piece_move payload is malformed.');
+  }
+  for (final entry in raw) {
+    if (entry is! Map ||
+        entry['pieceId'] is! String ||
+        entry['targetId'] is! String ||
+        entry['correct'] is! bool)
+      continue;
+    if (entry['pieceId'] == action.pieceId &&
+        entry['targetId'] == action.targetId) {
+      return (entry['correct'] as bool)
+          ? const _Evaluation(outcome: 'correct', wasCorrect: true)
+          : const _Evaluation(outcome: 'incorrect', wasCorrect: false);
+    }
+  }
+  return const _Evaluation(outcome: 'incorrect', wasCorrect: false);
 }
 
 final class _Evaluation {

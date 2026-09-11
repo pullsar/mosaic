@@ -100,6 +100,26 @@ void main() {
     expect(result.session.stateId, 'solve');
   });
 
+  test('piece moves retain the engine-owned resulting configuration', () {
+    final play = playWithValidation(
+      inputType: 'piece_move',
+      validation: {
+        'type': 'legal_piece_move',
+        'value': [
+          {'pieceId': 'match', 'targetId': 'slot', 'correct': true},
+          {'pieceId': 'match', 'targetId': 'miss', 'correct': false},
+        ],
+      },
+    );
+    final result = engine.apply(
+      engine.start(play),
+      const PieceMoveAction(pieceId: 'match', targetId: 'slot'),
+    );
+
+    expect(result.wasCorrect, isTrue);
+    expect(result.session.piecePlacements, {'match': 'slot'});
+  });
+
   test('unimplemented typed inputs reject arbitrary actions', () {
     final play = PlayDocument.fromJson({
       'schemaVersion': 1,
