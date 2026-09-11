@@ -84,6 +84,30 @@ void main() {
     expect(result.session.stateId, 'reveal');
   });
 
+  test('validates an exact option set independently of selection order', () {
+    final play = playWithValidation(
+      inputType: 'multiple_choice',
+      validation: {
+        'type': 'set_equality',
+        'value': ['beacon', 'orbit'],
+      },
+    );
+    final result = engine.apply(
+      engine.start(play),
+      const SequenceAction(['orbit', 'beacon']),
+    );
+
+    expect(result.wasCorrect, isTrue);
+    expect(result.session.ended, isTrue);
+    expect(
+      () => engine.apply(
+        engine.start(play),
+        const SequenceAction(['beacon', 'beacon', 'orbit']),
+      ),
+      throwsA(stateErrorMessage('set_equality action contains duplicates.')),
+    );
+  });
+
   test('validates typed drag target and rejects unrelated actions', () {
     final session = engine.start(fixture('move_one_match.json'));
     final result = engine.apply(session, const DragAction('solution_a'));

@@ -142,6 +142,7 @@ final class PlayEngine {
             )
             ? const _Evaluation(outcome: 'correct', wasCorrect: true)
             : const _Evaluation(outcome: 'incorrect', wasCorrect: false),
+      PlayValidatorType.setEquality => _setEquality(validation.value, value),
       PlayValidatorType.targetRegion =>
         value == _targetRegionPayload(validation.value)
             ? const _Evaluation(outcome: 'correct', wasCorrect: true)
@@ -173,7 +174,7 @@ final class PlayEngine {
       PlayInputDefinition(
         type: PlayInputType.multipleChoice || PlayInputType.pianoKey,
       ) =>
-        action is SequenceAction || action is ChoiceAction,
+        action is SequenceAction,
       PlayInputDefinition(type: PlayInputType.drag) => action is DragAction,
       PlayInputDefinition(type: PlayInputType.pieceMove) =>
         action is PieceMoveAction,
@@ -254,4 +255,31 @@ bool _listEquals(List<String> a, List<String> b) {
     if (a[index] != b[index]) return false;
   }
   return true;
+}
+
+_Evaluation _setEquality(Object? raw, Object? value) {
+  final expected = _setEqualityPayload(raw);
+  if (value is! List<String>) {
+    throw StateError('set_equality action is malformed.');
+  }
+  if (value.toSet().length != value.length) {
+    throw StateError('set_equality action contains duplicates.');
+  }
+  return expected.length == value.length && expected.containsAll(value)
+      ? const _Evaluation(outcome: 'correct', wasCorrect: true)
+      : const _Evaluation(outcome: 'incorrect', wasCorrect: false);
+}
+
+Set<String> _setEqualityPayload(Object? raw) {
+  if (raw is! List ||
+      raw.isEmpty ||
+      raw.length > 24 ||
+      raw.any((value) => value is! String || value.trim().isEmpty)) {
+    throw StateError('set_equality payload is malformed.');
+  }
+  final values = raw.cast<String>();
+  if (values.toSet().length != values.length) {
+    throw StateError('set_equality payload is malformed.');
+  }
+  return values.toSet();
 }
