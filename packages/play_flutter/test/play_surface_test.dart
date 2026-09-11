@@ -581,6 +581,22 @@ void main() {
     );
   });
 
+  testWidgets('reduced-motion stage disposal does not create a ticker', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(disableAnimations: true),
+          child: Scaffold(body: PlaySurface(play: _continuousRevealPlay())),
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+
   testWidgets(
     'duplicate media layers keep unique stable identities on reveal',
     (tester) async {

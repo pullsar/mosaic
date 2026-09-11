@@ -352,11 +352,17 @@ final class _StageStateTransition extends StatefulWidget {
 
 final class _StageStateTransitionState extends State<_StageStateTransition>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _opacity = AnimationController(
-    value: 1,
-    duration: MosaicVisualTokens.revealTransition,
-    vsync: this,
-  );
+  late final AnimationController _opacity;
+
+  @override
+  void initState() {
+    super.initState();
+    _opacity = AnimationController(
+      value: 1,
+      duration: MosaicVisualTokens.revealTransition,
+      vsync: this,
+    );
+  }
 
   @override
   void didUpdateWidget(covariant _StageStateTransition oldWidget) {
