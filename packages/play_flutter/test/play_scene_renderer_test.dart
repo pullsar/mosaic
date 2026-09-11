@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:play_flutter/play_flutter.dart';
 import 'package:play_schema/play_schema.dart';
@@ -112,6 +113,57 @@ void main() {
       expect(moves, [('match', 'slot')]);
     },
   );
+
+  testWidgets('scene moves can be completed from the keyboard', (tester) async {
+    final moves = <(String, String)>[];
+    final scene = GameSceneDefinition.fromJson({
+      'version': 1,
+      'objects': [
+        {
+          'id': 'match',
+          'semanticLabel': 'Vertical match',
+          'shape': 'rounded_rect',
+          'x': .2,
+          'y': .2,
+          'width': .05,
+          'height': .2,
+          'tone': 'accent',
+          'movable': true,
+        },
+      ],
+      'targets': [
+        {
+          'id': 'slot',
+          'semanticLabel': 'Open slot',
+          'x': .7,
+          'y': .4,
+          'width': .05,
+          'height': .2,
+        },
+      ],
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: SizedBox.square(
+            dimension: 300,
+            child: PlaySceneRenderer(
+              scene: scene,
+              onPieceMove: (piece, target) => moves.add((piece, target)),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+
+    expect(moves, [('match', 'slot')]);
+  });
 
   testWidgets('scene move resolves through the shared Play surface', (
     tester,

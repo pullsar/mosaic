@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:play_schema/play_schema.dart';
 
 /// Renders a bounded declarative scene with stable, accessible object IDs.
@@ -110,6 +111,16 @@ final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
     });
   }
 
+  KeyEventResult _onActivate(KeyEvent event, VoidCallback action) {
+    if (event is! KeyDownEvent ||
+        (event.logicalKey != LogicalKeyboardKey.enter &&
+            event.logicalKey != LogicalKeyboardKey.space)) {
+      return KeyEventResult.ignored;
+    }
+    action();
+    return KeyEventResult.handled;
+  }
+
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
@@ -146,25 +157,29 @@ final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
       top: rect.y * height,
       width: rect.width * width,
       height: rect.height * height,
-      child: Semantics(
-        button: true,
-        label: target.semanticLabel,
-        child: GestureDetector(
+      child: Focus(
+        onKeyEvent: (_, event) => _onActivate(event, () => _move(target)),
+        child: Semantics(
+          button: true,
+          label: target.semanticLabel,
           onTap: () => _move(target),
-          child: AnimatedContainer(
-            duration: reduced
-                ? Duration.zero
-                : const Duration(milliseconds: 140),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(
-                color: _hoveredTargetId == target.id
-                    ? colors.primary
-                    : colors.outlineVariant,
-                width: _hoveredTargetId == target.id ? 3 : 2,
-              ),
-              color: colors.primary.withValues(
-                alpha: _hoveredTargetId == target.id ? .18 : .10,
+          child: GestureDetector(
+            onTap: () => _move(target),
+            child: AnimatedContainer(
+              duration: reduced
+                  ? Duration.zero
+                  : const Duration(milliseconds: 140),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: _hoveredTargetId == target.id
+                      ? colors.primary
+                      : colors.outlineVariant,
+                  width: _hoveredTargetId == target.id ? 3 : 2,
+                ),
+                color: colors.primary.withValues(
+                  alpha: _hoveredTargetId == target.id ? .18 : .10,
+                ),
               ),
             ),
           ),
@@ -202,55 +217,63 @@ final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
       top: rect.y * height,
       width: rect.width * width,
       height: rect.height * height,
-      child: Semantics(
-        button: object.movable,
-        label: object.semanticLabel,
-        selected: selected,
-        child: GestureDetector(
+      child: Focus(
+        canRequestFocus: object.movable,
+        skipTraversal: !object.movable,
+        onKeyEvent: object.movable
+            ? (_, event) => _onActivate(event, () => _tapObject(object))
+            : null,
+        child: Semantics(
+          button: object.movable,
+          label: object.semanticLabel,
+          selected: selected,
           onTap: object.movable ? () => _tapObject(object) : null,
-          onPanDown: object.movable ? (_) => _beginDrag(object) : null,
-          onPanStart: object.movable ? (_) => _beginDrag(object) : null,
-          onPanUpdate: object.movable
-              ? (details) => _updateDrag(details, object, width, height)
-              : null,
-          onPanEnd: object.movable ? (_) => _finishDrag() : null,
-          onPanCancel: object.movable ? _releaseDirectManipulation : null,
-          child: AnimatedSlide(
-            duration: reduced
-                ? Duration.zero
-                : const Duration(milliseconds: 110),
-            curve: Curves.easeOutCubic,
-            offset: Offset(
-              rect.width * width == 0
-                  ? 0
-                  : _dragOffset.dx / (rect.width * width),
-              rect.height * height == 0
-                  ? 0
-                  : _dragOffset.dy / (rect.height * height),
-            ),
-            child: AnimatedScale(
+          child: GestureDetector(
+            onTap: object.movable ? () => _tapObject(object) : null,
+            onPanDown: object.movable ? (_) => _beginDrag(object) : null,
+            onPanStart: object.movable ? (_) => _beginDrag(object) : null,
+            onPanUpdate: object.movable
+                ? (details) => _updateDrag(details, object, width, height)
+                : null,
+            onPanEnd: object.movable ? (_) => _finishDrag() : null,
+            onPanCancel: object.movable ? _releaseDirectManipulation : null,
+            child: AnimatedSlide(
               duration: reduced
                   ? Duration.zero
-                  : const Duration(milliseconds: 120),
-              scale: selected ? 1.08 : 1,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: color,
-                  shape: object.shape == GameSceneShape.circle
-                      ? BoxShape.circle
-                      : BoxShape.rectangle,
-                  borderRadius: object.shape == GameSceneShape.roundedRect
-                      ? BorderRadius.circular(999)
-                      : null,
-                  boxShadow: selected
-                      ? [
-                          BoxShadow(
-                            color: colors.shadow.withValues(alpha: .22),
-                            offset: const Offset(0, 4),
-                            blurRadius: 8,
-                          ),
-                        ]
-                      : const [],
+                  : const Duration(milliseconds: 110),
+              curve: Curves.easeOutCubic,
+              offset: Offset(
+                rect.width * width == 0
+                    ? 0
+                    : _dragOffset.dx / (rect.width * width),
+                rect.height * height == 0
+                    ? 0
+                    : _dragOffset.dy / (rect.height * height),
+              ),
+              child: AnimatedScale(
+                duration: reduced
+                    ? Duration.zero
+                    : const Duration(milliseconds: 120),
+                scale: selected ? 1.08 : 1,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: object.shape == GameSceneShape.circle
+                        ? BoxShape.circle
+                        : BoxShape.rectangle,
+                    borderRadius: object.shape == GameSceneShape.roundedRect
+                        ? BorderRadius.circular(999)
+                        : null,
+                    boxShadow: selected
+                        ? [
+                            BoxShadow(
+                              color: colors.shadow.withValues(alpha: .22),
+                              offset: const Offset(0, 4),
+                              blurRadius: 8,
+                            ),
+                          ]
+                        : const [],
+                  ),
                 ),
               ),
             ),
