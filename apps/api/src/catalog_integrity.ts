@@ -360,6 +360,35 @@ function assertSleightReview(
   ) {
     throw new Error(`sleight_choice_mismatch:${review.playId}`);
   }
+  if (states.replay === undefined) {
+    throw new Error(`sleight_replay_missing:${review.playId}`);
+  }
+  const replay = record(states.replay, `${review.playId}.replay`);
+  const replayInput = record(replay.input, `${review.playId}.replay.input`);
+  if (
+    replayInput.type !== 'timed_cue' ||
+    replayInput.cueId !== review.cueId ||
+    replayInput.cueOrdinal !== 1 ||
+    replayInput.durationMs !== review.durationMs ||
+    record(replay.transition, `${review.playId}.replay.transition`).default !==
+      'reveal'
+  ) {
+    throw new Error(`sleight_replay_missing:${review.playId}`);
+  }
+  const replayScene = record(
+    presentationLayers(replay, review.playId).find(
+      (layer) => layer.type === 'scene' && layer.role === 'media',
+    )?.scene,
+    `${review.playId}.replay.scene`,
+  );
+  const replayCues = Array.isArray(replayScene.cues) ? replayScene.cues : [];
+  if (!review.trajectory.cupIds.every((cupId) =>
+    replayCues.some((cue) => {
+      const candidate = record(cue, `${review.playId}.replay.cue`);
+      return candidate.id === review.cueId && candidate.objectId === cupId;
+    }))) {
+    throw new Error(`sleight_replay_missing:${review.playId}`);
+  }
   const reveal = record(states.reveal, `${review.playId}.reveal`);
   if (!revealTitleFrom(reveal, review.playId).startsWith(review.revealStartsWith)) {
     throw new Error(`sleight_reveal_mismatch:${review.playId}`);

@@ -1664,7 +1664,13 @@ function sleightRound(spec: SleightRoundSpec): StarterPlay {
           presentation: {layers: [{type: 'scene', role: 'media', scene: finalScene}, {type: 'text', role: 'prompt', value: 'Where is it?'}]},
           input: {type: 'single_choice', options: [{id: 'left', label: 'Left cup'}, {id: 'center', label: 'Center cup'}, {id: 'right', label: 'Right cup'}]},
           validation: {type: 'equals', value: spec.answerPositionId},
-          transition: {correct: 'reveal', incorrect: 'choose'},
+          transition: {correct: 'replay', incorrect: 'choose'},
+        },
+        replay: {
+          presentation: {layers: [{type: 'scene', role: 'media', scene: initialScene}, {type: 'text', role: 'prompt', value: 'Track it again.'}]},
+          input: {type: 'timed_cue', cueId, cueOrdinal: 1, durationMs: spec.durationMs},
+          validation: {type: 'none'},
+          transition: {default: 'reveal'},
         },
         reveal: {
           presentation: {layers: [{type: 'scene', role: 'media', scene: finalScene}, {type: 'text', role: 'reveal_title', value: `The coin finishes under the ${answerLabel.toLowerCase()}.`}]},

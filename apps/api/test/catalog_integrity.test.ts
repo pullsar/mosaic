@@ -153,6 +153,8 @@ test('Sleight rounds use the bounded cup scene primitive', () => {
         };
       }>;
     };
+    input: {type: string; cueId?: string; cueOrdinal?: number; durationMs?: number};
+    transition: {correct?: string; default?: string};
   }>;
   const scene = states.observe!.presentation.layers.find(
     (layer) => layer.type === 'scene',
@@ -168,6 +170,29 @@ test('Sleight rounds use the bounded cup scene primitive', () => {
       .filter((cue) => cue.objectId !== 'coin')
       .flatMap((cue) => cue.keyframes)
       .some((frame) => frame.y !== .36),
+  );
+  assert.equal(states.choose!.transition.correct, 'replay');
+  assert.equal(states.replay!.input.type, 'timed_cue');
+  assert.equal(states.replay!.input.cueId, 'shuffle_1');
+  assert.equal(states.replay!.input.cueOrdinal, 1);
+  assert.equal(states.replay!.input.durationMs, 2400);
+  assert.equal(states.replay!.transition.default, 'reveal');
+});
+
+test('catalog integrity requires the Sleight trace replay', () => {
+  const altered = JSON.parse(JSON.stringify(productionCatalogIntegrityFixture)) as {
+    plays: Array<{id: string; document: {states: Record<string, unknown>}}>;
+  };
+  delete altered.plays.find(
+    (play) => play.id === 'mixli_starter_sleight_one',
+  )!.document.states.replay;
+
+  assert.throws(
+    () =>
+      assertProductionCatalogIntegrity(
+        altered as unknown as typeof productionCatalogIntegrityFixture,
+      ),
+    /sleight_replay_missing/,
   );
 });
 
