@@ -37,7 +37,7 @@ Map<String, Object?> _sceneMap(Object? raw, String field) {
   return result;
 }
 
-enum GameSceneShape { roundedRect, circle, matchstick, cup }
+enum GameSceneShape { roundedRect, circle, matchstick, cup, coin }
 
 enum GameSceneTone { foreground, muted, accent, surface }
 
@@ -101,6 +101,7 @@ final class GameSceneObject {
       'circle' => GameSceneShape.circle,
       'matchstick' => GameSceneShape.matchstick,
       'cup' => GameSceneShape.cup,
+      'coin' => GameSceneShape.coin,
       _ => throw FormatException('objects[$index].shape is unsupported.'),
     };
     final tone = switch (json['tone']) {
@@ -134,6 +135,7 @@ final class GameSceneObject {
       GameSceneShape.circle => 'circle',
       GameSceneShape.matchstick => 'matchstick',
       GameSceneShape.cup => 'cup',
+      GameSceneShape.coin => 'coin',
     },
     ...rect.toJson(),
     'tone': tone.name,

@@ -131,6 +131,44 @@ void main() {
     );
   });
 
+  testWidgets('scene renders a coin with a raised rim and inset mark', (
+    tester,
+  ) async {
+    final scene = GameSceneDefinition.fromJson({
+      'version': 1,
+      'objects': [
+        {
+          'id': 'coin',
+          'semanticLabel': 'Coin',
+          'shape': 'coin',
+          'x': .2,
+          'y': .3,
+          'width': .08,
+          'height': .08,
+          'tone': 'accent',
+        },
+      ],
+      'targets': const [],
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox.square(
+          dimension: 300,
+          child: PlaySceneRenderer(scene: scene, onPieceMove: (_, _) {}),
+        ),
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('scene-coin-rim')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('scene-coin-mark')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('scene renders an active cue at its sampled position', (
     tester,
   ) async {

@@ -1680,20 +1680,42 @@ function sleightScene(spec: SleightRoundSpec, cueId: string, final: boolean): Re
   let coinCupId = spec.trajectory.coinStartCupId;
   const cupFrames = new Map<string, Array<Record<string, number>>>();
   const coinFrames: Array<Record<string, number>> = [];
-  const addFrame = (timeMs: number) => {
-    for (const cupId of spec.trajectory.cupIds) cupFrames.get(cupId)!.push({timeMs, ...sleightRect(positions.get(cupId)!)});
-    coinFrames.push({timeMs, ...sleightCoinRect(positions.get(coinCupId)!)});
+  const addFrame = (timeMs: number, verticalOffsets = new Map<string, number>()) => {
+    for (const cupId of spec.trajectory.cupIds) {
+      cupFrames.get(cupId)!.push({
+        timeMs,
+        ...sleightRect(positions.get(cupId)!, verticalOffsets.get(cupId) ?? 0),
+      });
+    }
+    coinFrames.push({
+      timeMs,
+      ...sleightCoinRect(
+        positions.get(coinCupId)!,
+        verticalOffsets.get(coinCupId) ?? 0,
+      ),
+    });
   };
   for (const cupId of spec.trajectory.cupIds) cupFrames.set(cupId, []);
   addFrame(0);
+  let previousEventAtMs = 0;
   for (const event of spec.trajectory.events) {
+    if (event.type === 'swap') {
+      const midpoint = Math.floor((previousEventAtMs + event.atMs) / 2);
+      if (midpoint > previousEventAtMs) {
+        addFrame(midpoint, new Map([
+          [event.firstCupId, -.07],
+          [event.secondCupId, .07],
+        ]));
+      }
+    }
     applySleightVisualEvent(event, positions, (cupId) => { if (event.type === 'transfer' && event.fromCupId === coinCupId) coinCupId = event.toCupId; });
     addFrame(event.atMs);
+    previousEventAtMs = event.atMs;
   }
   addFrame(spec.durationMs);
-  const object = (id: string, label: string, rect: Record<string, number>, shape: 'circle' | 'rounded_rect' | 'cup', tone: string) => ({id, semanticLabel: label, shape, ...rect, tone});
+  const object = (id: string, label: string, rect: Record<string, number>, shape: 'circle' | 'rounded_rect' | 'cup' | 'coin', tone: string) => ({id, semanticLabel: label, shape, ...rect, tone});
   const objects = [
-    object('coin', 'Coin', coinFrames[final ? coinFrames.length - 1 : 0]!, 'circle', 'accent'),
+    object('coin', 'Coin', coinFrames[final ? coinFrames.length - 1 : 0]!, 'coin', 'accent'),
     ...spec.trajectory.cupIds.map((cupId) => object(cupId, 'Cup', cupFrames.get(cupId)![final ? cupFrames.get(cupId)!.length - 1 : 0]!, 'cup', 'surface')),
   ];
   return {version: 1, objects, targets: [], ...(final ? {} : {cues: [
@@ -1712,14 +1734,14 @@ function applySleightVisualEvent(event: SleightTrajectoryEvent, positions: Map<s
   }
 }
 
-function sleightRect(position: string): Record<string, number> {
+function sleightRect(position: string, verticalOffset = 0): Record<string, number> {
   const x = {left: .1, center: .42, right: .74}[position];
   if (x === undefined) throw new Error(`unknown_sleight_position:${position}`);
-  return {x, y: .36, width: .16, height: .28};
+  return {x, y: .36 + verticalOffset, width: .16, height: .28};
 }
 
-function sleightCoinRect(position: string): Record<string, number> {
-  const cup = sleightRect(position);
+function sleightCoinRect(position: string, verticalOffset = 0): Record<string, number> {
+  const cup = sleightRect(position, verticalOffset);
   return {x: cup.x! + .06, y: cup.y! + .2, width: .04, height: .04};
 }
 

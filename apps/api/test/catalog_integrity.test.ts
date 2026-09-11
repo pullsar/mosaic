@@ -144,15 +144,30 @@ test('Sleight rounds use the bounded cup scene primitive', () => {
     (candidate) => candidate.id === 'mixli_starter_sleight_one',
   )!;
   const states = play.document.states as Record<string, {
-    presentation: {layers: Array<{type: string; scene?: {objects: Array<{id: string; shape: string}>}}>};
+    presentation: {
+      layers: Array<{
+        type: string;
+        scene?: {
+          objects: Array<{id: string; shape: string}>;
+          cues?: Array<{objectId: string; keyframes: Array<{y: number}>}>;
+        };
+      }>;
+    };
   }>;
   const scene = states.observe!.presentation.layers.find(
     (layer) => layer.type === 'scene',
   )!.scene!;
 
+  assert.equal(scene.objects.find((object) => object.id === 'coin')?.shape, 'coin');
   assert.deepEqual(
     scene.objects.filter((object) => object.id !== 'coin').map((object) => object.shape),
     ['cup', 'cup', 'cup'],
+  );
+  assert.ok(
+    scene.cues!
+      .filter((cue) => cue.objectId !== 'coin')
+      .flatMap((cue) => cue.keyframes)
+      .some((frame) => frame.y !== .36),
   );
 });
 

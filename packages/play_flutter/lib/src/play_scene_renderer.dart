@@ -232,6 +232,7 @@ final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
     final selected = object.id == _selectedId;
     final isMatchstick = object.shape == GameSceneShape.matchstick;
     final isCup = object.shape == GameSceneShape.cup;
+    final isCoin = object.shape == GameSceneShape.coin;
     final horizontalMatchstick = isMatchstick && rect.width > rect.height;
     final color = isMatchstick
         ? const Color(0xFFC9783E)
@@ -291,8 +292,12 @@ final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
                 scale: selected ? 1.08 : 1,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: isCup ? colors.primaryContainer : color,
-                    shape: object.shape == GameSceneShape.circle
+                    color: isCup
+                        ? colors.primaryContainer
+                        : isCoin
+                        ? colors.tertiaryContainer
+                        : color,
+                    shape: object.shape == GameSceneShape.circle || isCoin
                         ? BoxShape.circle
                         : BoxShape.rectangle,
                     borderRadius:
@@ -308,8 +313,10 @@ final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
                           )
                         : isCup
                         ? Border.all(color: colors.primary, width: 1.5)
+                        : isCoin
+                        ? Border.all(color: colors.tertiary, width: 1.5)
                         : null,
-                    boxShadow: selected || isMatchstick || isCup
+                    boxShadow: selected || isMatchstick || isCup || isCoin
                         ? [
                             BoxShadow(
                               color: colors.shadow.withValues(alpha: .22),
@@ -346,6 +353,8 @@ final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
                         )
                       : isCup
                       ? _SceneCup(colors: colors)
+                      : isCoin
+                      ? _SceneCoin(colors: colors)
                       : null,
                 ),
               ),
@@ -418,6 +427,53 @@ final class _SceneCup extends StatelessWidget {
             decoration: BoxDecoration(
               color: colors.primary.withValues(alpha: .42),
               borderRadius: BorderRadius.circular(999),
+            ),
+          ),
+        ),
+      ),
+    ],
+  );
+}
+
+final class _SceneCoin extends StatelessWidget {
+  const _SceneCoin({required this.colors});
+
+  final ColorScheme colors;
+
+  @override
+  Widget build(BuildContext context) => Stack(
+    children: [
+      Positioned.fill(
+        child: Padding(
+          padding: const EdgeInsets.all(2),
+          child: DecoratedBox(
+            key: const ValueKey<String>('scene-coin-rim'),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: colors.tertiary.withValues(alpha: .72),
+                width: 1.25,
+              ),
+            ),
+          ),
+        ),
+      ),
+      Center(
+        child: FractionallySizedBox(
+          widthFactor: .38,
+          heightFactor: .38,
+          child: DecoratedBox(
+            key: const ValueKey<String>('scene-coin-mark'),
+            decoration: BoxDecoration(
+              color: colors.tertiary,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: colors.onTertiaryContainer.withValues(alpha: .18),
+                  offset: const Offset(0, 1),
+                  blurRadius: 1.5,
+                ),
+              ],
             ),
           ),
         ),

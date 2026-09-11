@@ -79,6 +79,28 @@ void main() {
     expect(scene.toJson()['objects'], [containsPair('shape', 'cup')]);
   });
 
+  test('scene retains the bounded coin appearance', () {
+    final scene = GameSceneDefinition.fromJson({
+      'version': 1,
+      'objects': [
+        {
+          'id': 'coin',
+          'semanticLabel': 'Coin',
+          'shape': 'coin',
+          'x': .2,
+          'y': .3,
+          'width': .08,
+          'height': .08,
+          'tone': 'accent',
+        },
+      ],
+      'targets': const [],
+    });
+
+    expect(scene.objects.single.shape, GameSceneShape.coin);
+    expect(scene.toJson()['objects'], [containsPair('shape', 'coin')]);
+  });
+
   test('scene rejects duplicate identities and off-stage geometry', () {
     expect(
       () => GameSceneDefinition.fromJson({
