@@ -13,7 +13,7 @@ import {
 import {canonicalJson} from './media.js';
 
 export const productionStarterPrefix = 'mixli_starter_';
-export const productionStarterCount = 12;
+export const productionStarterCount = 17;
 
 export interface ProductionCatalogStatus {
   eligiblePlays: number;
@@ -25,6 +25,18 @@ interface StarterPlay {
   revisionId: string;
   topics: readonly string[];
   document: Record<string, unknown>;
+}
+
+interface MatchstickRoundSpec {
+  readonly id: string;
+  readonly sourceAssetId: string;
+  readonly solvedAssetId: string;
+  readonly sourceSegments: readonly string[];
+  readonly sourceEquation: string;
+  readonly movingSegment: string;
+  readonly destinations: readonly {readonly id: string; readonly to: string}[];
+  readonly answerDestinationId: string;
+  readonly solvedEquation: string;
 }
 
 interface ChoiceSpec {
@@ -290,6 +302,132 @@ const matchstickSolvedSegments = moveSegment(
   'left.b',
 );
 
+const matchstickDigitSegments: Readonly<Record<string, readonly string[]>> = {
+  '0': ['a', 'b', 'c', 'd', 'e', 'f'],
+  '1': ['b', 'c'],
+  '2': ['a', 'b', 'd', 'e', 'g'],
+  '3': ['a', 'b', 'c', 'd', 'g'],
+  '4': ['b', 'c', 'f', 'g'],
+  '5': ['a', 'c', 'd', 'f', 'g'],
+  '6': ['a', 'c', 'd', 'e', 'f', 'g'],
+  '7': ['a', 'b', 'c'],
+  '8': ['a', 'b', 'c', 'd', 'e', 'f', 'g'],
+  '9': ['a', 'b', 'c', 'd', 'f', 'g'],
+};
+
+function matchstickEquationSegments(
+  left: keyof typeof matchstickDigitSegments,
+  operator: '+' | '-',
+  right: keyof typeof matchstickDigitSegments,
+  result: keyof typeof matchstickDigitSegments,
+): Set<string> {
+  const segments = new Set<string>();
+  for (const [slot, digit] of [
+    ['left', left],
+    ['right', right],
+    ['result', result],
+  ] as const) {
+    for (const segment of matchstickDigitSegments[digit]!) {
+      segments.add(`${slot}.${segment}`);
+    }
+  }
+  segments.add('operator.horizontal');
+  if (operator === '+') segments.add('operator.vertical');
+  return segments;
+}
+
+const additionalMatchstickRoundSpecs: readonly MatchstickRoundSpec[] = [
+  {
+    id: 'mixli_starter_move_zero_one',
+    sourceAssetId: 'mixli_canvas_matchsticks_zero_one_base_v1',
+    solvedAssetId: 'mixli_canvas_matchsticks_zero_one_solved_v1',
+    sourceSegments: [...matchstickEquationSegments('0', '+', '1', '8')],
+    sourceEquation: '0 + 1 = 8',
+    movingSegment: 'result.e',
+    destinations: [
+      {id: 'solution_a', to: 'left.g'},
+      {id: 'invalid_left', to: 'right.f'},
+      {id: 'invalid_right', to: 'right.a'},
+    ],
+    answerDestinationId: 'solution_a',
+    solvedEquation: '8 + 1 = 9',
+  },
+  {
+    id: 'mixli_starter_move_zero_two',
+    sourceAssetId: 'mixli_canvas_matchsticks_zero_two_base_v1',
+    solvedAssetId: 'mixli_canvas_matchsticks_zero_two_solved_v1',
+    sourceSegments: [...matchstickEquationSegments('0', '-', '6', '3')],
+    sourceEquation: '0 - 6 = 3',
+    movingSegment: 'right.e',
+    destinations: [
+      {id: 'solution_a', to: 'left.g'},
+      {id: 'invalid_left', to: 'right.b'},
+      {id: 'invalid_right', to: 'result.e'},
+    ],
+    answerDestinationId: 'solution_a',
+    solvedEquation: '8 - 5 = 3',
+  },
+  {
+    id: 'mixli_starter_move_one_two',
+    sourceAssetId: 'mixli_canvas_matchsticks_one_two_base_v1',
+    solvedAssetId: 'mixli_canvas_matchsticks_one_two_solved_v1',
+    sourceSegments: [...matchstickEquationSegments('1', '+', '0', '8')],
+    sourceEquation: '1 + 0 = 8',
+    movingSegment: 'result.e',
+    destinations: [
+      {id: 'solution_a', to: 'right.g'},
+      {id: 'invalid_left', to: 'left.a'},
+      {id: 'invalid_right', to: 'left.f'},
+    ],
+    answerDestinationId: 'solution_a',
+    solvedEquation: '1 + 8 = 9',
+  },
+  {
+    id: 'mixli_starter_move_one_three',
+    sourceAssetId: 'mixli_canvas_matchsticks_one_three_base_v1',
+    solvedAssetId: 'mixli_canvas_matchsticks_one_three_solved_v1',
+    sourceSegments: [...matchstickEquationSegments('2', '-', '1', '9')],
+    sourceEquation: '2 - 1 = 9',
+    movingSegment: 'result.f',
+    destinations: [
+      {id: 'solution_a', to: 'operator.vertical'},
+      {id: 'invalid_left', to: 'right.a'},
+      {id: 'invalid_right', to: 'left.c'},
+    ],
+    answerDestinationId: 'solution_a',
+    solvedEquation: '2 + 1 = 3',
+  },
+  {
+    id: 'mixli_starter_move_one_five',
+    sourceAssetId: 'mixli_canvas_matchsticks_one_five_base_v1',
+    solvedAssetId: 'mixli_canvas_matchsticks_one_five_solved_v1',
+    sourceSegments: [...matchstickEquationSegments('3', '+', '0', '8')],
+    sourceEquation: '3 + 0 = 8',
+    movingSegment: 'result.e',
+    destinations: [
+      {id: 'solution_a', to: 'left.f'},
+      {id: 'invalid_left', to: 'right.g'},
+      {id: 'invalid_right', to: 'left.e'},
+    ],
+    answerDestinationId: 'solution_a',
+    solvedEquation: '9 + 0 = 9',
+  },
+];
+
+function movedMatchstickSegments(spec: MatchstickRoundSpec): ReadonlySet<string> {
+  const destination = spec.destinations.find(
+    (entry) => entry.id === spec.answerDestinationId,
+  );
+  if (destination === undefined) {
+    throw new Error(`missing_matchstick_answer:${spec.id}`);
+  }
+  return moveSegment(
+    new Set(spec.sourceSegments),
+    spec.movingSegment,
+    destination.to,
+  );
+}
+
 const verifiedCanvasAssets = [
   buildMatchstickCanvasAsset(
     'mixli_canvas_matchsticks_base_v4',
@@ -310,6 +448,22 @@ const verifiedCanvasAssets = [
     matchstickSolvedSegments,
     matchstickPalette,
   ),
+  ...additionalMatchstickRoundSpecs.flatMap((spec) => [
+    buildMatchstickCanvasAsset(
+      spec.sourceAssetId,
+      new Set(
+        spec.sourceSegments.filter(
+          (segment) => segment !== spec.movingSegment,
+        ),
+      ),
+      matchstickPalette,
+    ),
+    buildMatchstickCanvasAsset(
+      spec.solvedAssetId,
+      movedMatchstickSegments(spec),
+      matchstickPalette,
+    ),
+  ]),
   {
     schemaVersion: 1,
     id: 'mixli_canvas_city_night_v3',
@@ -984,6 +1138,113 @@ const releaseV3ChoiceSpecs: readonly ChoiceSpec[] = [
   },
 ];
 
+function matchstickSceneLocation(segment: string): Record<string, number> {
+  const [slot, part] = segment.split('.');
+  if (slot === 'operator') {
+    if (part === 'horizontal') {
+      return {x: 0.29, y: 0.485, width: 0.1, height: 0.03};
+    }
+    if (part === 'vertical') {
+      return {x: 0.325, y: 0.43, width: 0.03, height: 0.14};
+    }
+    throw new Error(`unknown_matchstick_segment:${segment}`);
+  }
+  const center = ({left: 0.16, right: 0.5, result: 0.82} as const)[slot ?? ''];
+  if (center === undefined) throw new Error(`unknown_matchstick_slot:${segment}`);
+  if (part === 'a') return {x: center - 0.07, y: 0.345, width: 0.14, height: 0.03};
+  if (part === 'b') return {x: center + 0.04, y: 0.36, width: 0.03, height: 0.14};
+  if (part === 'c') return {x: center + 0.04, y: 0.5, width: 0.03, height: 0.14};
+  if (part === 'd') return {x: center - 0.07, y: 0.625, width: 0.14, height: 0.03};
+  if (part === 'e') return {x: center - 0.07, y: 0.5, width: 0.03, height: 0.14};
+  if (part === 'f') return {x: center - 0.07, y: 0.36, width: 0.03, height: 0.14};
+  if (part === 'g') return {x: center - 0.07, y: 0.485, width: 0.14, height: 0.03};
+  throw new Error(`unknown_matchstick_segment:${segment}`);
+}
+
+function additionalMatchstickRound(spec: MatchstickRoundSpec): StarterPlay {
+  const pieceId = `match_${spec.movingSegment.replace('.', '_')}`;
+  const source = matchstickSceneLocation(spec.movingSegment);
+  return {
+    id: spec.id,
+    revisionId: 'rev_1',
+    topics: ['puzzles', 'logic'],
+    document: {
+      schemaVersion: 1,
+      id: spec.id,
+      revisionId: 'rev_1',
+      format: 'solve',
+      classification: 'challenge',
+      topics: ['puzzles', 'logic'],
+      learningTopics: [],
+      estimatedDurationSec: 20,
+      assets: [spec.sourceAssetId, spec.solvedAssetId],
+      sources: [],
+      entryState: 'solve',
+      states: {
+        solve: {
+          presentation: {
+            layers: [
+              {type: 'canvas', role: 'media', assetId: spec.sourceAssetId},
+              {
+                type: 'scene',
+                role: 'media',
+                scene: {
+                  version: 1,
+                  objects: [
+                    {
+                      id: pieceId,
+                      semanticLabel: 'Match',
+                      shape: 'matchstick',
+                      ...source,
+                      tone: 'accent',
+                      movable: true,
+                    },
+                  ],
+                  targets: spec.destinations.map((destination) => ({
+                    id: destination.id,
+                    semanticLabel: 'Open space',
+                    ...matchstickSceneLocation(destination.to),
+                  })),
+                },
+              },
+              {type: 'text', role: 'prompt', value: 'Move one match.'},
+            ],
+          },
+          input: {type: 'piece_move'},
+          validation: {
+            type: 'legal_piece_move',
+            value: spec.destinations.map((destination) => ({
+              pieceId,
+              targetId: destination.id,
+              correct: destination.id === spec.answerDestinationId,
+            })),
+          },
+          transition: {correct: 'reveal', incorrect: 'solve'},
+        },
+        reveal: {
+          presentation: {
+            layers: [
+              {type: 'canvas', role: 'media', assetId: spec.solvedAssetId},
+              {
+                type: 'text',
+                role: 'reveal_title',
+                value: `${spec.solvedEquation}. One stroke changes sides.`,
+              },
+            ],
+          },
+          input: {type: 'tap', label: 'Done'},
+          validation: {type: 'none'},
+          transition: {default: '$end'},
+        },
+      },
+    },
+  };
+}
+
+const additionalMatchstickRounds = additionalMatchstickRoundSpecs.map(
+  additionalMatchstickRound,
+);
+
 const moveOneMatchV4: StarterPlay = {
   id: 'mixli_starter_move_one_match',
   revisionId: 'rev_4',
@@ -1316,6 +1577,7 @@ const clarifiedStarterPlays: readonly StarterPlay[] = clarifiedChoiceSpecs.map((
 const clarifiedPlayIds = new Set(clarifiedStarterPlays.map((play) => play.id));
 const starterPlays = [
   moveOneMatchV4,
+  ...additionalMatchstickRounds,
   ...releaseV3StarterPlays
       .filter((play) => play.id !== moveOneMatchV3.id)
       .map(
@@ -1370,6 +1632,24 @@ const starterIntegrityReviews: readonly CatalogIntegrityReview[] = [
     answerDestinationId: 'solution_a',
     solvedEquation: '8 - 4 = 4',
   },
+  ...additionalMatchstickRoundSpecs.map((spec) => ({
+    kind: 'matchstick' as const,
+    playId: spec.id,
+    revisionId: 'rev_1',
+    prompt: 'Move one match.',
+    sourceAssetId: spec.sourceAssetId,
+    solvedAssetId: spec.solvedAssetId,
+    sourceSegments: spec.sourceSegments,
+    sourceEquation: spec.sourceEquation,
+    movingPieceId: `match_${spec.movingSegment.replace('.', '_')}`,
+    destinations: spec.destinations.map((destination) => ({
+      id: destination.id,
+      from: spec.movingSegment,
+      to: destination.to,
+    })),
+    answerDestinationId: spec.answerDestinationId,
+    solvedEquation: spec.solvedEquation,
+  })),
   {
     kind: 'preference',
     playId: 'mixli_starter_city_instinct',
