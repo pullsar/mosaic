@@ -207,7 +207,72 @@ PlayDocument _timedCuePlay({int durationMs = 300}) => PlayDocument.fromJson({
   },
 });
 
+PlayDocument _exactSetPlay() => PlayDocument.fromJson({
+  'schemaVersion': 1,
+  'id': 'exact_set_surface',
+  'revisionId': 'rev_1',
+  'format': 'guess',
+  'classification': 'challenge',
+  'topics': <String>[],
+  'learningTopics': <String>[],
+  'estimatedDurationSec': 10,
+  'assets': <String>[],
+  'sources': <Object>[],
+  'entryState': 'choose',
+  'states': {
+    'choose': {
+      'presentation': {
+        'layers': [
+          {'type': 'text', 'role': 'prompt', 'value': 'Pick two.'},
+        ],
+      },
+      'input': {
+        'type': 'multiple_choice',
+        'options': [
+          {'id': 'beacon', 'label': 'Beacon'},
+          {'id': 'orbit', 'label': 'Orbit'},
+          {'id': 'comet', 'label': 'Comet'},
+        ],
+      },
+      'validation': {
+        'type': 'set_equality',
+        'value': ['beacon', 'orbit'],
+      },
+      'transition': {'correct': 'reveal', 'incorrect': 'choose'},
+    },
+    'reveal': {
+      'presentation': {
+        'layers': [
+          {'type': 'text', 'role': 'reveal_title', 'value': 'Both paths.'},
+        ],
+      },
+      'input': {'type': 'tap', 'label': 'Done'},
+      'validation': {'type': 'none'},
+      'transition': {'default': r'$end'},
+    },
+  },
+});
+
 void main() {
+  testWidgets('exact set selection resolves through the shared Play surface', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: PlaySurface(play: _exactSetPlay())),
+      ),
+    );
+
+    await tester.tap(find.bySemanticsLabel('Orbit'));
+    await tester.pump();
+    await tester.tap(find.bySemanticsLabel('Beacon'));
+    await tester.pump();
+    await tester.tap(find.byTooltip('Submit selection'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Both paths.'), findsOneWidget);
+  });
+
   testWidgets('timed cue advances through an explicit engine action', (
     tester,
   ) async {

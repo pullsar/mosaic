@@ -28,7 +28,7 @@ void main() {
     await tester.pump();
     await tester.tap(find.bySemanticsLabel('Beacon'));
     await tester.pump();
-    await tester.tap(find.text('Submit'));
+    await tester.tap(find.byTooltip('Submit selection'));
 
     expect(submitted, [
       <String>['beacon', 'orbit'],

@@ -170,33 +170,45 @@ final class _PlayMultipleChoiceInputState
   Widget build(BuildContext context) => Semantics(
     container: true,
     label: 'Multiple choice',
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Wrap(
-          alignment: WrapAlignment.center,
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final option in widget.options)
-              ChoiceChip(
-                label: Text(option.label),
-                selected: _selected.contains(option.id),
-                onSelected: (selected) => _toggle(option.id, selected),
+    child: SizedBox(
+      height: 48,
+      child: Row(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (final option in widget.options)
+                    Padding(
+                      padding: const EdgeInsetsDirectional.only(end: 8),
+                      child: ChoiceChip(
+                        label: Text(option.label),
+                        selected: _selected.contains(option.id),
+                        onSelected: (selected) => _toggle(option.id, selected),
+                      ),
+                    ),
+                ],
               ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Semantics(
-          button: true,
-          label: 'Submit selection',
-          child: FilledButton(
-            onPressed: _selected.isEmpty ? null : _submit,
-            child: const Text('Submit'),
+            ),
           ),
-        ),
-      ],
+          Tooltip(
+            message: 'Submit selection',
+            child: Semantics(
+              button: true,
+              label: 'Submit selection',
+              child: FilledButton(
+                onPressed: _selected.isEmpty ? null : _submit,
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.square(48),
+                  padding: EdgeInsets.zero,
+                ),
+                child: const Icon(Icons.check_rounded),
+              ),
+            ),
+          ),
+        ],
+      ),
     ),
   );
 }
