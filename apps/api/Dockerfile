@@ -12,6 +12,7 @@ COPY --chown=node:node apps/api/tsconfig.json apps/api/tsconfig.build.json ./
 COPY --chown=node:node apps/api/src ./src
 COPY --chown=node:node apps/api/test ./test
 COPY --chown=node:node apps/api/migrations ./migrations
+COPY --chown=node:node apps/api/curated_assets ./curated_assets
 COPY --chown=node:node contracts /workspace/contracts
 COPY --chown=node:node packages/play_schema/fixtures /workspace/packages/play_schema/fixtures
 
