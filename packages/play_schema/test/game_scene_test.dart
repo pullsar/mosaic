@@ -172,6 +172,95 @@ void main() {
     );
   });
 
+  test('a timed scene declares its dedicated platform capability', () {
+    PlayDocument documentWithFlags(List<String> flags) =>
+        PlayDocument.fromJson({
+          'schemaVersion': 1,
+          'id': 'timed_scene',
+          'revisionId': 'rev_1',
+          'format': 'guess',
+          'classification': 'challenge',
+          'topics': const <String>[],
+          'learningTopics': const <String>[],
+          'estimatedDurationSec': 8,
+          'assets': const <String>[],
+          'sources': const <Object?>[],
+          'requiredPlatformFlags': flags,
+          'entryState': 'observe',
+          'states': {
+            'observe': {
+              'presentation': {
+                'layers': [
+                  {
+                    'type': 'scene',
+                    'role': 'media',
+                    'scene': {
+                      'version': 1,
+                      'objects': [
+                        {
+                          'id': 'coin',
+                          'semanticLabel': 'Coin',
+                          'shape': 'circle',
+                          'x': .1,
+                          'y': .3,
+                          'width': .1,
+                          'height': .1,
+                        },
+                      ],
+                      'targets': const <Object?>[],
+                      'cues': [
+                        {
+                          'id': 'observe_1',
+                          'objectId': 'coin',
+                          'durationMs': 300,
+                          'keyframes': [
+                            {
+                              'timeMs': 0,
+                              'x': .1,
+                              'y': .3,
+                              'width': .1,
+                              'height': .1,
+                            },
+                            {
+                              'timeMs': 300,
+                              'x': .7,
+                              'y': .3,
+                              'width': .1,
+                              'height': .1,
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+              'input': {
+                'type': 'timed_cue',
+                'cueId': 'observe_1',
+                'cueOrdinal': 1,
+                'durationMs': 300,
+              },
+              'validation': {'type': 'none'},
+              'transition': {'default': r'$end'},
+            },
+          },
+        });
+
+    expect(
+      const PlaySchemaValidator()
+          .validate(documentWithFlags(const <String>[]))
+          .map((issue) => issue.code),
+      contains('timed_scene_capability'),
+    );
+    expect(
+      const PlaySchemaValidator()
+          .validate(documentWithFlags(const ['timed_scene_v1']))
+          .map((issue) => issue.code),
+      isNot(contains('timed_scene_capability')),
+    );
+  });
+
   test('scene layer retains typed scene data in the Play document', () {
     final play = PlayDocument.fromJson({
       'schemaVersion': 1,

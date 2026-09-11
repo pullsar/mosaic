@@ -914,6 +914,7 @@ PlayCapabilityEnvelope consumerCapabilitiesForAssetDelivery(
       'target_region',
       'legal_piece_move',
     },
+    platformFlags: const {'timed_scene_v1'},
   );
 }
 

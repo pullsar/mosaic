@@ -721,7 +721,7 @@ _TimedCueSpec? _safeTimedCueSpec(
   final ordinal = input.properties['cueOrdinal'];
   if (durationMs is! int ||
       durationMs < 300 ||
-      durationMs > 10000 ||
+      durationMs > 12000 ||
       cueId is! String ||
       !RegExp(r'^[A-Za-z0-9_-]{1,80}$').hasMatch(cueId.trim()) ||
       ordinal is! int ||

@@ -93,6 +93,7 @@ final class PlaySchemaValidator {
     }
 
     var hasTerminalPath = false;
+    var hasTimedSceneCue = false;
     for (final entry in play.states.entries) {
       final stateId = entry.key;
       final state = entry.value;
@@ -125,6 +126,9 @@ final class PlaySchemaValidator {
       _validateInput(stateId, state, issues);
 
       for (final layer in state.presentation) {
+        if (layer.scene?.cues.isNotEmpty ?? false) {
+          hasTimedSceneCue = true;
+        }
         if (layer.type == 'scene' &&
             (layer.role != 'media' || layer.scene == null)) {
           issues.add(
@@ -169,6 +173,17 @@ final class PlaySchemaValidator {
           );
         }
       }
+    }
+
+    if (hasTimedSceneCue &&
+        !play.requiredPlatformFlags.contains('timed_scene_v1')) {
+      issues.add(
+        const PlayValidationIssue(
+          code: 'timed_scene_capability',
+          path: 'requiredPlatformFlags',
+          message: 'Timed scene cues require the timed_scene_v1 capability.',
+        ),
+      );
     }
 
     final reachable = <String>{};
@@ -358,13 +373,13 @@ final class PlaySchemaValidator {
         ),
       );
     }
-    if (durationMs is! int || durationMs < 300 || durationMs > 10000) {
+    if (durationMs is! int || durationMs < 300 || durationMs > 12000) {
       issues.add(
         PlayValidationIssue(
           code: 'timed_cue_duration',
           path: '$path.durationMs',
           message:
-              'timed_cue requires a duration from 300 to 10000 milliseconds.',
+              'timed_cue requires a duration from 300 to 12000 milliseconds.',
         ),
       );
     }

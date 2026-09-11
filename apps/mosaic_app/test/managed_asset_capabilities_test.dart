@@ -9,6 +9,7 @@ void main() {
     () {
       final noDelivery = consumerCapabilitiesForAssetDelivery(null);
       expect(noDelivery.presentationTypes, <String>{'text', 'scene'});
+      expect(noDelivery.platformFlags, contains('timed_scene_v1'));
 
       final secure = AssetDeliveryClient(
         baseUri: Uri.parse('https://api.example.test/'),

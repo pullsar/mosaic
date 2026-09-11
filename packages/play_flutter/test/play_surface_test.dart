@@ -130,7 +130,7 @@ PlayCanvasAsset _continuousCanvas() => PlayCanvasAsset(
   ],
 );
 
-PlayDocument _timedCuePlay() => PlayDocument.fromJson({
+PlayDocument _timedCuePlay({int durationMs = 300}) => PlayDocument.fromJson({
   'schemaVersion': 1,
   'id': 'timed_cue',
   'revisionId': 'timed_cue_rev_1',
@@ -169,13 +169,7 @@ PlayDocument _timedCuePlay() => PlayDocument.fromJson({
                   'objectId': 'coin',
                   'durationMs': 300,
                   'keyframes': [
-                    {
-                      'timeMs': 0,
-                      'x': .1,
-                      'y': .3,
-                      'width': .1,
-                      'height': .1,
-                    },
+                    {'timeMs': 0, 'x': .1, 'y': .3, 'width': .1, 'height': .1},
                     {
                       'timeMs': 300,
                       'x': .7,
@@ -195,7 +189,7 @@ PlayDocument _timedCuePlay() => PlayDocument.fromJson({
         'type': 'timed_cue',
         'cueId': 'observe_1',
         'cueOrdinal': 1,
-        'durationMs': 300,
+        'durationMs': durationMs,
       },
       'validation': {'type': 'none'},
       'transition': {'default': 'choose'},
@@ -235,11 +229,30 @@ void main() {
     expect(find.text('Pick one.'), findsOneWidget);
   });
 
+  testWidgets('timed cue accepts the 12-second trajectory ceiling', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PlaySurface(play: _timedCuePlay(durationMs: 12000)),
+        ),
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('play-timed-cue')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('timed cue samples its matching scene trajectory', (
     tester,
   ) async {
     await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: PlaySurface(play: _timedCuePlay()))),
+      MaterialApp(
+        home: Scaffold(body: PlaySurface(play: _timedCuePlay())),
+      ),
     );
 
     await tester.pump(const Duration(milliseconds: 150));

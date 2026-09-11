@@ -297,7 +297,7 @@ void main() {
         'type': 'timed_cue',
         'cueId': 'observe_1',
         'cueOrdinal': 1,
-        'durationMs': 1200,
+        'durationMs': 12000,
       },
       'validation': {'type': 'none'},
       'transition': {'default': r'$end'},
