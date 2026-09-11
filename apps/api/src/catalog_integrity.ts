@@ -347,7 +347,11 @@ function assertQuietSwitchReview(
     changed.length !== 1 ||
     changed[0] !== review.changedElementIndex ||
     source.elements[review.changedElementIndex]?.type !== 'circle' ||
-    choice.elements[review.changedElementIndex]?.type !== 'circle'
+    choice.elements[review.changedElementIndex]?.type !== 'circle' ||
+    !isPureCircleXTransform(
+      source.elements[review.changedElementIndex],
+      choice.elements[review.changedElementIndex],
+    )
   ) {
     throw new Error(`quiet_switch_change_mismatch:${review.playId}`);
   }
@@ -359,6 +363,19 @@ function assertQuietSwitchReview(
   if (!revealTitleFrom(revealState, review.playId).startsWith(review.revealStartsWith)) {
     throw new Error(`review_reveal_mismatch:${review.playId}`);
   }
+}
+
+function isPureCircleXTransform(
+  source: CanvasElement | undefined,
+  choice: CanvasElement | undefined,
+): boolean {
+  if (source?.type !== 'circle' || choice?.type !== 'circle') return false;
+  return source.x !== choice.x &&
+    source.y === choice.y &&
+    source.radius === choice.radius &&
+    source.strokeWidth === choice.strokeWidth &&
+    source.fill === choice.fill &&
+    source.tone === choice.tone;
 }
 
 function assertSingleChoiceReview(

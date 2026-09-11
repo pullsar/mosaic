@@ -108,6 +108,14 @@ test('Quiet Switch changes only the vase between observation and choice', () => 
   assert.deepEqual(changed, [2]);
   assert.equal(before.elements[2]!.type, 'circle');
   assert.equal(after.elements[2]!.type, 'circle');
+  if (before.elements[2]!.type !== 'circle' || after.elements[2]!.type !== 'circle') {
+    assert.fail('expected changed element to remain a circle');
+  }
+  assert.notEqual(before.elements[2]!.x, after.elements[2]!.x);
+  assert.deepEqual(
+    {...before.elements[2]!, x: undefined},
+    {...after.elements[2]!, x: undefined},
+  );
 });
 
 test('the observation pack contains six independently reviewed Quiet Switch rounds', () => {
