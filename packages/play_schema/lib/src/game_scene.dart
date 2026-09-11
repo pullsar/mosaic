@@ -297,10 +297,11 @@ final class GameSceneDefinition {
         'Scene object and target identifiers must be unique.',
       );
     }
-    if (this.cues.map((cue) => cue.id).toSet().length != this.cues.length ||
-        this.cues.map((cue) => cue.objectId).toSet().length !=
+    if (this.cues
+                .map((cue) => '${cue.id}\u0000${cue.objectId}')
+                .toSet()
+                .length !=
             this.cues.length ||
-        this.cues.length > objects.length ||
         this.cues.fold<int>(0, (total, cue) => total + cue.keyframes.length) >
             _maxSceneCueKeyframes ||
         this.cues.any(
@@ -377,4 +378,8 @@ final class GameSceneDefinition {
     }
     return null;
   }
+
+  List<GameSceneCue> cuesForId(String? id) => id == null
+      ? const <GameSceneCue>[]
+      : List.unmodifiable(cues.where((cue) => cue.id == id));
 }

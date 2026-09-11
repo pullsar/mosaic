@@ -150,6 +150,86 @@ void main() {
     expect(moves, isEmpty);
   });
 
+  testWidgets('scene samples every track in an active cue schedule', (
+    tester,
+  ) async {
+    final scene = GameSceneDefinition.fromJson({
+      'version': 1,
+      'objects': [
+        {
+          'id': 'left_cup',
+          'semanticLabel': 'Left cup',
+          'shape': 'rounded_rect',
+          'x': .1,
+          'y': .3,
+          'width': .1,
+          'height': .2,
+        },
+        {
+          'id': 'right_cup',
+          'semanticLabel': 'Right cup',
+          'shape': 'rounded_rect',
+          'x': .7,
+          'y': .3,
+          'width': .1,
+          'height': .2,
+        },
+      ],
+      'targets': const <Object?>[],
+      'cues': [
+        {
+          'id': 'shuffle_1',
+          'objectId': 'left_cup',
+          'durationMs': 1000,
+          'keyframes': [
+            {'timeMs': 0, 'x': .1, 'y': .3, 'width': .1, 'height': .2},
+            {'timeMs': 1000, 'x': .7, 'y': .3, 'width': .1, 'height': .2},
+          ],
+        },
+        {
+          'id': 'shuffle_1',
+          'objectId': 'right_cup',
+          'durationMs': 1000,
+          'keyframes': [
+            {'timeMs': 0, 'x': .7, 'y': .3, 'width': .1, 'height': .2},
+            {'timeMs': 1000, 'x': .1, 'y': .3, 'width': .1, 'height': .2},
+          ],
+        },
+      ],
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox.square(
+          dimension: 300,
+          child: PlaySceneRenderer(
+            scene: scene,
+            cueId: 'shuffle_1',
+            cueProgress: 1,
+            onPieceMove: (_, _) {},
+          ),
+        ),
+      ),
+    );
+
+    final bounds = tester.getSize(find.byType(PlaySceneRenderer));
+    expect(
+      tester
+          .widget<AnimatedPositioned>(
+            find.byKey(const ValueKey<String>('scene-object:left_cup')),
+          )
+          .left,
+      closeTo(bounds.width * .7, .01),
+    );
+    expect(
+      tester
+          .widget<AnimatedPositioned>(
+            find.byKey(const ValueKey<String>('scene-object:right_cup')),
+          )
+          .left,
+      closeTo(bounds.width * .1, .01),
+    );
+  });
+
   testWidgets('scene puts a horizontal matchstick head at its end', (
     tester,
   ) async {

@@ -140,6 +140,55 @@ void main() {
     expect(scene.toJson()['cues'], isA<List<Object?>>());
   });
 
+  test('scene groups distinct object tracks under one cue schedule', () {
+    final scene = GameSceneDefinition.fromJson({
+      'version': 1,
+      'objects': [
+        {
+          'id': 'left_cup',
+          'semanticLabel': 'Left cup',
+          'shape': 'rounded_rect',
+          'x': .1,
+          'y': .3,
+          'width': .1,
+          'height': .2,
+        },
+        {
+          'id': 'right_cup',
+          'semanticLabel': 'Right cup',
+          'shape': 'rounded_rect',
+          'x': .7,
+          'y': .3,
+          'width': .1,
+          'height': .2,
+        },
+      ],
+      'targets': const <Object?>[],
+      'cues': [
+        {
+          'id': 'shuffle_1',
+          'objectId': 'left_cup',
+          'durationMs': 1000,
+          'keyframes': [
+            {'timeMs': 0, 'x': .1, 'y': .3, 'width': .1, 'height': .2},
+            {'timeMs': 1000, 'x': .7, 'y': .3, 'width': .1, 'height': .2},
+          ],
+        },
+        {
+          'id': 'shuffle_1',
+          'objectId': 'right_cup',
+          'durationMs': 1000,
+          'keyframes': [
+            {'timeMs': 0, 'x': .7, 'y': .3, 'width': .1, 'height': .2},
+            {'timeMs': 1000, 'x': .1, 'y': .3, 'width': .1, 'height': .2},
+          ],
+        },
+      ],
+    });
+
+    expect(scene.cuesForId('shuffle_1'), hasLength(2));
+  });
+
   test('scene rejects cue frames that cannot form a deterministic path', () {
     expect(
       () => GameSceneDefinition.fromJson({

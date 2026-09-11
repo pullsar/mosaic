@@ -214,8 +214,10 @@ final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
     ColorScheme colors,
     bool reduced,
   ) {
-    final cue = widget.scene.cueById(widget.cueId);
-    final activeCue = cue?.objectId == object.id ? cue : null;
+    final activeCue = widget.scene
+        .cuesForId(widget.cueId)
+        .where((cue) => cue.objectId == object.id)
+        .firstOrNull;
     final targetId = widget.placements[object.id];
     final target = targetId == null
         ? null
