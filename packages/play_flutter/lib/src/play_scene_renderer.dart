@@ -166,6 +166,7 @@ final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
           child: GestureDetector(
             onTap: () => _move(target),
             child: AnimatedContainer(
+              key: ValueKey<String>('scene-target-socket:${target.id}'),
               duration: reduced
                   ? Duration.zero
                   : const Duration(milliseconds: 140),
@@ -180,6 +181,20 @@ final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
                 color: colors.primary.withValues(
                   alpha: _hoveredTargetId == target.id ? .18 : .10,
                 ),
+                boxShadow: [
+                  BoxShadow(
+                    color: colors.shadow.withValues(alpha: .18),
+                    offset: const Offset(0, 2),
+                    blurRadius: 5,
+                  ),
+                  BoxShadow(
+                    color: colors.primary.withValues(
+                      alpha: _hoveredTargetId == target.id ? .2 : .11,
+                    ),
+                    blurRadius: _hoveredTargetId == target.id ? 12 : 7,
+                    spreadRadius: _hoveredTargetId == target.id ? 1 : 0,
+                  ),
+                ],
               ),
             ),
           ),

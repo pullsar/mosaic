@@ -54,6 +54,11 @@ void main() {
     await tester.tap(find.bySemanticsLabel('Vertical match'));
     await tester.pump();
     expect(find.bySemanticsLabel('Open slot'), findsOneWidget);
+    final socket = tester.widget<AnimatedContainer>(
+      find.byKey(const ValueKey<String>('scene-target-socket:slot')),
+    );
+    final decoration = socket.decoration! as BoxDecoration;
+    expect(decoration.boxShadow, isNotEmpty);
     await tester.tap(find.bySemanticsLabel('Open slot'));
 
     expect(moves, [('match', 'slot')]);
