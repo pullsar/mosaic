@@ -25,6 +25,10 @@ export interface OneMoveMatchstickDraft {
   readonly solution: MatchstickMoveSolution;
   readonly structuralSignature: string;
   readonly canonicalHash: string;
+  readonly media: {
+    readonly sourceCanvasAssetId: string;
+    readonly solvedCanvasAssetId: string;
+  };
   readonly themePreference?: string;
 }
 
@@ -74,6 +78,7 @@ export function generateOneMoveMatchstickDrafts(
       solution: candidate.solution,
     });
     const themePreference = normalizeThemePreference(request.themePreference);
+    const canonicalHash = createHash('sha256').update(canonical).digest('hex');
     drafts.push(Object.freeze({
       family: 'one_move_matchstick',
       generatorVersion,
@@ -81,7 +86,11 @@ export function generateOneMoveMatchstickDrafts(
       sourceSegments: candidate.sourceSegments,
       solution: candidate.solution,
       structuralSignature: candidate.structuralSignature,
-      canonicalHash: createHash('sha256').update(canonical).digest('hex'),
+      canonicalHash,
+      media: Object.freeze({
+        sourceCanvasAssetId: `draft_matchsticks_${canonicalHash}_source`,
+        solvedCanvasAssetId: `draft_matchsticks_${canonicalHash}_solved`,
+      }),
       ...(themePreference === undefined ? {} : {themePreference}),
     }));
   }

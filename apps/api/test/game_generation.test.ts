@@ -23,6 +23,8 @@ test('One Move generation is byte-stable and independently solver-checked', () =
       enumerateOneMoveMatchstickSolutions(new Set(draft.sourceSegments)),
       [draft.solution],
     );
+    equal(draft.media.sourceCanvasAssetId, `draft_matchsticks_${draft.canonicalHash}_source`);
+    equal(draft.media.solvedCanvasAssetId, `draft_matchsticks_${draft.canonicalHash}_solved`);
   }
 });
 
