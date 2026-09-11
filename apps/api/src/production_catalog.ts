@@ -17,13 +17,18 @@ import type {
   ConstellationTrajectory,
 } from './constellation_solver.js';
 import {
+  solveEvidenceLens,
+  type EvidenceLensClaim,
+  type EvidenceLensPoint,
+} from './evidence_lens_solver.js';
+import {
   solveCounterexample,
   type CounterexampleClaim,
   type CounterexampleTile,
 } from './counterexample_solver.js';
 
 export const productionStarterPrefix = 'mixli_starter_';
-export const productionStarterCount = 35;
+export const productionStarterCount = 41;
 
 export interface ProductionCatalogStatus {
   eligiblePlays: number;
@@ -49,6 +54,12 @@ interface MatchstickRoundSpec {
   readonly solvedEquation: string;
 }
 
+interface EvidenceLensRoundSpec {
+  readonly id: string;
+  readonly topics: readonly [string, string];
+  readonly source: string;
+  readonly points: readonly EvidenceLensPoint[];
+}
 interface ChoiceSpec {
   id: string;
   format: 'choose' | 'guess';
@@ -931,6 +942,45 @@ const counterexampleCanvasAssets = counterexampleRoundSpecs.flatMap((spec) => [
   counterexampleAsset(spec, true),
 ]);
 
+const evidenceLensPalette = {
+  background: '#132330', foreground: '#F8F4E8', accent: '#F2B84B', muted: '#86C7D6', surface: '#D67563',
+} as const;
+
+const evidenceLensRoundSpecs: readonly EvidenceLensRoundSpec[] = [
+  {id: 'mixli_starter_evidence_lens_one', topics: ['reasoning', 'data'], source: 'Museum visits', points: [{id: 'a', label: '2023', value: 10}, {id: 'b', label: '2024', value: 15}, {id: 'c', label: '2025', value: 12}]},
+  {id: 'mixli_starter_evidence_lens_two', topics: ['observation', 'data'], source: 'Garden blooms', points: [{id: 'a', label: 'Spring', value: 8}, {id: 'b', label: 'Summer', value: 14}, {id: 'c', label: 'Autumn', value: 11}]},
+  {id: 'mixli_starter_evidence_lens_three', topics: ['attention', 'data'], source: 'Night trains', points: [{id: 'a', label: 'Mon', value: 17}, {id: 'b', label: 'Tue', value: 13}, {id: 'c', label: 'Wed', value: 16}]},
+  {id: 'mixli_starter_evidence_lens_four', topics: ['patterns', 'data'], source: 'Tide markers', points: [{id: 'a', label: 'Dawn', value: 9}, {id: 'b', label: 'Noon', value: 12}, {id: 'c', label: 'Dusk', value: 18}]},
+  {id: 'mixli_starter_evidence_lens_five', topics: ['focus', 'data'], source: 'Studio light', points: [{id: 'a', label: 'East', value: 14}, {id: 'b', label: 'South', value: 18}, {id: 'c', label: 'West', value: 10}]},
+  {id: 'mixli_starter_evidence_lens_six', topics: ['logic', 'data'], source: 'Harbor signals', points: [{id: 'a', label: 'One', value: 11}, {id: 'b', label: 'Two', value: 7}, {id: 'c', label: 'Three', value: 15}]},
+];
+
+function evidenceLensClaims(points: readonly EvidenceLensPoint[]): readonly EvidenceLensClaim[] {
+  const final = points.at(-1)!;
+  const peak = points.reduce((best, point) => point.value > best.value ? point : best);
+  const lowest = points.reduce((best, point) => point.value < best.value ? point : best);
+  return [
+    {id: 'final', kind: 'final', label: `Final value: ${final.value}.`},
+    {id: 'peak', kind: 'peak', label: `Peak value: ${peak.value}.`},
+    {id: 'lowest', kind: 'lowest', label: `Lowest value: ${lowest.value}.`},
+  ];
+}
+
+function evidenceLensAsset(spec: EvidenceLensRoundSpec): Record<string, unknown> {
+  const minimum = Math.min(...spec.points.map((point) => point.value));
+  const maximum = Math.max(...spec.points.map((point) => point.value));
+  const yFor = (value: number) => .65 - ((value - minimum) / (maximum - minimum || 1)) * .34;
+  const xFor = (index: number) => .2 + index * .3;
+  return {schemaVersion: 1, id: `${spec.id}_canvas`, semanticLabel: `${spec.source}: ${spec.points.map((point) => `${point.label} ${point.value}`).join(', ')}.`, palette: evidenceLensPalette, elements: [
+    {type: 'line', x1: .14, y1: .72, x2: .88, y2: .72, width: .012, tone: 'foreground'},
+    {type: 'line', x1: .14, y1: .18, x2: .14, y2: .72, width: .012, tone: 'foreground'},
+    ...spec.points.slice(0, -1).map((point, index) => ({type: 'line', x1: xFor(index), y1: yFor(point.value), x2: xFor(index + 1), y2: yFor(spec.points[index + 1]!.value), width: .018, tone: 'muted'})),
+    ...spec.points.flatMap((point, index) => [{type: 'circle', x: xFor(index), y: yFor(point.value), radius: .042, fill: true, tone: 'accent'}, {type: 'label', x: xFor(index), y: .8, text: point.id.toUpperCase(), scale: .05, tone: 'foreground'}, {type: 'label', x: xFor(index), y: yFor(point.value) - .08, text: String(point.value), scale: .045, tone: 'foreground'}]),
+    {type: 'label', x: .5, y: .09, text: spec.source, scale: .052, tone: 'foreground'},
+  ]};
+}
+
+const evidenceLensCanvasAssets = evidenceLensRoundSpecs.map(evidenceLensAsset);
 const canvasAssets = [
   ...legacyCanvasAssets,
   ...releaseCanvasAssets,
@@ -938,6 +988,7 @@ const canvasAssets = [
   ...clarifiedCanvasAssets,
   ...quietSwitchCanvasAssets,
   ...counterexampleCanvasAssets,
+  ...evidenceLensCanvasAssets,
 ] as const;
 
 const legacyChoiceSpecs: readonly ChoiceSpec[] = [
@@ -2082,9 +2133,43 @@ function counterexampleRound(spec: CounterexampleRoundSpec): StarterPlay {
   };
 }
 
+function evidenceLensRound(spec: EvidenceLensRoundSpec): StarterPlay {
+  const claims = evidenceLensClaims(spec.points);
+  const assetId = `${spec.id}_canvas`;
+  return {
+    id: spec.id, revisionId: 'rev_1', topics: spec.topics,
+    document: {
+      schemaVersion: 1, id: spec.id, revisionId: 'rev_1', format: 'solve', classification: 'challenge',
+      topics: spec.topics, learningTopics: [], estimatedDurationSec: 20, assets: [assetId], sources: [], entryState: 'claim',
+      states: {
+        claim: {
+          presentation: {layers: [{type: 'canvas', role: 'media', assetId}, {type: 'text', role: 'prompt', value: 'Pick a claim.'}]},
+          input: {type: 'single_choice', options: claims.map((claim) => ({id: claim.id, label: claim.label}))},
+          validation: {type: 'none'}, transition: Object.fromEntries(claims.map((claim) => [claim.id, `evidence_${claim.id}`])),
+        },
+        ...Object.fromEntries(claims.map((claim) => {
+          const solution = solveEvidenceLens(claim, spec.points);
+          return [`evidence_${claim.id}`, {
+            presentation: {layers: [{type: 'canvas', role: 'media', assetId}, {type: 'text', role: 'prompt', value: `Which point proves: ${claim.label}`}]},
+            input: {type: 'single_choice', options: spec.points.map((point) => ({id: point.id, label: `Point ${point.id.toUpperCase()}`}))},
+            validation: {type: 'equals', value: solution.answerId}, transition: {correct: `reveal_${claim.id}`, incorrect: `evidence_${claim.id}`},
+          }];
+        })),
+        ...Object.fromEntries(claims.map((claim) => {
+          const solution = solveEvidenceLens(claim, spec.points);
+          return [`reveal_${claim.id}`, {
+            presentation: {layers: [{type: 'canvas', role: 'media', assetId}, {type: 'text', role: 'reveal_title', value: `${solution.answerId.toUpperCase()}. ${claim.label}`}]},
+            input: {type: 'tap', label: 'Done'}, validation: {type: 'none'}, transition: {default: '$end'},
+          }];
+        })),
+      },
+    },
+  };
+}
 const sleightRounds = sleightRoundSpecs.map(sleightRound);
 const constellationRounds = constellationRoundSpecs.map(constellationRound);
 const counterexampleRounds = counterexampleRoundSpecs.map(counterexampleRound);
+const evidenceLensRounds = evidenceLensRoundSpecs.map(evidenceLensRound);
 
 const releaseV3StarterPlays: readonly StarterPlay[] = [
   moveOneMatchV3,
@@ -2123,6 +2208,7 @@ const starterPlays = [
   ...sleightRounds,
   ...constellationRounds,
   ...counterexampleRounds,
+  ...evidenceLensRounds,
 ] as const;
 
 const historicalStarterPlays = [
@@ -2290,7 +2376,14 @@ const starterIntegrityReviews: readonly CatalogIntegrityReview[] = [
       ? 'No shown tile'
       : 'Tile ',
   })),
-] as const;
+  ...evidenceLensRoundSpecs.map((spec) => ({
+    kind: 'evidence_lens' as const,
+    playId: spec.id,
+    revisionId: 'rev_1',
+    sourceAssetId: `${spec.id}_canvas`,
+    points: spec.points,
+    claims: evidenceLensClaims(spec.points),
+  })),] as const;
 
 export const productionCatalogIntegrityFixture: ProductionCatalogIntegrityFixture = {
   plays: starterPlays,

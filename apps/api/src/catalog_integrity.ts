@@ -13,6 +13,11 @@ import {
   type ConstellationTrajectory,
 } from './constellation_solver.js';
 import {
+  solveEvidenceLens,
+  type EvidenceLensClaim,
+  type EvidenceLensPoint,
+} from './evidence_lens_solver.js';
+import {
   solveCounterexample,
   type CounterexampleClaim,
   type CounterexampleTile,
@@ -106,6 +111,13 @@ export type CatalogIntegrityReview =
       readonly revealStartsWith: string;
     }
   | {
+      readonly kind: 'evidence_lens';
+      readonly playId: string;
+      readonly revisionId: string;
+      readonly sourceAssetId: string;
+      readonly points: readonly EvidenceLensPoint[];
+      readonly claims: readonly EvidenceLensClaim[];
+    }  | {
       readonly kind: 'counterexample';
       readonly playId: string;
       readonly revisionId: string;
@@ -344,13 +356,45 @@ export function assertProductionCatalogIntegrity(
       case 'constellation':
         assertConstellationReview(review, play.document, entryState, states);
         break;
-      case 'counterexample':
+      case 'evidence_lens':
+        assertEvidenceLensReview(review, entryState, states, assetById);
+        break;      case 'counterexample':
         assertCounterexampleReview(review, entryState, states, assetById);
         break;
     }
   }
 }
 
+function assertEvidenceLensReview(
+  review: Extract<CatalogIntegrityReview, {kind: 'evidence_lens'}>,
+  entryState: Record<string, unknown>,
+  states: Record<string, unknown>,
+  assetById: ReadonlyMap<string, CanvasAssetDocument>,
+): void {
+  const asset = assetById.get(review.sourceAssetId);
+  if (asset === undefined) throw new Error(`evidence_lens_asset_missing:${review.playId}`);
+  const input = record(entryState.input, `${review.playId}.claim.input`);
+  const transitions = record(entryState.transition, `${review.playId}.claim.transition`);
+  if (input.type !== 'single_choice' || record(entryState.validation, `${review.playId}.claim.validation`).type !== 'none' ||
+      !review.claims.every((claim) => optionIdsFrom(input, review.playId).includes(claim.id) && transitions[claim.id] === `evidence_${claim.id}`)) {
+    throw new Error(`evidence_lens_claim_route_mismatch:${review.playId}`);
+  }
+  for (const claim of review.claims) {
+    const solution = solveEvidenceLens(claim, review.points);
+    const evidence = record(states[`evidence_${claim.id}`], `${review.playId}.evidence`);
+    const reveal = record(states[`reveal_${claim.id}`], `${review.playId}.reveal`);
+    if (!presentationLayers(evidence, review.playId).some((layer) => layer.type === 'canvas' && layer.assetId === review.sourceAssetId) ||
+        record(evidence.validation, `${review.playId}.evidence.validation`).value !== solution.answerId ||
+        record(evidence.transition, `${review.playId}.evidence.transition`).correct !== `reveal_${claim.id}` ||
+        record(evidence.transition, `${review.playId}.evidence.transition`).incorrect !== `evidence_${claim.id}` ||
+        !revealTitleFrom(reveal, review.playId).startsWith(`${solution.answerId.toUpperCase()}. ${claim.label}`)) {
+      throw new Error(`evidence_lens_solution_mismatch:${review.playId}`);
+    }
+  }
+  if (!review.points.every((point) => asset.elements.some((element) => element.type === 'label' && element.text === String(point.value)))) {
+    throw new Error(`evidence_lens_chart_mismatch:${review.playId}`);
+  }
+}
 function assertCounterexampleReview(
   review: Extract<CatalogIntegrityReview, {kind: 'counterexample'}>,
   entryState: Record<string, unknown>,

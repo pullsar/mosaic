@@ -139,12 +139,14 @@ test(
       assert.equal(
         eligible.rows.filter((row) => {
           const playAssets = new Set(row.document.assets ?? []);
-          return row.document.states?.reveal?.presentation?.layers?.some(
-            (layer) =>
-              (layer.type === 'canvas' &&
-                layer.assetId !== undefined &&
-                playAssets.has(layer.assetId)) ||
-              (layer.type === 'scene' && layer.scene !== undefined),
+          return Object.values(row.document.states ?? {}).some(
+            (state) => state.presentation?.layers?.some(
+              (layer) =>
+                (layer.type === 'canvas' &&
+                  layer.assetId !== undefined &&
+                  playAssets.has(layer.assetId)) ||
+                (layer.type === 'scene' && layer.scene !== undefined),
+            ),
           );
         }).length,
         productionStarterCount,

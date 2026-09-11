@@ -345,3 +345,28 @@ test('catalog integrity rejects a Counterexample validation disconnected from it
     /counterexample_choice_mismatch/,
   );
 });
+
+test('the data pack contains six independently reviewed Evidence Lens rounds', () => {
+  const reviews = productionCatalogIntegrityFixture.reviews.filter(
+    (review) => review.kind === 'evidence_lens',
+  );
+  assert.equal(reviews.length, 6);
+  assert.equal(new Set(reviews.map((review) => review.playId)).size, 6);
+  assert.ok(reviews.every((review) => review.claims.length === 3));
+});
+
+test('catalog integrity rejects an Evidence Lens answer disconnected from its series', () => {
+  const altered = JSON.parse(JSON.stringify(productionCatalogIntegrityFixture)) as {
+    reviews: Array<{
+      kind: string;
+      points?: Array<{id: string; label: string; value: number}>;
+    }>;
+  };
+  altered.reviews.find((review) => review.kind === 'evidence_lens')!.points![2]!.value = 30;
+  assert.throws(
+    () => assertProductionCatalogIntegrity(
+      altered as unknown as typeof productionCatalogIntegrityFixture,
+    ),
+    /evidence_lens_claim_label/,
+  );
+});
