@@ -254,6 +254,57 @@ PlayDocument _exactSetPlay() => PlayDocument.fromJson({
 });
 
 void main() {
+  testWidgets(
+    'answer contact compresses without submitting and cancellation restores it',
+    (tester) async {
+      var resolutions = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: PlaySurface(
+              play: _continuousRevealPlay(),
+              onResolved: (_) => resolutions++,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final label = find.text('Solve');
+      final original = tester.getRect(label);
+      final gesture = await tester.startGesture(tester.getCenter(label));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
+      expect(tester.getRect(label).height, lessThan(original.height));
+      expect(resolutions, 0);
+      await gesture.cancel();
+      await tester.pumpAndSettle();
+      expect(tester.getRect(label).height, closeTo(original.height, .01));
+      expect(resolutions, 0);
+      expect(tester.binding.transientCallbackCount, 0);
+    },
+  );
+
+  testWidgets('reduced-motion answer contact retains its geometry', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(disableAnimations: true),
+          child: Scaffold(body: PlaySurface(play: _continuousRevealPlay())),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final label = find.text('Solve');
+    final original = tester.getRect(label);
+    final gesture = await tester.startGesture(tester.getCenter(label));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(tester.getRect(label), original);
+    await gesture.cancel();
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('exact set selection resolves through the shared Play surface', (
     tester,
   ) async {

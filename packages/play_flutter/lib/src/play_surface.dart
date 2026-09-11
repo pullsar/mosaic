@@ -922,7 +922,7 @@ final class _InputOverlay extends StatelessWidget {
   }
 }
 
-final class _ControlButton extends StatelessWidget {
+final class _ControlButton extends StatefulWidget {
   const _ControlButton({
     required this.label,
     required this.onPressed,
@@ -933,31 +933,97 @@ final class _ControlButton extends StatelessWidget {
   final bool compact;
 
   @override
-  Widget build(BuildContext context) => Semantics(
-    button: true,
-    label: label,
-    child: FilledButton(
-      onPressed: onPressed,
-      style: FilledButton.styleFrom(
-        foregroundColor: MosaicVisualTokens.foreground,
-        backgroundColor: MosaicVisualTokens.controlSurface,
-        minimumSize: const Size(48, 48),
-        padding: EdgeInsets.symmetric(
-          horizontal: compact ? 12 : 18,
-          vertical: 10,
+  State<_ControlButton> createState() => _ControlButtonState();
+}
+
+final class _ControlButtonState extends State<_ControlButton> {
+  final _states = WidgetStatesController();
+  int? _pointer;
+  bool _pressed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _states.addListener(_updatePressed);
+  }
+
+  void _updatePressed() {
+    final pressed =
+        _pointer != null || _states.value.contains(WidgetState.pressed);
+    if (_pressed != pressed) setState(() => _pressed = pressed);
+  }
+
+  void _endPointer(PointerEvent event) {
+    if (_pointer != event.pointer) return;
+    _pointer = null;
+    _updatePressed();
+  }
+
+  @override
+  void dispose() {
+    _states
+      ..removeListener(_updatePressed)
+      ..dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final reduced = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    return Semantics(
+      button: true,
+      label: widget.label,
+      child: Listener(
+        onPointerDown: (event) {
+          _pointer ??= event.pointer;
+          _updatePressed();
+        },
+        onPointerUp: _endPointer,
+        onPointerCancel: _endPointer,
+        child: TweenAnimationBuilder<Offset>(
+          tween: Tween<Offset>(
+            begin: const Offset(1, 1),
+            end: _pressed && !reduced
+                ? const Offset(.98, .94)
+                : const Offset(1, 1),
+          ),
+          duration: reduced
+              ? Duration.zero
+              : Duration(milliseconds: _pressed ? 70 : 220),
+          curve: _pressed ? Curves.easeOutCubic : Curves.easeOutBack,
+          builder: (context, scale, child) => Transform.scale(
+            scaleX: scale.dx,
+            scaleY: scale.dy,
+            // Keep the minimum 48 px hit area stable while the surface compresses.
+            transformHitTests: false,
+            child: child,
+          ),
+          child: FilledButton(
+            statesController: _states,
+            onPressed: widget.onPressed,
+            style: FilledButton.styleFrom(
+              foregroundColor: MosaicVisualTokens.foreground,
+              backgroundColor: MosaicVisualTokens.controlSurface,
+              minimumSize: const Size(48, 48),
+              padding: EdgeInsets.symmetric(
+                horizontal: widget.compact ? 12 : 18,
+                vertical: 10,
+              ),
+              shape: const StadiumBorder(),
+            ),
+            child: widget.compact
+                ? Text(
+                    widget.label,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  )
+                : Text(widget.label),
+          ),
         ),
-        shape: const StadiumBorder(),
       ),
-      child: compact
-          ? Text(
-              label,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            )
-          : Text(label),
-    ),
-  );
+    );
+  }
 }
 
 Widget _terminalOrEmpty(Widget? terminal) =>

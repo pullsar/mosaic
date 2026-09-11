@@ -36,6 +36,7 @@ final class _PlayTimedCueInputState extends State<PlayTimedCueInput>
   Timer? _completion;
   bool _started = false;
   bool? _reducedMotion;
+  int _generation = 0;
 
   @override
   void initState() {
@@ -63,10 +64,15 @@ final class _PlayTimedCueInputState extends State<PlayTimedCueInput>
   @override
   void didUpdateWidget(covariant PlayTimedCueInput oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.duration != widget.duration) _start();
+    if (oldWidget.duration != widget.duration ||
+        oldWidget.cueId != widget.cueId ||
+        oldWidget.ordinal != widget.ordinal) {
+      _start();
+    }
   }
 
   void _start() {
+    final generation = ++_generation;
     _started = true;
     _completion?.cancel();
     _progress
@@ -78,7 +84,7 @@ final class _PlayTimedCueInputState extends State<PlayTimedCueInput>
       unawaited(_progress.forward());
     }
     _completion = Timer(widget.duration, () {
-      if (!mounted) return;
+      if (!mounted || generation != _generation) return;
       _reportProgress(1);
       widget.onElapsed();
     });
@@ -90,8 +96,10 @@ final class _PlayTimedCueInputState extends State<PlayTimedCueInput>
   }
 
   void _reportProgress(double value) {
+    if (widget.onProgress == null) return;
+    final generation = _generation;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) widget.onProgress?.call(value);
+      if (mounted && generation == _generation) widget.onProgress?.call(value);
     });
   }
 

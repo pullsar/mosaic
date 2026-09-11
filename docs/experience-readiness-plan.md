@@ -293,6 +293,38 @@ The 2026-09-10 mechanics pass adds session-fenced input callbacks, fresh replay 
 
 This is a mechanics and asset quality tranche, not completion of the game program. Scene-owned movable pieces, the new game families, curated audio, physical 60/120 Hz and screen-reader checks remain outstanding. The legacy matchstick canvas still draws its static source segment beneath the movable handle. New piece games require the planned stable-object scene contract before eligibility. Persistence, collections, sharing and operational work are outside this pass at the user's request.
 
+### 2026-09-11 touch and motion follow-up
+
+The scene renderer now tracks only the held object's translation without an
+interpolation delay. Ordinary pointer updates rebuild its transform; destination
+changes rebuild the scene controls. Placement hit testing starts at the current
+placement. Return motion can be interrupted by catching the moving object, and
+second-touch cancellation cannot release another object's gesture lease. Scene
+replacement clears selection; teardown releases the lease and animation resources.
+
+Answer controls compress on contact and settle on release while keeping their
+48 px hit area. Native button activation remains the scoring path, including
+keyboard activation and pointer cancellation. Reduced motion disables this
+deformation and scene return animation. Timed cues restart on cue identity or
+ordinal changes even when their durations match, and stale progress callbacks
+are fenced by generation.
+
+Regression coverage includes same-frame pointer tracking, stationary neighbors,
+placed-object drags, catching a return, competing touches, reduced motion,
+cancelled answers, cue reuse, and 100 interrupted scene lifecycles with no active
+tickers or outstanding gesture leases afterward. These are automated lifecycle
+checks, not physical frame-time or touch-to-sound measurements.
+
+Pinned-SDK verification: enforced-lockfile dependency resolution, repository
+formatting, analyzer, and the web release build pass. The baseline package/app
+suites pass 504 tests, with the four screenshot failures below remaining.
+
+The four shared-renderer Windows golden mismatches documented by the earlier
+mechanics pass remain under `play_surface_golden_test.dart`; this follow-up does
+not replace those reference images. Physical 60/120 Hz profiles, audio-route
+latency, VoiceOver/TalkBack, and the supported-host mobile release gates still
+require their own evidence before release.
+
 Asset review used the shared Flutter renderer in a release browser preview at 390×844 and 320×640, including the pattern's answer transition. Square geometry accounts for the renderer's 4:5 canvas stage; circles and squares now have equal physical extents. The corrected routes have readable labels and uniform strokes. This review does not replace physical-device or first-time-user evidence.
 
 ## Definition of done

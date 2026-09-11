@@ -252,7 +252,7 @@ final class GameSceneCue {
         ),
       );
     } on ArgumentError catch (error) {
-      throw FormatException(error.message);
+      throw FormatException(error.message.toString());
     }
   }
 
@@ -366,7 +366,7 @@ final class GameSceneDefinition {
       }
       return scene;
     } on ArgumentError catch (error) {
-      throw FormatException(error.message);
+      throw FormatException(error.message.toString());
     }
   }
 

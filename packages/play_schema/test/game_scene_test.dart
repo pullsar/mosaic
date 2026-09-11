@@ -409,7 +409,7 @@ void main() {
                       'height': .2,
                     },
                   ],
-                  'targets': [],
+                  'targets': <Object?>[],
                 },
               },
             ],

@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:play_schema/play_schema.dart';
@@ -27,11 +30,73 @@ final class PlaySceneRenderer extends StatefulWidget {
   State<PlaySceneRenderer> createState() => _PlaySceneRendererState();
 }
 
-final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
+final class _PlaySceneRendererState extends State<PlaySceneRenderer>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _returnMotion;
+  final _translation = ValueNotifier<Offset>(Offset.zero);
+  Offset _returnFrom = Offset.zero;
+  String? _returningId;
   String? _selectedId;
   String? _draggedId;
   String? _hoveredTargetId;
   Offset _dragOffset = Offset.zero;
+  bool _reducedMotion = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _returnMotion =
+        AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 220),
+        )..addListener(() {
+          _translation.value = Offset.lerp(
+            _returnFrom,
+            Offset.zero,
+            Curves.easeOutBack.transform(_returnMotion.value),
+          )!;
+        });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _reducedMotion = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    if (_reducedMotion && _returnMotion.isAnimating) {
+      _returnMotion.stop();
+      _translation.value = Offset.zero;
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant PlaySceneRenderer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.scene != widget.scene || oldWidget.cueId != widget.cueId) {
+      _interrupt(oldWidget.onDirectManipulationChanged);
+    }
+  }
+
+  @override
+  void dispose() {
+    _interrupt(widget.onDirectManipulationChanged);
+    _returnMotion.dispose();
+    _translation.dispose();
+    super.dispose();
+  }
+
+  void _interrupt(ValueChanged<bool>? callback) {
+    final held = _draggedId != null;
+    _returnMotion.stop();
+    _translation.value = Offset.zero;
+    _returningId = null;
+    _selectedId = null;
+    _draggedId = null;
+    _hoveredTargetId = null;
+    _dragOffset = Offset.zero;
+    // Removal/replacement can happen during build; release the parent lease
+    // after that build instead of calling its setState while the tree is locked.
+    if (held && callback != null) scheduleMicrotask(() => callback(false));
+  }
 
   void _select(GameSceneObject object) {
     if (!object.movable) return;
@@ -39,11 +104,13 @@ final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
   }
 
   void _tapObject(GameSceneObject object) {
+    if (_draggedId != null && _draggedId != object.id) return;
     _releaseDirectManipulation();
     _select(object);
   }
 
   void _move(GameSceneTarget target) {
+    if (_draggedId != null) return;
     final pieceId = _selectedId;
     if (pieceId == null) return;
     _releaseDirectManipulation();
@@ -52,12 +119,16 @@ final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
   }
 
   void _beginDrag(GameSceneObject object) {
-    if (!object.movable) return;
-    if (_draggedId == null) widget.onDirectManipulationChanged?.call(true);
+    if (!object.movable || _draggedId != null) return;
+    _returnMotion.stop();
+    final offset = _returningId == object.id ? _translation.value : Offset.zero;
+    widget.onDirectManipulationChanged?.call(true);
     setState(() {
       _selectedId = object.id;
       _draggedId = object.id;
-      _dragOffset = Offset.zero;
+      _dragOffset = offset;
+      _translation.value = offset;
+      _returningId = null;
       _hoveredTargetId = null;
     });
   }
@@ -70,10 +141,9 @@ final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
   ) {
     if (_draggedId != object.id) return;
     final offset = _dragOffset + details.delta;
-    final centerX =
-        object.rect.x * width + object.rect.width * width / 2 + offset.dx;
-    final centerY =
-        object.rect.y * height + object.rect.height * height / 2 + offset.dy;
+    final rect = _placedRect(object);
+    final centerX = rect.x * width + rect.width * width / 2 + offset.dx;
+    final centerY = rect.y * height + rect.height * height / 2 + offset.dy;
     final target = widget.scene.targets.where((candidate) {
       final rect = candidate.rect;
       return centerX >= rect.x * width &&
@@ -81,13 +151,17 @@ final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
           centerY >= rect.y * height &&
           centerY <= (rect.y + rect.height) * height;
     }).firstOrNull;
-    setState(() {
-      _dragOffset = offset;
-      _hoveredTargetId = target?.id;
-    });
+    _dragOffset = offset;
+    _translation.value = offset;
+    // Pointer motion changes only the held object's paint transform. Rebuild
+    // scene controls when the destination changes, not on every pointer event.
+    if (_hoveredTargetId != target?.id) {
+      setState(() => _hoveredTargetId = target?.id);
+    }
   }
 
-  void _finishDrag() {
+  void _finishDrag(String objectId) {
+    if (_draggedId != objectId) return;
     final pieceId = _draggedId;
     final targetId = _hoveredTargetId;
     _releaseDirectManipulation();
@@ -100,6 +174,11 @@ final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
     widget.onPieceMove(pieceId, target.id);
   }
 
+  void _cancelDrag(String objectId) {
+    if (_draggedId != objectId) return;
+    _releaseDirectManipulation();
+  }
+
   void _releaseDirectManipulation() {
     final wasDragging = _draggedId != null;
     if (wasDragging) widget.onDirectManipulationChanged?.call(false);
@@ -109,10 +188,26 @@ final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
       return;
     }
     setState(() {
+      _returningId = _draggedId;
+      _returnFrom = _dragOffset;
       _draggedId = null;
       _hoveredTargetId = null;
       _dragOffset = Offset.zero;
     });
+    if (_reducedMotion) {
+      _translation.value = Offset.zero;
+    } else if (_returnFrom != Offset.zero) {
+      unawaited(_returnMotion.forward(from: 0));
+    }
+  }
+
+  GameSceneRect _placedRect(GameSceneObject object) {
+    final targetId = widget.placements[object.id];
+    return widget.scene.targets
+            .where((target) => target.id == targetId)
+            .firstOrNull
+            ?.rect ??
+        object.rect;
   }
 
   KeyEventResult _onActivate(KeyEvent event, VoidCallback action) {
@@ -247,50 +342,49 @@ final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
       key: ValueKey<String>('scene-object:${object.id}'),
       duration: reduced || activeCue != null
           ? Duration.zero
-          : const Duration(milliseconds: 180),
+          : const Duration(milliseconds: 220),
       curve: Curves.easeOutBack,
       left: rect.x * width,
       top: rect.y * height,
       width: rect.width * width,
       height: rect.height * height,
-      child: Focus(
-        canRequestFocus: movable,
-        skipTraversal: !movable,
-        onKeyEvent: movable
-            ? (_, event) => _onActivate(event, () => _tapObject(object))
-            : null,
-        child: Semantics(
-          button: movable,
-          label: object.semanticLabel,
-          selected: selected,
-          onTap: movable ? () => _tapObject(object) : null,
-          child: GestureDetector(
+      child: ValueListenableBuilder<Offset>(
+        valueListenable: _draggedId == object.id || _returningId == object.id
+            ? _translation
+            : const AlwaysStoppedAnimation<Offset>(Offset.zero),
+        builder: (context, offset, child) => Transform.translate(
+          offset: _draggedId == object.id || _returningId == object.id
+              ? offset
+              : Offset.zero,
+          child: child,
+        ),
+        child: Focus(
+          canRequestFocus: movable,
+          skipTraversal: !movable,
+          onKeyEvent: movable
+              ? (_, event) => _onActivate(event, () => _tapObject(object))
+              : null,
+          child: Semantics(
+            button: movable,
+            label: object.semanticLabel,
+            selected: selected,
             onTap: movable ? () => _tapObject(object) : null,
-            onPanDown: movable ? (_) => _beginDrag(object) : null,
-            onPanStart: movable ? (_) => _beginDrag(object) : null,
-            onPanUpdate: movable
-                ? (details) => _updateDrag(details, object, width, height)
-                : null,
-            onPanEnd: movable ? (_) => _finishDrag() : null,
-            onPanCancel: movable ? _releaseDirectManipulation : null,
-            child: AnimatedSlide(
-              duration: reduced
-                  ? Duration.zero
-                  : const Duration(milliseconds: 110),
-              curve: Curves.easeOutCubic,
-              offset: Offset(
-                rect.width * width == 0
-                    ? 0
-                    : _dragOffset.dx / (rect.width * width),
-                rect.height * height == 0
-                    ? 0
-                    : _dragOffset.dy / (rect.height * height),
-              ),
+            child: GestureDetector(
+              dragStartBehavior: DragStartBehavior.down,
+              onTap: movable ? () => _tapObject(object) : null,
+              onPanDown: movable ? (_) => _beginDrag(object) : null,
+              onPanStart: movable ? (_) => _beginDrag(object) : null,
+              onPanUpdate: movable
+                  ? (details) => _updateDrag(details, object, width, height)
+                  : null,
+              onPanEnd: movable ? (_) => _finishDrag(object.id) : null,
+              onPanCancel: movable ? () => _cancelDrag(object.id) : null,
               child: AnimatedScale(
                 duration: reduced
                     ? Duration.zero
                     : const Duration(milliseconds: 120),
                 scale: selected ? 1.08 : 1,
+                curve: Curves.easeOutBack,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     color: isCup
