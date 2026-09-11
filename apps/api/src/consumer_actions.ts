@@ -9,6 +9,7 @@ export const CONSUMER_ACTION_EVENT = Object.freeze({
   topicMuted: 'topic_muted',
   topicUnmuted: 'topic_unmuted',
   playReported: 'play_reported',
+  gamePinsChanged: 'game_pins_changed',
 } as const);
 
 const CONSUMER_ACTION_EVENTS = new Set<string>(Object.values(CONSUMER_ACTION_EVENT));
@@ -79,6 +80,9 @@ export async function projectConsumerActionEvent(
       return;
     case CONSUMER_ACTION_EVENT.playReported:
       await validateReport(client, event);
+      return;
+    case CONSUMER_ACTION_EVENT.gamePinsChanged:
+      await projectGamePins(client, event, receivedAt);
       return;
   }
 }
@@ -162,6 +166,41 @@ async function validateReport(client: PoolClient, event: EventInput): Promise<vo
   await assertPlayRevision(client, identity.playId, identity.revisionId);
 }
 
+/**
+ * Pins are one atomic ordered collection.  Projecting the complete list means
+ * a reordered list can never be partly observed after a retry or reconnect.
+ * Pins intentionally do not affect recommendation state.
+ */
+async function projectGamePins(
+  client: PoolClient,
+  event: EventInput,
+  receivedAt: string,
+): Promise<void> {
+  const familyIds = familyIdsFromPayload(event.payload);
+  if (familyIds.length > 0) {
+    const known = await client.query<{id: string}>(
+      `select distinct id from game_family_revisions where id = any($1::text[])`,
+      [familyIds],
+    );
+    if (known.rowCount !== familyIds.length) {
+      throw new ConsumerActionEventError('Consumer action references an unknown game family.');
+    }
+  }
+  await client.query(
+    `insert into actor_game_pins (
+       actor_id, family_ids, event_received_at, event_id
+     ) values ($1, $2::jsonb, $3, $4)
+     on conflict (actor_id) do update set
+       family_ids = excluded.family_ids,
+       event_received_at = excluded.event_received_at,
+       event_id = excluded.event_id,
+       updated_at = now()
+     where (excluded.event_received_at, excluded.event_id)
+           > (actor_game_pins.event_received_at, actor_game_pins.event_id)`,
+    [event.actorId, JSON.stringify(familyIds), receivedAt, event.eventId],
+  );
+}
+
 async function invalidateFeedDecisions(client: PoolClient, actorId: string): Promise<void> {
   await client.query('delete from feed_decisions where actor_id = $1', [actorId]);
 }
@@ -195,6 +234,18 @@ async function assertTopic(client: PoolClient, topicId: string): Promise<void> {
 
 function payloadText(event: EventInput, key: string, maxLength: number): string {
   return requiredText(event.payload[key], `payload.${key}`, maxLength);
+}
+
+function familyIdsFromPayload(payload: Record<string, unknown>): string[] {
+  const raw = payload.familyIds;
+  if (!Array.isArray(raw) || raw.length > 6) {
+    throw new ConsumerActionEventError('payload.familyIds must contain zero to six game families.');
+  }
+  const familyIds = raw.map((value) => requiredText(value, 'payload.familyIds[]', 200));
+  if (new Set(familyIds).size !== familyIds.length) {
+    throw new ConsumerActionEventError('payload.familyIds must not contain duplicates.');
+  }
+  return familyIds;
 }
 
 function requiredText(value: unknown, name: string, maxLength: number): string {
