@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
+import {readFile} from 'node:fs/promises';
 import {test} from 'node:test';
 import {
   assertProductionCatalogIntegrity,
   moveSegment,
 } from '../src/catalog_integrity.js';
 import {productionCatalogIntegrityFixture} from '../src/production_catalog.js';
+import {echoArchitectAudioAssets} from '../src/curated_audio.js';
 
 test('pattern task has a neutral missing slot and no pre-answer solution', () => {
   const play = productionCatalogIntegrityFixture.plays.find(
@@ -413,4 +416,20 @@ test('catalog integrity rejects a Second Thought decision scored against advice'
     ),
     /second_thought_evidence_mismatch/,
   );
+});
+
+test('Echo Architect has six frozen public-domain motifs and exact piano answers', async () => {
+  const reviews = productionCatalogIntegrityFixture.reviews.filter(
+    (review) => review.kind === 'echo_architect',
+  );
+  assert.equal(reviews.length, 6);
+  assert.equal(new Set(reviews.map((review) => review.playId)).size, 6);
+  assert.deepEqual(
+    new Set(reviews.map((review) => review.audioAssetId)),
+    new Set(echoArchitectAudioAssets.map((asset) => asset.assetId)),
+  );
+  for (const asset of echoArchitectAudioAssets) {
+    const bytes = await readFile(new URL(`../${asset.sourcePath}`, import.meta.url));
+    assert.equal(createHash('sha256').update(bytes).digest('hex'), asset.sourceSha256);
+  }
 });

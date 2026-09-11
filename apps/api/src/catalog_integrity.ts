@@ -147,6 +147,13 @@ export type CatalogIntegrityReview =
       readonly sourceAssetId: string;
       readonly solvedAssetId: string;
       readonly revealStartsWith: string;
+    }
+  | {
+      readonly kind: 'echo_architect';
+      readonly playId: string;
+      readonly revisionId: string;
+      readonly audioAssetId: string;
+      readonly sequence: readonly string[];
     };
 
 export interface MatchstickDestination {
@@ -158,6 +165,7 @@ export interface MatchstickDestination {
 export interface ProductionCatalogIntegrityFixture {
   readonly plays: readonly StarterPlayIntegrityInput[];
   readonly canvasAssets: readonly CanvasAssetDocument[];
+  readonly audioAssetIds?: readonly string[];
   readonly reviews: readonly CatalogIntegrityReview[];
 }
 
@@ -351,10 +359,10 @@ export function assertProductionCatalogIntegrity(
     const states = record(play.document.states, `${review.playId}.states`);
     const entryStateId = string(play.document.entryState, `${review.playId}.entryState`);
     const entryState = record(states[entryStateId], `${review.playId}.${entryStateId}`);
-    const primaryAsset = review.kind === 'sleight' || review.kind === 'constellation'
+    const primaryAsset = review.kind === 'sleight' || review.kind === 'constellation' || review.kind === 'echo_architect'
       ? undefined
       : assetById.get(firstAssetId(play.document.assets, review.playId));
-    if (review.kind !== 'sleight' && review.kind !== 'constellation' && primaryAsset === undefined) {
+    if (review.kind !== 'sleight' && review.kind !== 'constellation' && review.kind !== 'echo_architect' && primaryAsset === undefined) {
       throw new Error(`missing_canvas_asset:${review.playId}`);
     }
     switch (review.kind) {
@@ -384,10 +392,43 @@ export function assertProductionCatalogIntegrity(
         break;
       case 'evidence_lens':
         assertEvidenceLensReview(review, entryState, states, assetById);
-        break;      case 'counterexample':
+        break;
+      case 'counterexample':
         assertCounterexampleReview(review, entryState, states, assetById);
         break;
+      case 'echo_architect':
+        assertEchoArchitectReview(
+          review,
+          play.document,
+          entryState,
+          new Set(fixture.audioAssetIds ?? []),
+        );
+        break;
     }
+  }
+}
+
+function assertEchoArchitectReview(
+  review: Extract<CatalogIntegrityReview, {kind: 'echo_architect'}>,
+  document: StarterPlayIntegrityDocument,
+  entryState: Record<string, unknown>,
+  audioAssetIds: ReadonlySet<string>,
+): void {
+  const assets = document.assets;
+  const input = record(entryState.input, `${review.playId}.input`);
+  const validation = record(entryState.validation, `${review.playId}.validation`);
+  const layers = presentationLayers(entryState, review.playId);
+  if (
+    !audioAssetIds.has(review.audioAssetId) ||
+    !Array.isArray(assets) ||
+    assets.length !== 1 ||
+    assets[0] !== review.audioAssetId ||
+    input.type !== 'piano_key' ||
+    input.sequenceLength !== review.sequence.length ||
+    canonicalJson(validation.value) !== canonicalJson(review.sequence) ||
+    !layers.some((layer) => layer.type === 'audio' && layer.assetId === review.audioAssetId)
+  ) {
+    throw new Error(`echo_architect_round_mismatch:${review.playId}`);
   }
 }
 

@@ -8,6 +8,7 @@ import {
   productionStarterCount,
   verifyProductionCatalog,
 } from '../src/production_catalog.js';
+import {echoArchitectAudioAssets} from '../src/curated_audio.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 
@@ -145,6 +146,9 @@ test(
                 (layer.type === 'canvas' &&
                   layer.assetId !== undefined &&
                   playAssets.has(layer.assetId)) ||
+                (layer.type === 'audio' &&
+                  layer.assetId !== undefined &&
+                  playAssets.has(layer.assetId)) ||
                 (layer.type === 'scene' && layer.scene !== undefined),
             ),
           );
@@ -168,16 +172,28 @@ test(
         assert.equal(new Set(topics).size, topics.length);
       }
 
-      const eligibleAssetIds = eligible.rows.flatMap(
-        (row) => row.document.assets ?? [],
-      );
+      const eligibleCanvasAssetIds = eligible.rows.flatMap((row) => {
+        const assets = new Set(row.document.assets ?? []);
+        return Object.values(row.document.states ?? {}).flatMap((state) =>
+          state.presentation?.layers?.flatMap((layer) =>
+            layer.type === 'canvas' &&
+                    layer.assetId !== undefined &&
+                    assets.has(layer.assetId)
+                ? [layer.assetId]
+                : [],
+          ) ?? [],
+        );
+      });
       const eligibleCanvases = await pool.query<{
         document: {palette?: Record<string, string>};
       }>(
         'select document from canvas_assets where id = any($1::text[])',
-        [eligibleAssetIds],
+        [eligibleCanvasAssetIds],
       );
-      assert.equal(eligibleCanvases.rows.length, new Set(eligibleAssetIds).size);
+      assert.equal(
+        eligibleCanvases.rows.length,
+        new Set(eligibleCanvasAssetIds).size,
+      );
       assert.ok(
         new Set(
           eligibleCanvases.rows.map((row) => JSON.stringify(row.document.palette)),
@@ -274,13 +290,19 @@ test(
       const assetIds = new Set(
         documents.rows.flatMap((row) => row.document.assets ?? []),
       );
+      const audioAssetIds = new Set(
+        echoArchitectAudioAssets.map((asset) => asset.assetId),
+      );
+      const canvasAssetIds = new Set(
+        [...assetIds].filter((assetId) => !audioAssetIds.has(assetId)),
+      );
       const registered = await pool.query<{id: string}>(
         'select id from canvas_assets where id = any($1::text[])',
-        [[...assetIds]],
+        [[...canvasAssetIds]],
       );
       assert.deepEqual(
         new Set(registered.rows.map((row) => row.id)),
-        assetIds,
+        canvasAssetIds,
       );
     } finally {
       await pool.query('delete from plays where id = $1', [unrelated]);

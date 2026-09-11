@@ -38,9 +38,10 @@ import {
   type CounterexampleClaim,
   type CounterexampleTile,
 } from './counterexample_solver.js';
+import {echoArchitectAudioAssets} from './curated_audio.js';
 
 export const productionStarterPrefix = 'mixli_starter_';
-export const productionStarterCount = 53;
+export const productionStarterCount = 59;
 
 export interface ProductionCatalogStatus {
   eligiblePlays: number;
@@ -402,6 +403,12 @@ interface CounterexampleRoundSpec {
   readonly topics: readonly [string, string];
   readonly claim: CounterexampleClaim;
   readonly tiles: readonly CounterexampleTileSpec[];
+}
+
+interface EchoArchitectRoundSpec {
+  readonly id: string;
+  readonly assetId: string;
+  readonly sequence: readonly ['C4' | 'D#4' | 'F#4', 'C4' | 'D#4' | 'F#4', 'C4' | 'D#4' | 'F#4'];
 }
 
 const additionalMatchstickRoundSpecs: readonly MatchstickRoundSpec[] = [
@@ -2315,12 +2322,63 @@ function evidenceLensRound(spec: EvidenceLensRoundSpec): StarterPlay {
     },
   };
 }
+
+const echoArchitectRoundSpecs: readonly EchoArchitectRoundSpec[] = [
+  {id: 'mixli_starter_echo_architect_one', assetId: 'mixli_audio_echo_c4_dsharp4_fsharp4', sequence: ['C4', 'D#4', 'F#4']},
+  {id: 'mixli_starter_echo_architect_two', assetId: 'mixli_audio_echo_fsharp4_c4_dsharp4', sequence: ['F#4', 'C4', 'D#4']},
+  {id: 'mixli_starter_echo_architect_three', assetId: 'mixli_audio_echo_dsharp4_fsharp4_c4', sequence: ['D#4', 'F#4', 'C4']},
+  {id: 'mixli_starter_echo_architect_four', assetId: 'mixli_audio_echo_c4_fsharp4_dsharp4', sequence: ['C4', 'F#4', 'D#4']},
+  {id: 'mixli_starter_echo_architect_five', assetId: 'mixli_audio_echo_dsharp4_c4_fsharp4', sequence: ['D#4', 'C4', 'F#4']},
+  {id: 'mixli_starter_echo_architect_six', assetId: 'mixli_audio_echo_fsharp4_dsharp4_c4', sequence: ['F#4', 'D#4', 'C4']},
+];
+
+function echoArchitectRound(spec: EchoArchitectRoundSpec): StarterPlay {
+  const revealed = spec.sequence.map((note) => note.replace('#', '♯')).join(' · ');
+  return {
+    id: spec.id,
+    revisionId: 'rev_1',
+    topics: ['music', 'attention'],
+    document: {
+      schemaVersion: 1,
+      id: spec.id,
+      revisionId: 'rev_1',
+      format: 'play',
+      classification: 'challenge',
+      topics: ['music', 'attention'],
+      learningTopics: ['ear-training'],
+      estimatedDurationSec: 16,
+      assets: [spec.assetId],
+      sources: [],
+      entryState: 'listen',
+      states: {
+        listen: {
+          presentation: {layers: [
+            {type: 'audio', role: 'media', assetId: spec.assetId},
+            {type: 'text', role: 'prompt', value: 'Play it back.'},
+          ]},
+          input: {type: 'piano_key', keys: ['C4', 'D#4', 'F#4'], sequenceLength: 3},
+          validation: {type: 'ordered_sequence', value: spec.sequence},
+          transition: {correct: 'reveal', incorrect: 'listen'},
+        },
+        reveal: {
+          presentation: {layers: [
+            {type: 'text', role: 'reveal_title', value: revealed},
+          ]},
+          input: {type: 'tap', label: 'Done'},
+          validation: {type: 'none'},
+          transition: {default: '$end'},
+        },
+      },
+    },
+  };
+}
 const sleightRounds = sleightRoundSpecs.map(sleightRound);
 const constellationRounds = constellationRoundSpecs.map(constellationRound);
 const counterexampleRounds = counterexampleRoundSpecs.map(counterexampleRound);
 const evidenceLensRounds = evidenceLensRoundSpecs.map(evidenceLensRound);
 const ruleFlipRounds = ruleFlipRoundSpecs.map(ruleFlipRound);
 const secondThoughtRounds = secondThoughtRoundSpecs.map(secondThoughtRound);
+const echoArchitectRounds = echoArchitectRoundSpecs.map(echoArchitectRound);
 
 const releaseV3StarterPlays: readonly StarterPlay[] = [
   moveOneMatchV3,
@@ -2362,6 +2420,7 @@ const authoredStarterPlays = [
   ...evidenceLensRounds,
   ...ruleFlipRounds,
   ...secondThoughtRounds,
+  ...echoArchitectRounds,
 ] as const;
 
 type StarterFamilyId =
@@ -2372,7 +2431,8 @@ type StarterFamilyId =
   | 'counterexample'
   | 'evidence-lens'
   | 'rule-flip'
-  | 'second-thought';
+  | 'second-thought'
+  | 'echo-architect';
 
 const starterFamilyRevision = 'rev_1';
 
@@ -2388,6 +2448,7 @@ function starterFamilyId(playId: string): StarterFamilyId | undefined {
   if (playId.startsWith('mixli_starter_evidence_lens_')) return 'evidence-lens';
   if (playId.startsWith('mixli_starter_rule_flip_')) return 'rule-flip';
   if (playId.startsWith('mixli_starter_second_thought_')) return 'second-thought';
+  if (playId.startsWith('mixli_starter_echo_architect_')) return 'echo-architect';
   return undefined;
 }
 
@@ -2414,6 +2475,7 @@ const starterFamilyManifests: readonly GameFamilyManifest[] = [
   'evidence-lens',
   'rule-flip',
   'second-thought',
+  'echo-architect',
 ].map((id) => ({
   id,
   revisionId: starterFamilyRevision,
@@ -2608,11 +2670,19 @@ const starterIntegrityReviews: readonly CatalogIntegrityReview[] = [
     revisionId: 'rev_1',
     sourceAssetId: `${spec.id}_canvas`,
     round: spec.round,
+  })),
+  ...echoArchitectRoundSpecs.map((spec) => ({
+    kind: 'echo_architect' as const,
+    playId: spec.id,
+    revisionId: 'rev_1',
+    audioAssetId: spec.assetId,
+    sequence: spec.sequence,
   })),] as const;
 
 export const productionCatalogIntegrityFixture: ProductionCatalogIntegrityFixture = {
   plays: starterPlays,
   canvasAssets: canvasAssets.map((asset) => normalizeCanvasAssetDocument(asset)),
+  audioAssetIds: echoArchitectAudioAssets.map((asset) => asset.assetId),
   reviews: starterIntegrityReviews,
 };
 
