@@ -178,6 +178,8 @@ final class _PlaySurfaceState extends State<PlaySurface> {
                                               targetId: targetId,
                                             ),
                                           ),
+                                      onDirectManipulationChanged:
+                                          widget.onDirectManipulationChanged,
                                     ),
                                   )
                                 : _buildMedia(context, slot.layer),

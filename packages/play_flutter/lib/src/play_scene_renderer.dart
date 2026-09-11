@@ -9,12 +9,14 @@ final class PlaySceneRenderer extends StatefulWidget {
     required this.scene,
     required this.onPieceMove,
     this.placements = const {},
+    this.onDirectManipulationChanged,
     super.key,
   });
 
   final GameSceneDefinition scene;
   final Map<String, String> placements;
   final void Function(String pieceId, String targetId) onPieceMove;
+  final ValueChanged<bool>? onDirectManipulationChanged;
 
   @override
   State<PlaySceneRenderer> createState() => _PlaySceneRendererState();
@@ -22,17 +24,90 @@ final class PlaySceneRenderer extends StatefulWidget {
 
 final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
   String? _selectedId;
+  String? _draggedId;
+  String? _hoveredTargetId;
+  Offset _dragOffset = Offset.zero;
 
   void _select(GameSceneObject object) {
     if (!object.movable) return;
     setState(() => _selectedId = object.id);
   }
 
+  void _tapObject(GameSceneObject object) {
+    _releaseDirectManipulation();
+    _select(object);
+  }
+
   void _move(GameSceneTarget target) {
     final pieceId = _selectedId;
     if (pieceId == null) return;
+    _releaseDirectManipulation();
     setState(() => _selectedId = null);
     widget.onPieceMove(pieceId, target.id);
+  }
+
+  void _beginDrag(GameSceneObject object) {
+    if (!object.movable) return;
+    if (_draggedId == null) widget.onDirectManipulationChanged?.call(true);
+    setState(() {
+      _selectedId = object.id;
+      _draggedId = object.id;
+      _dragOffset = Offset.zero;
+      _hoveredTargetId = null;
+    });
+  }
+
+  void _updateDrag(
+    DragUpdateDetails details,
+    GameSceneObject object,
+    double width,
+    double height,
+  ) {
+    if (_draggedId != object.id) return;
+    final offset = _dragOffset + details.delta;
+    final centerX =
+        object.rect.x * width + object.rect.width * width / 2 + offset.dx;
+    final centerY =
+        object.rect.y * height + object.rect.height * height / 2 + offset.dy;
+    final target = widget.scene.targets.where((candidate) {
+      final rect = candidate.rect;
+      return centerX >= rect.x * width &&
+          centerX <= (rect.x + rect.width) * width &&
+          centerY >= rect.y * height &&
+          centerY <= (rect.y + rect.height) * height;
+    }).firstOrNull;
+    setState(() {
+      _dragOffset = offset;
+      _hoveredTargetId = target?.id;
+    });
+  }
+
+  void _finishDrag() {
+    final pieceId = _draggedId;
+    final targetId = _hoveredTargetId;
+    _releaseDirectManipulation();
+    if (pieceId == null || targetId == null) return;
+    final target = widget.scene.targets
+        .where((candidate) => candidate.id == targetId)
+        .firstOrNull;
+    if (target == null) return;
+    setState(() => _selectedId = null);
+    widget.onPieceMove(pieceId, target.id);
+  }
+
+  void _releaseDirectManipulation() {
+    final wasDragging = _draggedId != null;
+    if (wasDragging) widget.onDirectManipulationChanged?.call(false);
+    if (_draggedId == null &&
+        _hoveredTargetId == null &&
+        _dragOffset == Offset.zero) {
+      return;
+    }
+    setState(() {
+      _draggedId = null;
+      _hoveredTargetId = null;
+      _dragOffset = Offset.zero;
+    });
   }
 
   @override
@@ -82,8 +157,15 @@ final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
                 : const Duration(milliseconds: 140),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: colors.primary, width: 2),
-              color: colors.primary.withValues(alpha: .10),
+              border: Border.all(
+                color: _hoveredTargetId == target.id
+                    ? colors.primary
+                    : colors.outlineVariant,
+                width: _hoveredTargetId == target.id ? 3 : 2,
+              ),
+              color: colors.primary.withValues(
+                alpha: _hoveredTargetId == target.id ? .18 : .10,
+              ),
             ),
           ),
         ),
@@ -125,30 +207,51 @@ final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
         label: object.semanticLabel,
         selected: selected,
         child: GestureDetector(
-          onTap: object.movable ? () => _select(object) : null,
-          child: AnimatedScale(
+          onTap: object.movable ? () => _tapObject(object) : null,
+          onPanDown: object.movable ? (_) => _beginDrag(object) : null,
+          onPanStart: object.movable ? (_) => _beginDrag(object) : null,
+          onPanUpdate: object.movable
+              ? (details) => _updateDrag(details, object, width, height)
+              : null,
+          onPanEnd: object.movable ? (_) => _finishDrag() : null,
+          onPanCancel: object.movable ? _releaseDirectManipulation : null,
+          child: AnimatedSlide(
             duration: reduced
                 ? Duration.zero
-                : const Duration(milliseconds: 120),
-            scale: selected ? 1.08 : 1,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: color,
-                shape: object.shape == GameSceneShape.circle
-                    ? BoxShape.circle
-                    : BoxShape.rectangle,
-                borderRadius: object.shape == GameSceneShape.roundedRect
-                    ? BorderRadius.circular(999)
-                    : null,
-                boxShadow: selected
-                    ? [
-                        BoxShadow(
-                          color: colors.shadow.withValues(alpha: .22),
-                          offset: const Offset(0, 4),
-                          blurRadius: 8,
-                        ),
-                      ]
-                    : const [],
+                : const Duration(milliseconds: 110),
+            curve: Curves.easeOutCubic,
+            offset: Offset(
+              rect.width * width == 0
+                  ? 0
+                  : _dragOffset.dx / (rect.width * width),
+              rect.height * height == 0
+                  ? 0
+                  : _dragOffset.dy / (rect.height * height),
+            ),
+            child: AnimatedScale(
+              duration: reduced
+                  ? Duration.zero
+                  : const Duration(milliseconds: 120),
+              scale: selected ? 1.08 : 1,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: color,
+                  shape: object.shape == GameSceneShape.circle
+                      ? BoxShape.circle
+                      : BoxShape.rectangle,
+                  borderRadius: object.shape == GameSceneShape.roundedRect
+                      ? BorderRadius.circular(999)
+                      : null,
+                  boxShadow: selected
+                      ? [
+                          BoxShadow(
+                            color: colors.shadow.withValues(alpha: .22),
+                            offset: const Offset(0, 4),
+                            blurRadius: 8,
+                          ),
+                        ]
+                      : const [],
+                ),
               ),
             ),
           ),

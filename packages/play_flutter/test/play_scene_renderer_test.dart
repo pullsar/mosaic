@@ -27,10 +27,10 @@ void main() {
         {
           'id': 'slot',
           'semanticLabel': 'Open slot',
-          'x': .7,
-          'y': .4,
-          'width': .05,
-          'height': .2,
+          'x': .6,
+          'y': .2,
+          'width': .3,
+          'height': .4,
         },
       ],
     });
@@ -57,6 +57,61 @@ void main() {
 
     expect(moves, [('match', 'slot')]);
   });
+
+  testWidgets(
+    'scene drag commits one legal piece move and releases its lease',
+    (tester) async {
+      final moves = <(String, String)>[];
+      final manipulation = <bool>[];
+      final scene = GameSceneDefinition.fromJson({
+        'version': 1,
+        'objects': [
+          {
+            'id': 'match',
+            'semanticLabel': 'Vertical match',
+            'shape': 'rounded_rect',
+            'x': .2,
+            'y': .2,
+            'width': .05,
+            'height': .2,
+            'tone': 'accent',
+            'movable': true,
+          },
+        ],
+        'targets': [
+          {
+            'id': 'slot',
+            'semanticLabel': 'Open slot',
+            'x': .6,
+            'y': .2,
+            'width': .3,
+            'height': .4,
+          },
+        ],
+      });
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Center(
+            child: SizedBox.square(
+              dimension: 300,
+              child: PlaySceneRenderer(
+                scene: scene,
+                onPieceMove: (piece, target) => moves.add((piece, target)),
+                onDirectManipulationChanged: manipulation.add,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final match = find.bySemanticsLabel('Vertical match');
+      await tester.dragFrom(tester.getCenter(match), const Offset(160, 0));
+      await tester.pumpAndSettle();
+
+      expect(manipulation, [true, false]);
+      expect(moves, [('match', 'slot')]);
+    },
+  );
 
   testWidgets('scene move resolves through the shared Play surface', (
     tester,
