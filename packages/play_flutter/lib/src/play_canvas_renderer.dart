@@ -419,25 +419,38 @@ final class _PlayCanvasPainter extends CustomPainter {
             element.rect.width * size.width,
             element.rect.height * size.height,
           );
+          final shape = RRect.fromRectAndRadius(
+            rect,
+            Radius.circular(element.radius * shortest),
+          );
+          if (element.fill) {
+            canvas.drawRRect(
+              shape.shift(Offset(0, _depthOffset(rect.height, shortest))),
+              Paint()..color = _depthColor(element.tone),
+            );
+          }
           final paint = Paint()
             ..color = _color(element.tone)
             ..strokeWidth = element.strokeWidth * shortest
             ..style = element.fill ? PaintingStyle.fill : PaintingStyle.stroke;
-          canvas.drawRRect(
-            RRect.fromRectAndRadius(
-              rect,
-              Radius.circular(element.radius * shortest),
-            ),
-            paint,
-          );
+          canvas.drawRRect(shape, paint);
         case PlayCanvasCircle():
+          final radius = element.radius * shortest;
+          if (element.fill) {
+            canvas.drawCircle(
+              _point(element.center, size) +
+                  Offset(0, _depthOffset(radius, shortest)),
+              radius,
+              Paint()..color = _depthColor(element.tone),
+            );
+          }
           final paint = Paint()
             ..color = _color(element.tone)
             ..strokeWidth = element.strokeWidth * shortest
             ..style = element.fill ? PaintingStyle.fill : PaintingStyle.stroke;
           canvas.drawCircle(
             _point(element.center, size),
-            element.radius * shortest,
+            radius,
             paint,
           );
         case PlayCanvasLabel():
@@ -482,6 +495,14 @@ final class _PlayCanvasPainter extends CustomPainter {
       PlayCanvasTone.accent => colorScheme.primary,
       PlayCanvasTone.surface => colorScheme.surfaceContainerHighest,
     };
+  }
+
+  double _depthOffset(double extent, double shortest) =>
+      math.min(shortest * 0.012, extent * 0.22);
+
+  Color _depthColor(PlayCanvasTone tone) {
+    final background = asset.palette?.background ?? colorScheme.surface;
+    return Color.alphaBlend(background.withValues(alpha: 0.42), _color(tone));
   }
 
   @override
