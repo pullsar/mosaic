@@ -167,50 +167,64 @@ final class _PlayMultipleChoiceInputState
   }
 
   @override
-  Widget build(BuildContext context) => Semantics(
-    container: true,
-    label: 'Multiple choice',
-    child: SizedBox(
-      height: 48,
-      child: Row(
-        children: [
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  for (final option in widget.options)
-                    Padding(
-                      padding: const EdgeInsetsDirectional.only(end: 8),
-                      child: ChoiceChip(
-                        label: Text(option.label),
-                        selected: _selected.contains(option.id),
-                        onSelected: (selected) => _toggle(option.id, selected),
+  Widget build(BuildContext context) {
+    final reduced = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    return Semantics(
+      container: true,
+      label: 'Multiple choice',
+      child: SizedBox(
+        height: 48,
+        child: Row(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    for (final option in widget.options)
+                      AnimatedScale(
+                        key: ValueKey<String>(
+                          'multiple-choice-motion:${option.id}',
+                        ),
+                        scale: _selected.contains(option.id) ? 1.04 : 1,
+                        duration: reduced
+                            ? Duration.zero
+                            : MosaicVisualTokens.fastFeedback,
+                        curve: Curves.easeOutBack,
+                        child: Padding(
+                          padding: const EdgeInsetsDirectional.only(end: 8),
+                          child: ChoiceChip(
+                            label: Text(option.label),
+                            selected: _selected.contains(option.id),
+                            onSelected: (selected) =>
+                                _toggle(option.id, selected),
+                          ),
+                        ),
                       ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-          Tooltip(
-            message: 'Submit selection',
-            child: Semantics(
-              button: true,
-              label: 'Submit selection',
-              child: FilledButton(
-                onPressed: _selected.isEmpty ? null : _submit,
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size.square(48),
-                  padding: EdgeInsets.zero,
+                  ],
                 ),
-                child: const Icon(Icons.check_rounded),
               ),
             ),
-          ),
-        ],
+            Tooltip(
+              message: 'Submit selection',
+              child: Semantics(
+                button: true,
+                label: 'Submit selection',
+                child: FilledButton(
+                  onPressed: _selected.isEmpty ? null : _submit,
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.square(48),
+                    padding: EdgeInsets.zero,
+                  ),
+                  child: const Icon(Icons.check_rounded),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 final class PlayPianoInputSpec {

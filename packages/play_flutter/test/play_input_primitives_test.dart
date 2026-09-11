@@ -26,6 +26,14 @@ void main() {
 
     await tester.tap(find.bySemanticsLabel('Orbit'));
     await tester.pump();
+    expect(
+      tester
+          .widget<AnimatedScale>(
+            find.byKey(const ValueKey<String>('multiple-choice-motion:orbit')),
+          )
+          .scale,
+      1.04,
+    );
     await tester.tap(find.bySemanticsLabel('Beacon'));
     await tester.pump();
     await tester.tap(find.byTooltip('Submit selection'));
