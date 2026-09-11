@@ -5,6 +5,7 @@ import {Pool} from 'pg';
 import {
   applyProductionCatalog,
   productionCatalogIntegrityFixture,
+  productionStarterCount,
   verifyProductionCatalog,
 } from '../src/production_catalog.js';
 
@@ -71,7 +72,10 @@ test(
           order by catalog.play_id, catalog.revision_id`,
       );
 
-      assert.deepEqual(first, {eligiblePlays: 7, canvasAssets: 24});
+      assert.deepEqual(first, {
+        eligiblePlays: productionStarterCount,
+        canvasAssets: productionCatalogIntegrityFixture.canvasAssets.length,
+      });
       assert.deepEqual(second, first);
       assert.deepEqual(afterRetry.rows, beforeRetry.rows);
       assert.deepEqual(await verifyProductionCatalog(pool), first);
@@ -131,7 +135,7 @@ test(
             and catalog.state = 'eligible'
           order by catalog.curated_order`,
       );
-      assert.equal(eligible.rows.length, 7);
+      assert.equal(eligible.rows.length, productionStarterCount);
       assert.equal(
         eligible.rows.filter((row) => {
           const playAssets = new Set(row.document.assets ?? []);
@@ -142,7 +146,7 @@ test(
               playAssets.has(layer.assetId),
           );
         }).length,
-        7,
+        productionStarterCount,
       );
       const interactionTypes = new Set(
         eligible.rows.map((row) => {
@@ -171,7 +175,7 @@ test(
         'select document from canvas_assets where id = any($1::text[])',
         [eligibleAssetIds],
       );
-      assert.equal(eligibleCanvases.rows.length, 10);
+      assert.equal(eligibleCanvases.rows.length, new Set(eligibleAssetIds).size);
       assert.ok(
         new Set(
           eligibleCanvases.rows.map((row) => JSON.stringify(row.document.palette)),

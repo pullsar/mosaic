@@ -110,6 +110,15 @@ test('Quiet Switch changes only the vase between observation and choice', () => 
   assert.equal(after.elements[2]!.type, 'circle');
 });
 
+test('the observation pack contains six independently reviewed Quiet Switch rounds', () => {
+  const reviews = productionCatalogIntegrityFixture.reviews.filter(
+    (review) => review.kind === 'quiet_switch',
+  );
+
+  assert.equal(reviews.length, 6);
+  assert.equal(new Set(reviews.map((review) => review.playId)).size, 6);
+});
+
 test('moving a piece preserves count and the original configuration', () => {
   const before = new Set(['a', 'b']);
 

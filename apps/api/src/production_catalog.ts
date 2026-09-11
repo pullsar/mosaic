@@ -13,7 +13,7 @@ import {
 import {canonicalJson} from './media.js';
 
 export const productionStarterPrefix = 'mixli_starter_';
-export const productionStarterCount = 7;
+export const productionStarterCount = 12;
 
 export interface ProductionCatalogStatus {
   eligiblePlays: number;
@@ -433,6 +433,125 @@ const quietSwitchRoom = [
   {type: 'line', x1: 0.72, y1: 0.62, x2: 0.72, y2: 0.38, width: 0.018, tone: 'muted'},
   {type: 'circle', x: 0.72, y: 0.32, radius: 0.075, fill: true, tone: 'foreground'},
 ] as const;
+type QuietSwitchSpec = {
+  readonly id: string;
+  readonly topics: readonly string[];
+  readonly assetStem: string;
+  readonly semanticLabel: string;
+  readonly elements: readonly Record<string, unknown>[];
+  readonly palette: Record<string, string>;
+  readonly changedElementIndex: number;
+  readonly changedX: number;
+  readonly answer: string;
+  readonly answerLabel: string;
+  readonly distractors: readonly {readonly id: string; readonly label: string}[];
+  readonly reveal: string;
+};
+
+const additionalQuietSwitchSpecs: readonly QuietSwitchSpec[] = [
+  {
+    id: 'mixli_starter_gallery_shift',
+    topics: ['art', 'observation'],
+    assetStem: 'gallery_shift',
+    semanticLabel: 'A gallery wall with three frames, a bench, and a red dot.',
+    elements: [
+      {type: 'rect', x: 0.1, y: 0.16, width: 0.8, height: 0.62, radius: 0.025, fill: true, tone: 'surface'},
+      {type: 'rect', x: 0.18, y: 0.27, width: 0.16, height: 0.2, radius: 0.012, fill: false, tone: 'foreground'},
+      {type: 'rect', x: 0.42, y: 0.23, width: 0.16, height: 0.24, radius: 0.012, fill: false, tone: 'foreground'},
+      {type: 'rect', x: 0.67, y: 0.28, width: 0.14, height: 0.19, radius: 0.012, fill: false, tone: 'foreground'},
+      {type: 'circle', x: 0.28, y: 0.62, radius: 0.035, fill: true, tone: 'accent'},
+      {type: 'rect', x: 0.33, y: 0.66, width: 0.34, height: 0.07, radius: 0.02, fill: true, tone: 'muted'},
+    ],
+    palette: {background: '#14151B', foreground: '#F4F0E9', accent: '#E35D58', muted: '#6B7180', surface: '#2B2F3B'},
+    changedElementIndex: 4,
+    changedX: 0.72,
+    answer: 'dot',
+    answerLabel: 'The red dot moved',
+    distractors: [{id: 'frame', label: 'A frame changed'}, {id: 'bench', label: 'The bench changed'}],
+    reveal: 'The red dot moved below the right frame.',
+  },
+  {
+    id: 'mixli_starter_garden_glance',
+    topics: ['nature', 'observation'],
+    assetStem: 'garden_glance',
+    semanticLabel: 'A night garden with planters, flowers, and one firefly.',
+    elements: [
+      {type: 'rect', x: 0.1, y: 0.61, width: 0.3, height: 0.16, radius: 0.03, fill: true, tone: 'surface'},
+      {type: 'rect', x: 0.6, y: 0.61, width: 0.3, height: 0.16, radius: 0.03, fill: true, tone: 'surface'},
+      {type: 'circle', x: 0.21, y: 0.54, radius: 0.05, fill: true, tone: 'muted'},
+      {type: 'circle', x: 0.31, y: 0.5, radius: 0.04, fill: true, tone: 'muted'},
+      {type: 'circle', x: 0.69, y: 0.52, radius: 0.05, fill: true, tone: 'muted'},
+      {type: 'circle', x: 0.27, y: 0.3, radius: 0.022, fill: true, tone: 'accent'},
+    ],
+    palette: {background: '#111F28', foreground: '#F1F5E9', accent: '#F6D365', muted: '#77A38C', surface: '#29483F'},
+    changedElementIndex: 5,
+    changedX: 0.76,
+    answer: 'firefly',
+    answerLabel: 'The firefly moved',
+    distractors: [{id: 'flower', label: 'A flower changed'}, {id: 'planter', label: 'A planter changed'}],
+    reveal: 'The firefly crossed to the right planter.',
+  },
+  {
+    id: 'mixli_starter_studio_shuffle',
+    topics: ['design', 'observation'],
+    assetStem: 'studio_shuffle',
+    semanticLabel: 'A design studio with a desk, paper, lamp, and paint pot.',
+    elements: [
+      {type: 'rect', x: 0.12, y: 0.62, width: 0.76, height: 0.12, radius: 0.025, fill: true, tone: 'surface'},
+      {type: 'rect', x: 0.3, y: 0.38, width: 0.26, height: 0.17, radius: 0.015, fill: true, tone: 'foreground'},
+      {type: 'line', x1: 0.72, y1: 0.59, x2: 0.72, y2: 0.28, width: 0.018, tone: 'muted'},
+      {type: 'circle', x: 0.72, y: 0.24, radius: 0.07, fill: true, tone: 'muted'},
+      {type: 'circle', x: 0.2, y: 0.53, radius: 0.045, fill: true, tone: 'accent'},
+    ],
+    palette: {background: '#2D2038', foreground: '#FFF2DE', accent: '#FC8A70', muted: '#B39AC7', surface: '#5A4067'},
+    changedElementIndex: 4,
+    changedX: 0.62,
+    answer: 'paint',
+    answerLabel: 'The paint pot moved',
+    distractors: [{id: 'paper', label: 'The paper changed'}, {id: 'lamp', label: 'The lamp changed'}],
+    reveal: 'The paint pot moved beside the paper.',
+  },
+  {
+    id: 'mixli_starter_bakery_blink',
+    topics: ['food', 'observation'],
+    assetStem: 'bakery_blink',
+    semanticLabel: 'A bakery counter with pastries, a cake, and one cherry.',
+    elements: [
+      {type: 'rect', x: 0.1, y: 0.61, width: 0.8, height: 0.16, radius: 0.025, fill: true, tone: 'surface'},
+      {type: 'circle', x: 0.26, y: 0.53, radius: 0.08, fill: true, tone: 'muted'},
+      {type: 'circle', x: 0.48, y: 0.51, radius: 0.1, fill: true, tone: 'foreground'},
+      {type: 'circle', x: 0.72, y: 0.53, radius: 0.08, fill: true, tone: 'muted'},
+      {type: 'circle', x: 0.48, y: 0.39, radius: 0.022, fill: true, tone: 'accent'},
+    ],
+    palette: {background: '#FFF0DE', foreground: '#513628', accent: '#D54C55', muted: '#D59B72', surface: '#EBC6A3'},
+    changedElementIndex: 4,
+    changedX: 0.72,
+    answer: 'cherry',
+    answerLabel: 'The cherry moved',
+    distractors: [{id: 'cake', label: 'The cake changed'}, {id: 'pastry', label: 'A pastry changed'}],
+    reveal: 'The cherry moved to the right pastry.',
+  },
+  {
+    id: 'mixli_starter_platform_glance',
+    topics: ['travel', 'observation'],
+    assetStem: 'platform_glance',
+    semanticLabel: 'A train platform with a bench, sign, suitcase, and clock.',
+    elements: [
+      {type: 'rect', x: 0.1, y: 0.68, width: 0.8, height: 0.08, radius: 0.02, fill: true, tone: 'surface'},
+      {type: 'rect', x: 0.24, y: 0.54, width: 0.25, height: 0.07, radius: 0.02, fill: true, tone: 'foreground'},
+      {type: 'rect', x: 0.73, y: 0.26, width: 0.08, height: 0.18, radius: 0.01, fill: true, tone: 'muted'},
+      {type: 'circle', x: 0.22, y: 0.59, radius: 0.045, fill: true, tone: 'accent'},
+      {type: 'circle', x: 0.52, y: 0.28, radius: 0.065, fill: false, tone: 'foreground'},
+    ],
+    palette: {background: '#17212D', foreground: '#F4F1E8', accent: '#E5B35A', muted: '#71869A', surface: '#34485B'},
+    changedElementIndex: 3,
+    changedX: 0.68,
+    answer: 'suitcase',
+    answerLabel: 'The suitcase moved',
+    distractors: [{id: 'bench', label: 'The bench changed'}, {id: 'clock', label: 'The clock changed'}],
+    reveal: 'The suitcase moved beside the sign.',
+  },
+];
 const routeV3Asset = verifiedCanvasAssets.find((asset) => asset.id === 'mixli_canvas_orbit_v3')!;
 const clarifiedCanvasAssets = [
   {
@@ -483,6 +602,24 @@ const quietSwitchCanvasAssets = [
     ),
     palette: quietSwitchPalette,
   },
+  ...additionalQuietSwitchSpecs.flatMap((spec) => [
+    {
+      schemaVersion: 1,
+      id: `mixli_canvas_${spec.assetStem}_before_v1`,
+      semanticLabel: spec.semanticLabel,
+      elements: spec.elements,
+      palette: spec.palette,
+    },
+    {
+      schemaVersion: 1,
+      id: `mixli_canvas_${spec.assetStem}_after_v1`,
+      semanticLabel: spec.semanticLabel,
+      elements: spec.elements.map((element, index) =>
+        index === spec.changedElementIndex ? {...element, x: spec.changedX} : element,
+      ),
+      palette: spec.palette,
+    },
+  ]),
 ] as const;
 
 const canvasAssets = [
@@ -954,6 +1091,74 @@ const quietSwitchV1: StarterPlay = {
   },
 };
 
+function additionalQuietSwitchPlay(spec: QuietSwitchSpec): StarterPlay {
+  const sourceAssetId = `mixli_canvas_${spec.assetStem}_before_v1`;
+  const choiceAssetId = `mixli_canvas_${spec.assetStem}_after_v1`;
+  return {
+    id: spec.id,
+    revisionId: 'rev_1',
+    topics: spec.topics,
+    document: {
+      schemaVersion: 1,
+      id: spec.id,
+      revisionId: 'rev_1',
+      format: 'guess',
+      classification: 'challenge',
+      topics: [...spec.topics],
+      learningTopics: [],
+      estimatedDurationSec: 15,
+      assets: [sourceAssetId, choiceAssetId],
+      sources: [],
+      entryState: 'observe',
+      states: {
+        observe: {
+          presentation: {
+            layers: [
+              {type: 'canvas', role: 'media', assetId: sourceAssetId},
+              {type: 'text', role: 'prompt', value: 'Remember the scene.'},
+            ],
+          },
+          input: {type: 'tap', label: 'Ready'},
+          validation: {type: 'none'},
+          transition: {default: 'choose'},
+        },
+        choose: {
+          presentation: {
+            layers: [
+              {type: 'canvas', role: 'media', assetId: choiceAssetId},
+              {type: 'text', role: 'prompt', value: 'What changed?'},
+            ],
+          },
+          input: {
+            type: 'single_choice',
+            options: [
+              {id: spec.answer, label: spec.answerLabel},
+              ...spec.distractors,
+            ],
+          },
+          validation: {type: 'equals', value: spec.answer},
+          transition: {correct: 'reveal', incorrect: 'choose'},
+        },
+        reveal: {
+          presentation: {
+            layers: [
+              {type: 'canvas', role: 'media', assetId: choiceAssetId},
+              {type: 'text', role: 'reveal_title', value: spec.reveal},
+            ],
+          },
+          input: {type: 'tap', label: 'Done'},
+          validation: {type: 'none'},
+          transition: {default: '$end'},
+        },
+      },
+    },
+  };
+}
+
+const additionalQuietSwitchPlays = additionalQuietSwitchSpecs.map(
+  additionalQuietSwitchPlay,
+);
+
 const releaseV3StarterPlays: readonly StarterPlay[] = [
   moveOneMatchV3,
   ...releaseV3ChoiceSpecs.map((spec) => ({
@@ -979,6 +1184,7 @@ const starterPlays = [
     clarifiedStarterPlays.find((replacement) => replacement.id === play.id) ?? play,
   ),
   quietSwitchV1,
+  ...additionalQuietSwitchPlays,
 ] as const;
 
 const historicalStarterPlays = [
@@ -1076,6 +1282,18 @@ const starterIntegrityReviews: readonly CatalogIntegrityReview[] = [
     changedElementIndex: 2,
     revealStartsWith: 'The vase moved',
   },
+  ...additionalQuietSwitchSpecs.map((spec) => ({
+    kind: 'quiet_switch' as const,
+    playId: spec.id,
+    revisionId: 'rev_1',
+    prompt: 'Remember the scene.',
+    sourceAssetId: `mixli_canvas_${spec.assetStem}_before_v1`,
+    choiceAssetId: `mixli_canvas_${spec.assetStem}_after_v1`,
+    choicePrompt: 'What changed?',
+    answer: spec.answer,
+    changedElementIndex: spec.changedElementIndex,
+    revealStartsWith: spec.reveal,
+  })),
 ] as const;
 
 export const productionCatalogIntegrityFixture: ProductionCatalogIntegrityFixture = {
