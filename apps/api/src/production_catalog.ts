@@ -17,6 +17,10 @@ import type {
   ConstellationTrajectory,
 } from './constellation_solver.js';
 import {
+  solveSecondThought,
+  type SecondThoughtRound,
+} from './second_thought_solver.js';
+import {
   solveRuleFlip,
   type RuleFlipObject,
 } from './rule_flip_solver.js';
@@ -32,7 +36,7 @@ import {
 } from './counterexample_solver.js';
 
 export const productionStarterPrefix = 'mixli_starter_';
-export const productionStarterCount = 47;
+export const productionStarterCount = 53;
 
 export interface ProductionCatalogStatus {
   eligiblePlays: number;
@@ -58,6 +62,11 @@ interface MatchstickRoundSpec {
   readonly solvedEquation: string;
 }
 
+interface SecondThoughtRoundSpec {
+  readonly id: string;
+  readonly topics: readonly [string, string];
+  readonly round: SecondThoughtRound;
+}
 interface RuleFlipRoundSpec {
   readonly id: string;
   readonly topics: readonly [string, string];
@@ -951,6 +960,31 @@ const counterexampleCanvasAssets = counterexampleRoundSpecs.flatMap((spec) => [
   counterexampleAsset(spec, true),
 ]);
 
+const secondThoughtPalette = {
+  background: '#16252A', foreground: '#F9F4EA', accent: '#F09A5A', muted: '#8AC5C1', surface: '#E8C35F',
+} as const;
+
+const secondThoughtRoundSpecs: readonly SecondThoughtRoundSpec[] = [
+  {id: 'mixli_starter_second_thought_one', topics: ['reasoning', 'reflection'], round: {initial: 'north', advice: 'south', evidence: 'north'}},
+  {id: 'mixli_starter_second_thought_two', topics: ['attention', 'reflection'], round: {initial: 'south', advice: 'north', evidence: 'north'}},
+  {id: 'mixli_starter_second_thought_three', topics: ['logic', 'reflection'], round: {initial: 'north', advice: 'north', evidence: 'south'}},
+  {id: 'mixli_starter_second_thought_four', topics: ['focus', 'reflection'], round: {initial: 'south', advice: 'south', evidence: 'south'}},
+  {id: 'mixli_starter_second_thought_five', topics: ['observation', 'reflection'], round: {initial: 'north', advice: 'unsure', evidence: 'south'}},
+  {id: 'mixli_starter_second_thought_six', topics: ['patterns', 'reflection'], round: {initial: 'south', advice: 'unsure', evidence: 'south'}},
+];
+
+function secondThoughtAsset(spec: SecondThoughtRoundSpec): Record<string, unknown> {
+  const evidenceY = spec.round.evidence === 'north' ? .28 : .56;
+  return {schemaVersion: 1, id: `${spec.id}_canvas`, semanticLabel: `A compass with a blue flag pointing ${spec.round.evidence}.`, palette: secondThoughtPalette, elements: [
+    {type: 'circle', x: .5, y: .43, radius: .23, fill: false, tone: 'foreground'},
+    {type: 'label', x: .5, y: .19, text: 'NORTH', scale: .05, tone: 'foreground'},
+    {type: 'label', x: .5, y: .68, text: 'SOUTH', scale: .05, tone: 'foreground'},
+    {type: 'line', x1: .5, y1: .43, x2: .5, y2: evidenceY, width: .024, tone: 'accent'},
+    {type: 'rect', x: .5, y: evidenceY - .02, width: .12, height: .07, radius: .012, fill: true, tone: 'muted'},
+  ]};
+}
+
+const secondThoughtCanvasAssets = secondThoughtRoundSpecs.map(secondThoughtAsset);
 const ruleFlipPalette = {
   background: '#1E1728', foreground: '#FBF4E9', accent: '#C983E6', muted: '#8CB8E8', surface: '#E7BD63',
 } as const;
@@ -1034,6 +1068,7 @@ const canvasAssets = [
   ...counterexampleCanvasAssets,
   ...evidenceLensCanvasAssets,
   ...ruleFlipCanvasAssets,
+  ...secondThoughtCanvasAssets,
 ] as const;
 
 const legacyChoiceSpecs: readonly ChoiceSpec[] = [
@@ -2178,6 +2213,42 @@ function counterexampleRound(spec: CounterexampleRoundSpec): StarterPlay {
   };
 }
 
+function secondThoughtRound(spec: SecondThoughtRoundSpec): StarterPlay {
+  const assetId = `${spec.id}_canvas`;
+  const adviceText = spec.round.advice === 'unsure' ? 'Guide: unsure.' : `Guide: ${spec.round.advice}.`;
+  const states: Record<string, unknown> = {};
+  for (const initial of ['north', 'south'] as const) {
+    const solution = solveSecondThought({...spec.round, initial});
+    states[`advice_${initial}`] = {
+      presentation: {layers: [
+        {type: 'canvas', role: 'media', assetId},
+        {type: 'text', role: 'prompt', value: adviceText},
+        {type: 'text', role: 'detail', value: `Flag: ${spec.round.evidence}.`},
+      ]},
+      input: {type: 'single_choice', options: [{id: 'keep', label: 'Keep'}, {id: 'change', label: 'Change'}]},
+      validation: {type: 'equals', value: solution.decision}, transition: {correct: `reveal_${initial}`, incorrect: `advice_${initial}`},
+    };
+    states[`reveal_${initial}`] = {
+      presentation: {layers: [{type: 'canvas', role: 'media', assetId}, {type: 'text', role: 'reveal_title', value: `${solution.finalChoice}. Evidence decides.`}]},
+      input: {type: 'tap', label: 'Done'}, validation: {type: 'none'}, transition: {default: '$end'},
+    };
+  }
+  return {
+    id: spec.id, revisionId: 'rev_1', topics: spec.topics,
+    document: {
+      schemaVersion: 1, id: spec.id, revisionId: 'rev_1', format: 'solve', classification: 'challenge',
+      topics: spec.topics, learningTopics: [], estimatedDurationSec: 18, assets: [assetId], sources: [], entryState: 'initial',
+      states: {
+        initial: {
+          presentation: {layers: [{type: 'canvas', role: 'media', assetId}, {type: 'text', role: 'prompt', value: 'Choose a direction.'}]},
+          input: {type: 'single_choice', options: [{id: 'north', label: 'North'}, {id: 'south', label: 'South'}]},
+          validation: {type: 'none'}, transition: {north: 'advice_north', south: 'advice_south'},
+        },
+        ...states,
+      },
+    },
+  };
+}
 function ruleFlipRound(spec: RuleFlipRoundSpec): StarterPlay {
   const shape = solveRuleFlip('shape', spec.object).side;
   const fill = solveRuleFlip('fill', spec.object).side;
@@ -2245,6 +2316,7 @@ const constellationRounds = constellationRoundSpecs.map(constellationRound);
 const counterexampleRounds = counterexampleRoundSpecs.map(counterexampleRound);
 const evidenceLensRounds = evidenceLensRoundSpecs.map(evidenceLensRound);
 const ruleFlipRounds = ruleFlipRoundSpecs.map(ruleFlipRound);
+const secondThoughtRounds = secondThoughtRoundSpecs.map(secondThoughtRound);
 
 const releaseV3StarterPlays: readonly StarterPlay[] = [
   moveOneMatchV3,
@@ -2285,6 +2357,7 @@ const starterPlays = [
   ...counterexampleRounds,
   ...evidenceLensRounds,
   ...ruleFlipRounds,
+  ...secondThoughtRounds,
 ] as const;
 
 const historicalStarterPlays = [
@@ -2465,6 +2538,12 @@ const starterIntegrityReviews: readonly CatalogIntegrityReview[] = [
     revisionId: 'rev_1',
     sourceAssetId: `${spec.id}_canvas`,
     object: spec.object,
+  })),  ...secondThoughtRoundSpecs.map((spec) => ({
+    kind: 'second_thought' as const,
+    playId: spec.id,
+    revisionId: 'rev_1',
+    sourceAssetId: `${spec.id}_canvas`,
+    round: spec.round,
   })),] as const;
 
 export const productionCatalogIntegrityFixture: ProductionCatalogIntegrityFixture = {

@@ -13,6 +13,10 @@ import {
   type ConstellationTrajectory,
 } from './constellation_solver.js';
 import {
+  solveSecondThought,
+  type SecondThoughtRound,
+} from './second_thought_solver.js';
+import {
   solveRuleFlip,
   type RuleFlipObject,
 } from './rule_flip_solver.js';
@@ -115,6 +119,12 @@ export type CatalogIntegrityReview =
       readonly revealStartsWith: string;
     }
   | {
+      readonly kind: 'second_thought';
+      readonly playId: string;
+      readonly revisionId: string;
+      readonly sourceAssetId: string;
+      readonly round: SecondThoughtRound;
+    }  | {
       readonly kind: 'rule_flip';
       readonly playId: string;
       readonly revisionId: string;
@@ -366,6 +376,9 @@ export function assertProductionCatalogIntegrity(
       case 'constellation':
         assertConstellationReview(review, play.document, entryState, states);
         break;
+      case 'second_thought':
+        assertSecondThoughtReview(review, entryState, states, assetById);
+        break;
       case 'rule_flip':
         assertRuleFlipReview(review, entryState, states, assetById);
         break;
@@ -378,6 +391,33 @@ export function assertProductionCatalogIntegrity(
   }
 }
 
+function assertSecondThoughtReview(
+  review: Extract<CatalogIntegrityReview, {kind: 'second_thought'}>,
+  entryState: Record<string, unknown>,
+  states: Record<string, unknown>,
+  assetById: ReadonlyMap<string, CanvasAssetDocument>,
+): void {
+  const asset = assetById.get(review.sourceAssetId);
+  if (asset === undefined) throw new Error(`second_thought_asset_missing:${review.playId}`);
+  const initialInput = record(entryState.input, `${review.playId}.initial.input`);
+  const initialTransitions = record(entryState.transition, `${review.playId}.initial.transition`);
+  if (initialInput.type !== 'single_choice' || initialTransitions.north !== 'advice_north' || initialTransitions.south !== 'advice_south') {
+    throw new Error(`second_thought_initial_mismatch:${review.playId}`);
+  }
+  for (const initial of ['north', 'south'] as const) {
+    const solution = solveSecondThought({...review.round, initial});
+    const advice = record(states[`advice_${initial}`], `${review.playId}.advice`);
+    const reveal = record(states[`reveal_${initial}`], `${review.playId}.reveal`);
+    if (record(advice.validation, `${review.playId}.advice.validation`).value !== solution.decision ||
+        record(advice.transition, `${review.playId}.advice.transition`).correct !== `reveal_${initial}` ||
+        !revealTitleFrom(reveal, review.playId).startsWith(`${solution.finalChoice}. Evidence decides.`)) {
+      throw new Error(`second_thought_evidence_mismatch:${review.playId}`);
+    }
+  }
+  if (asset.semanticLabel !== `A compass with a blue flag pointing ${review.round.evidence}.`) {
+    throw new Error(`second_thought_visual_mismatch:${review.playId}`);
+  }
+}
 function assertRuleFlipReview(
   review: Extract<CatalogIntegrityReview, {kind: 'rule_flip'}>,
   entryState: Record<string, unknown>,

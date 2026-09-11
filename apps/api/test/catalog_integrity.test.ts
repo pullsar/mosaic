@@ -392,3 +392,25 @@ test('catalog integrity rejects a Rule Flip trial that accepts a stale option ID
     /rule_flip_trial_mismatch/,
   );
 });
+
+test('the reflection pack contains six independently reviewed Second Thought rounds', () => {
+  const reviews = productionCatalogIntegrityFixture.reviews.filter(
+    (review) => review.kind === 'second_thought',
+  );
+  assert.equal(reviews.length, 6);
+  assert.ok(reviews.some((review) => review.round.advice === 'unsure'));
+});
+
+test('catalog integrity rejects a Second Thought decision scored against advice', () => {
+  const altered = JSON.parse(JSON.stringify(productionCatalogIntegrityFixture)) as {
+    plays: Array<{id: string; document: {states: Record<string, {validation?: {value?: string}}>}}>;
+  };
+  altered.plays.find((play) => play.id === 'mixli_starter_second_thought_one')!
+    .document.states.advice_north!.validation!.value = 'change';
+  assert.throws(
+    () => assertProductionCatalogIntegrity(
+      altered as unknown as typeof productionCatalogIntegrityFixture,
+    ),
+    /second_thought_evidence_mismatch/,
+  );
+});
