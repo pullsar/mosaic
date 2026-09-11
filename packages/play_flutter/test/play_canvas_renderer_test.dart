@@ -458,6 +458,39 @@ void main() {
     expect(pixels['depth'], isNot(const Color(0xFF102030)));
   });
 
+  testWidgets('thick game strokes keep a distinct static depth edge', (
+    tester,
+  ) async {
+    final asset = PlayCanvasAsset.fromJson({
+      'schemaVersion': 1,
+      'id': 'tactile_matchstick',
+      'palette': _authoredPalette,
+      'elements': [
+        {
+          'type': 'line',
+          'x1': 0.2,
+          'y1': 0.5,
+          'x2': 0.8,
+          'y2': 0.5,
+          'width': 0.06,
+          'tone': 'accent',
+        },
+      ],
+    });
+    final pixels = await _renderTonePixels(
+      tester,
+      asset: asset,
+      theme: ThemeData.light(),
+      samplePoints: const {
+        'face': Offset(0.5, 0.5),
+        'depth': Offset(0.5, 0.53),
+      },
+    );
+
+    expect(pixels['face'], const Color(0xFFFFCC00));
+    expect(pixels['depth'], isNot(const Color(0xFF102030)));
+  });
+
   testWidgets('legacy canvas tones continue to fall back to the theme', (
     tester,
   ) async {
