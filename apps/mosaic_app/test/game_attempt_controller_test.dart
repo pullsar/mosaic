@@ -37,6 +37,65 @@ PlayDocument _play() => PlayDocument.fromJson({
   },
 });
 
+PlayDocument _scenePlay() => PlayDocument.fromJson({
+  'schemaVersion': 1,
+  'id': 'scene_move',
+  'revisionId': 'rev_1',
+  'format': 'solve',
+  'classification': 'challenge',
+  'topics': <String>[],
+  'learningTopics': <String>[],
+  'estimatedDurationSec': 10,
+  'assets': <String>[],
+  'sources': <Object>[],
+  'entryState': 'move',
+  'states': {
+    'move': {
+      'presentation': {
+        'layers': [
+          {
+            'type': 'scene',
+            'role': 'media',
+            'scene': {
+              'version': 1,
+              'objects': [
+                {
+                  'id': 'piece',
+                  'semanticLabel': 'Piece',
+                  'shape': 'rounded_rect',
+                  'x': .2,
+                  'y': .2,
+                  'width': .05,
+                  'height': .2,
+                  'movable': true,
+                },
+              ],
+              'targets': [
+                {
+                  'id': 'slot',
+                  'semanticLabel': 'Slot',
+                  'x': .7,
+                  'y': .2,
+                  'width': .05,
+                  'height': .2,
+                },
+              ],
+            },
+          },
+        ],
+      },
+      'input': {'type': 'piece_move'},
+      'validation': {
+        'type': 'legal_piece_move',
+        'value': [
+          {'pieceId': 'piece', 'targetId': 'slot', 'correct': true},
+        ],
+      },
+      'transition': {'correct': 'move', 'incorrect': 'move'},
+    },
+  },
+});
+
 void main() {
   test('a recovered run replays with a fresh ID', () {
     final first = GameAttemptController(play: _play());
@@ -158,6 +217,20 @@ void main() {
     expect(restored.session.stateId, 'question');
     expect(restored.session.attempts, 1);
     expect(restored.actions, hasLength(1));
+  });
+
+  test('recovery snapshot rebuilds an authored scene placement', () {
+    final controller = GameAttemptController(play: _scenePlay());
+    controller.apply(const PieceMoveAction(pieceId: 'piece', targetId: 'slot'));
+    final restored = GameAttemptController.restoreRecoverySnapshot(
+      play: _scenePlay(),
+      encodedSnapshot: controller.encodeRecoverySnapshot(capabilityVersion: 1)!,
+      capabilityVersion: 1,
+    );
+
+    expect(restored, isNotNull);
+    expect(restored!.session.piecePlacements, {'piece': 'slot'});
+    expect(restored.completed, isFalse);
   });
 
   test('recovery rejects corrupt, mismatched, and oversized snapshots', () {
