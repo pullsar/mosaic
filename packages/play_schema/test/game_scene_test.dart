@@ -101,6 +101,28 @@ void main() {
     expect(scene.toJson()['objects'], [containsPair('shape', 'coin')]);
   });
 
+  test('scene retains the bounded orb appearance', () {
+    final scene = GameSceneDefinition.fromJson({
+      'version': 1,
+      'objects': [
+        {
+          'id': 'orb',
+          'semanticLabel': 'Marked orb',
+          'shape': 'orb',
+          'x': .2,
+          'y': .3,
+          'width': .08,
+          'height': .08,
+          'tone': 'accent',
+        },
+      ],
+      'targets': const [],
+    });
+
+    expect(scene.objects.single.shape, GameSceneShape.orb);
+    expect(scene.toJson()['objects'], [containsPair('shape', 'orb')]);
+  });
+
   test('scene rejects duplicate identities and off-stage geometry', () {
     expect(
       () => GameSceneDefinition.fromJson({

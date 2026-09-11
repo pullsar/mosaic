@@ -169,6 +169,38 @@ void main() {
     );
   });
 
+  testWidgets('scene renders an orb with a reflective mark', (tester) async {
+    final scene = GameSceneDefinition.fromJson({
+      'version': 1,
+      'objects': [
+        {
+          'id': 'orb',
+          'semanticLabel': 'Marked orb',
+          'shape': 'orb',
+          'x': .2,
+          'y': .3,
+          'width': .08,
+          'height': .08,
+          'tone': 'accent',
+        },
+      ],
+      'targets': const [],
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox.square(
+          dimension: 300,
+          child: PlaySceneRenderer(scene: scene, onPieceMove: (_, _) {}),
+        ),
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('scene-orb-highlight:orb')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('scene renders an active cue at its sampled position', (
     tester,
   ) async {

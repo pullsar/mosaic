@@ -139,6 +139,15 @@ test('the timed pack contains six independently reviewed Sleight rounds', () => 
   );
 });
 
+test('the observation pack contains six independently reviewed Constellation rounds', () => {
+  const reviews = productionCatalogIntegrityFixture.reviews.filter(
+    (review) => (review as {kind: string}).kind === 'constellation',
+  );
+
+  assert.equal(reviews.length, 6);
+  assert.equal(new Set(reviews.map((review) => review.playId)).size, 6);
+});
+
 test('Sleight rounds use the bounded cup scene primitive', () => {
   const play = productionCatalogIntegrityFixture.plays.find(
     (candidate) => candidate.id === 'mixli_starter_sleight_one',
@@ -193,6 +202,33 @@ test('catalog integrity requires the Sleight trace replay', () => {
         altered as unknown as typeof productionCatalogIntegrityFixture,
       ),
     /sleight_replay_missing/,
+  );
+});
+
+test('catalog integrity rejects a Constellation cue that no longer matches its reviewed path', () => {
+  const altered = JSON.parse(JSON.stringify(productionCatalogIntegrityFixture)) as {
+    plays: Array<{
+      id: string;
+      document: {
+        states: Record<string, {
+          presentation: {layers: Array<{type: string; scene?: {cues?: Array<{objectId: string; keyframes: Array<{x: number}>}>}}>};
+        }>;
+      };
+    }>;
+  };
+  const scene = altered.plays.find(
+    (play) => play.id === 'mixli_starter_constellation_one',
+  )!.document.states.observe!.presentation.layers.find(
+    (layer) => layer.type === 'scene',
+  )!.scene!;
+  scene.cues!.find((cue) => cue.objectId === 'a')!.keyframes[1]!.x = .7;
+
+  assert.throws(
+    () =>
+      assertProductionCatalogIntegrity(
+        altered as unknown as typeof productionCatalogIntegrityFixture,
+      ),
+    /constellation_cue_tracks_missing/,
   );
 });
 

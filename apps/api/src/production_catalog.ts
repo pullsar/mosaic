@@ -12,9 +12,13 @@ import {
 } from './catalog_integrity.js';
 import {canonicalJson} from './media.js';
 import type {SleightTrajectory, SleightTrajectoryEvent} from './sleight_solver.js';
+import type {
+  ConstellationRect,
+  ConstellationTrajectory,
+} from './constellation_solver.js';
 
 export const productionStarterPrefix = 'mixli_starter_';
-export const productionStarterCount = 23;
+export const productionStarterCount = 29;
 
 export interface ProductionCatalogStatus {
   eligiblePlays: number;
@@ -342,6 +346,13 @@ interface SleightRoundSpec {
   readonly trajectory: SleightTrajectory;
   readonly durationMs: number;
   readonly answerPositionId: 'left' | 'center' | 'right';
+}
+
+interface ConstellationRoundSpec {
+  readonly id: string;
+  readonly durationMs: number;
+  readonly targetObjectIds: readonly string[];
+  readonly delta: Readonly<{x: number; y: number}>;
 }
 
 const additionalMatchstickRoundSpecs: readonly MatchstickRoundSpec[] = [
@@ -1751,7 +1762,149 @@ function sleightCoinRect(position: string, verticalOffset = 0): Record<string, n
   return {x: cup.x! + .06, y: cup.y! + .2, width: .04, height: .04};
 }
 
+const constellationObjects = [
+  {id: 'a', label: 'Small dark dot', tone: 'foreground', rect: {x: .08, y: .24, width: .06, height: .06}},
+  {id: 'b', label: 'Medium pale dot', tone: 'surface', rect: {x: .31, y: .2, width: .08, height: .08}},
+  {id: 'c', label: 'Tiny soft dot', tone: 'muted', rect: {x: .66, y: .26, width: .05, height: .05}},
+  {id: 'd', label: 'Large dark dot', tone: 'foreground', rect: {x: .12, y: .64, width: .1, height: .1}},
+  {id: 'e', label: 'Small pale dot', tone: 'surface', rect: {x: .43, y: .66, width: .065, height: .065}},
+  {id: 'f', label: 'Wide soft dot', tone: 'muted', rect: {x: .72, y: .63, width: .085, height: .085}},
+] as const;
+
+const constellationRoundSpecs: readonly ConstellationRoundSpec[] = [
+  {id: 'mixli_starter_constellation_one', durationMs: 2200, targetObjectIds: ['b', 'e'], delta: {x: .08, y: .04}},
+  {id: 'mixli_starter_constellation_two', durationMs: 2400, targetObjectIds: ['a', 'f'], delta: {x: .06, y: .08}},
+  {id: 'mixli_starter_constellation_three', durationMs: 2600, targetObjectIds: ['c', 'd'], delta: {x: .1, y: -.05}},
+  {id: 'mixli_starter_constellation_four', durationMs: 2300, targetObjectIds: ['a', 'e'], delta: {x: -.04, y: .06}},
+  {id: 'mixli_starter_constellation_five', durationMs: 2500, targetObjectIds: ['b', 'd'], delta: {x: .05, y: -.08}},
+  {id: 'mixli_starter_constellation_six', durationMs: 2700, targetObjectIds: ['c', 'f'], delta: {x: -.06, y: -.04}},
+];
+
+function constellationRound(spec: ConstellationRoundSpec): StarterPlay {
+  const cueId = 'constellation_1';
+  const trajectory = constellationTrajectory(spec);
+  const initialScene = constellationScene(spec, trajectory, cueId, false);
+  const finalScene = constellationScene(spec, trajectory, cueId, true);
+  const targetLabels = constellationObjects
+    .filter((object) => spec.targetObjectIds.includes(object.id))
+    .map((object) => object.label.toLowerCase())
+    .join(' and ');
+  return {
+    id: spec.id,
+    revisionId: 'rev_1',
+    topics: ['observation', 'attention'],
+    document: {
+      schemaVersion: 1,
+      id: spec.id,
+      revisionId: 'rev_1',
+      format: 'guess',
+      classification: 'challenge',
+      topics: ['observation', 'attention'],
+      learningTopics: [],
+      estimatedDurationSec: 12,
+      assets: [],
+      sources: [],
+      requiredPlatformFlags: ['timed_scene_v1', 'multiple_choice', 'set_equality'],
+      entryState: 'observe',
+      states: {
+        observe: {
+          presentation: {layers: [{type: 'scene', role: 'media', scene: initialScene}, {type: 'text', role: 'prompt', value: 'Track the marked dots.'}]},
+          input: {type: 'timed_cue', cueId, cueOrdinal: 1, durationMs: spec.durationMs},
+          validation: {type: 'none'},
+          transition: {default: 'choose'},
+        },
+        choose: {
+          presentation: {layers: [{type: 'scene', role: 'media', scene: finalScene}, {type: 'text', role: 'prompt', value: 'Mark both.'}]},
+          input: {type: 'multiple_choice', options: constellationObjects.map((object) => ({id: object.id, label: object.label}))},
+          validation: {type: 'set_equality', value: spec.targetObjectIds},
+          transition: {correct: 'replay', incorrect: 'choose'},
+        },
+        replay: {
+          presentation: {layers: [{type: 'scene', role: 'media', scene: initialScene}, {type: 'text', role: 'prompt', value: 'Watch the marked dots.'}]},
+          input: {type: 'timed_cue', cueId, cueOrdinal: 1, durationMs: spec.durationMs},
+          validation: {type: 'none'},
+          transition: {default: 'reveal'},
+        },
+        reveal: {
+          presentation: {layers: [{type: 'scene', role: 'media', scene: finalScene}, {type: 'text', role: 'reveal_title', value: `Marked: ${targetLabels}.`}]},
+          input: {type: 'tap', label: 'Done'},
+          validation: {type: 'none'},
+          transition: {default: '$end'},
+        },
+      },
+    },
+  };
+}
+
+function constellationTrajectory(spec: ConstellationRoundSpec): ConstellationTrajectory {
+  return {
+    objectIds: constellationObjects.map((object) => object.id),
+    durationMs: spec.durationMs,
+    tracks: constellationObjects.map((object, index) => {
+      const midpoint = shiftConstellationRect(
+        object.rect,
+        spec.delta.x * .48,
+        spec.delta.y * .48 + (index % 2 === 0 ? -.018 : .018),
+      );
+      const finalRect = shiftConstellationRect(object.rect, spec.delta.x, spec.delta.y);
+      return {
+        objectId: object.id,
+        keyframes: [
+          {timeMs: 0, ...object.rect},
+          {timeMs: Math.floor(spec.durationMs / 2), ...midpoint},
+          {timeMs: spec.durationMs, ...finalRect},
+        ],
+      };
+    }),
+  };
+}
+
+function shiftConstellationRect(
+  rect: ConstellationRect,
+  x: number,
+  y: number,
+): ConstellationRect {
+  return {x: rect.x + x, y: rect.y + y, width: rect.width, height: rect.height};
+}
+
+function constellationScene(
+  spec: ConstellationRoundSpec,
+  trajectory: ConstellationTrajectory,
+  cueId: string,
+  final: boolean,
+): Record<string, unknown> {
+  const finalRects = new Map(
+    trajectory.tracks.map((track) => [
+      track.objectId,
+      track.keyframes.at(-1)!,
+    ]),
+  );
+  const objects = constellationObjects.map((object) => ({
+    id: object.id,
+    semanticLabel: final || !spec.targetObjectIds.includes(object.id)
+      ? object.label
+      : `Marked ${object.label.toLowerCase()}`,
+    shape: 'orb',
+    ...(final ? finalRects.get(object.id)! : object.rect),
+    tone: !final && spec.targetObjectIds.includes(object.id) ? 'accent' : object.tone,
+  }));
+  return {
+    version: 1,
+    objects,
+    targets: [],
+    ...(final ? {} : {
+      cues: trajectory.tracks.map((track) => ({
+        id: cueId,
+        objectId: track.objectId,
+        durationMs: trajectory.durationMs,
+        keyframes: track.keyframes,
+      })),
+    }),
+  };
+}
+
 const sleightRounds = sleightRoundSpecs.map(sleightRound);
+const constellationRounds = constellationRoundSpecs.map(constellationRound);
 
 const releaseV3StarterPlays: readonly StarterPlay[] = [
   moveOneMatchV3,
@@ -1788,6 +1941,7 @@ const starterPlays = [
   quietSwitchV2,
   ...additionalQuietSwitchV2,
   ...sleightRounds,
+  ...constellationRounds,
 ] as const;
 
 const historicalStarterPlays = [
@@ -1930,6 +2084,17 @@ const starterIntegrityReviews: readonly CatalogIntegrityReview[] = [
     trajectory: spec.trajectory,
     answerPositionId: spec.answerPositionId,
     revealStartsWith: 'The coin finishes',
+  })),
+  ...constellationRoundSpecs.map((spec) => ({
+    kind: 'constellation' as const,
+    playId: spec.id,
+    revisionId: 'rev_1',
+    prompt: 'Track the marked dots.',
+    cueId: 'constellation_1',
+    durationMs: spec.durationMs,
+    trajectory: constellationTrajectory(spec),
+    targetObjectIds: spec.targetObjectIds,
+    revealStartsWith: 'Marked:',
   })),
 ] as const;
 

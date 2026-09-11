@@ -8,6 +8,10 @@ import {
   simulateSleightTrajectory,
   type SleightTrajectory,
 } from './sleight_solver.js';
+import {
+  evaluateConstellationRound,
+  type ConstellationTrajectory,
+} from './constellation_solver.js';
 
 export interface StarterPlayIntegrityDocument {
   readonly id?: unknown;
@@ -79,6 +83,17 @@ export type CatalogIntegrityReview =
       readonly durationMs: number;
       readonly trajectory: SleightTrajectory;
       readonly answerPositionId: string;
+      readonly revealStartsWith: string;
+    }
+  | {
+      readonly kind: 'constellation';
+      readonly playId: string;
+      readonly revisionId: string;
+      readonly prompt: string;
+      readonly cueId: string;
+      readonly durationMs: number;
+      readonly trajectory: ConstellationTrajectory;
+      readonly targetObjectIds: readonly string[];
       readonly revealStartsWith: string;
     };
 
@@ -284,10 +299,10 @@ export function assertProductionCatalogIntegrity(
     const states = record(play.document.states, `${review.playId}.states`);
     const entryStateId = string(play.document.entryState, `${review.playId}.entryState`);
     const entryState = record(states[entryStateId], `${review.playId}.${entryStateId}`);
-    const primaryAsset = review.kind === 'sleight'
+    const primaryAsset = review.kind === 'sleight' || review.kind === 'constellation'
       ? undefined
       : assetById.get(firstAssetId(play.document.assets, review.playId));
-    if (review.kind !== 'sleight' && primaryAsset === undefined) {
+    if (review.kind !== 'sleight' && review.kind !== 'constellation' && primaryAsset === undefined) {
       throw new Error(`missing_canvas_asset:${review.playId}`);
     }
     switch (review.kind) {
@@ -306,8 +321,155 @@ export function assertProductionCatalogIntegrity(
       case 'sleight':
         assertSleightReview(review, play.document, entryState, states);
         break;
+      case 'constellation':
+        assertConstellationReview(review, play.document, entryState, states);
+        break;
     }
   }
+}
+
+function assertConstellationReview(
+  review: Extract<CatalogIntegrityReview, {kind: 'constellation'}>,
+  document: StarterPlayIntegrityDocument,
+  entryState: Record<string, unknown>,
+  states: Record<string, unknown>,
+): void {
+  assertPrompt(review, entryState);
+  const flags = Array.isArray((document as Record<string, unknown>).requiredPlatformFlags)
+    ? (document as Record<string, unknown>).requiredPlatformFlags as readonly unknown[]
+    : [];
+  for (const flag of ['timed_scene_v1', 'multiple_choice', 'set_equality']) {
+    if (!flags.includes(flag)) {
+      throw new Error(`constellation_capability_missing:${review.playId}`);
+    }
+  }
+  const solved = evaluateConstellationRound(
+    review.trajectory,
+    review.targetObjectIds,
+  );
+  const input = record(entryState.input, `${review.playId}.input`);
+  if (
+    input.type !== 'timed_cue' ||
+    input.cueId !== review.cueId ||
+    input.cueOrdinal !== 1 ||
+    input.durationMs !== review.durationMs ||
+    record(entryState.transition, `${review.playId}.transition`).default !== 'choose'
+  ) {
+    throw new Error(`constellation_timed_input_mismatch:${review.playId}`);
+  }
+  const initialScene = record(
+    presentationLayers(entryState, review.playId).find(
+      (layer) => layer.type === 'scene' && layer.role === 'media',
+    )?.scene,
+    `${review.playId}.scene`,
+  );
+  const initialObjects = Array.isArray(initialScene.objects)
+    ? initialScene.objects.map((object) => record(object, `${review.playId}.object`))
+    : [];
+  if (
+    initialObjects.length !== 6 ||
+    !review.trajectory.objectIds.every((id) =>
+      initialObjects.some((object) => object.id === id),
+    ) ||
+    !review.targetObjectIds.every((id) =>
+      initialObjects.some((object) => object.id === id && object.tone === 'accent'),
+    )
+  ) {
+    throw new Error(`constellation_initial_marks_missing:${review.playId}`);
+  }
+  const cues = Array.isArray(initialScene.cues) ? initialScene.cues : [];
+  if (!review.trajectory.objectIds.every((id) =>
+    cues.some((cue) => {
+      const candidate = record(cue, `${review.playId}.cue`);
+      const expected = review.trajectory.tracks.find(
+        (track) => track.objectId === id,
+      );
+      return candidate.id === review.cueId &&
+        candidate.objectId === id &&
+        candidate.durationMs === review.durationMs &&
+        canonicalJson(candidate.keyframes) === canonicalJson(expected?.keyframes);
+    }))) {
+    throw new Error(`constellation_cue_tracks_missing:${review.playId}`);
+  }
+  const choose = record(states.choose, `${review.playId}.choose`);
+  const choiceInput = record(choose.input, `${review.playId}.choose.input`);
+  const options = optionIdsFrom(choiceInput, review.playId);
+  const validation = record(choose.validation, `${review.playId}.choose.validation`);
+  if (
+    choiceInput.type !== 'multiple_choice' ||
+    options.length !== review.trajectory.objectIds.length ||
+    !review.trajectory.objectIds.every((id) => options.includes(id)) ||
+    validation.type !== 'set_equality' ||
+    !sameStringSet(validation.value, solved.acceptedObjectIds) ||
+    record(choose.transition, `${review.playId}.choose.transition`).correct !== 'replay' ||
+    record(choose.transition, `${review.playId}.choose.transition`).incorrect !== 'choose'
+  ) {
+    throw new Error(`constellation_choice_mismatch:${review.playId}`);
+  }
+  const choiceScene = record(
+    presentationLayers(choose, review.playId).find(
+      (layer) => layer.type === 'scene' && layer.role === 'media',
+    )?.scene,
+    `${review.playId}.choose.scene`,
+  );
+  const choiceObjects = Array.isArray(choiceScene.objects)
+    ? choiceScene.objects.map((object) => record(object, `${review.playId}.choice.object`))
+    : [];
+  if (
+    choiceObjects.length !== 6 ||
+    !review.trajectory.objectIds.every((id) => {
+      const object = choiceObjects.find((candidate) => candidate.id === id);
+      const finalRect = solved.finalRects.get(id);
+      return object !== undefined && finalRect !== undefined &&
+        object.tone !== 'accent' &&
+        object.x === finalRect.x && object.y === finalRect.y &&
+        object.width === finalRect.width && object.height === finalRect.height;
+    })
+  ) {
+    throw new Error(`constellation_final_scene_mismatch:${review.playId}`);
+  }
+  const replay = record(states.replay, `${review.playId}.replay`);
+  const replayInput = record(replay.input, `${review.playId}.replay.input`);
+  const replayScene = record(
+    presentationLayers(replay, review.playId).find(
+      (layer) => layer.type === 'scene' && layer.role === 'media',
+    )?.scene,
+    `${review.playId}.replay.scene`,
+  );
+  const replayCues = Array.isArray(replayScene.cues) ? replayScene.cues : [];
+  if (
+    replayInput.type !== 'timed_cue' ||
+    replayInput.cueId !== review.cueId ||
+    replayInput.cueOrdinal !== 1 ||
+    replayInput.durationMs !== review.durationMs ||
+    record(replay.transition, `${review.playId}.replay.transition`).default !== 'reveal' ||
+    !review.trajectory.objectIds.every((id) =>
+      replayCues.some((cue) => {
+        const candidate = record(cue, `${review.playId}.replay.cue`);
+        const expected = review.trajectory.tracks.find(
+          (track) => track.objectId === id,
+        );
+        return candidate.id === review.cueId &&
+          candidate.objectId === id &&
+          candidate.durationMs === review.durationMs &&
+          canonicalJson(candidate.keyframes) === canonicalJson(expected?.keyframes);
+      }),
+    )
+  ) {
+    throw new Error(`constellation_replay_missing:${review.playId}`);
+  }
+  const reveal = record(states.reveal, `${review.playId}.reveal`);
+  if (!revealTitleFrom(reveal, review.playId).startsWith(review.revealStartsWith)) {
+    throw new Error(`constellation_reveal_mismatch:${review.playId}`);
+  }
+}
+
+function sameStringSet(value: unknown, expected: readonly string[]): boolean {
+  return Array.isArray(value) &&
+    value.length === expected.length &&
+    value.every((item) => typeof item === 'string') &&
+    new Set(value).size === value.length &&
+    value.every((item) => expected.includes(item));
 }
 
 function assertSleightReview(

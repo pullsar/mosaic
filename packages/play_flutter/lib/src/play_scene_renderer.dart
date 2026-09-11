@@ -233,6 +233,7 @@ final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
     final isMatchstick = object.shape == GameSceneShape.matchstick;
     final isCup = object.shape == GameSceneShape.cup;
     final isCoin = object.shape == GameSceneShape.coin;
+    final isOrb = object.shape == GameSceneShape.orb;
     final horizontalMatchstick = isMatchstick && rect.width > rect.height;
     final color = isMatchstick
         ? const Color(0xFFC9783E)
@@ -297,7 +298,8 @@ final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
                         : isCoin
                         ? colors.tertiaryContainer
                         : color,
-                    shape: object.shape == GameSceneShape.circle || isCoin
+                    shape:
+                        object.shape == GameSceneShape.circle || isCoin || isOrb
                         ? BoxShape.circle
                         : BoxShape.rectangle,
                     borderRadius:
@@ -315,8 +317,14 @@ final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
                         ? Border.all(color: colors.primary, width: 1.5)
                         : isCoin
                         ? Border.all(color: colors.tertiary, width: 1.5)
+                        : isOrb
+                        ? Border.all(
+                            color: colors.onSurface.withValues(alpha: .24),
+                            width: 1.25,
+                          )
                         : null,
-                    boxShadow: selected || isMatchstick || isCup || isCoin
+                    boxShadow:
+                        selected || isMatchstick || isCup || isCoin || isOrb
                         ? [
                             BoxShadow(
                               color: colors.shadow.withValues(alpha: .22),
@@ -355,6 +363,8 @@ final class _PlaySceneRendererState extends State<PlaySceneRenderer> {
                       ? _SceneCup(colors: colors)
                       : isCoin
                       ? _SceneCoin(colors: colors)
+                      : isOrb
+                      ? _SceneOrb(id: object.id, colors: colors)
                       : null,
                 ),
               ),
@@ -474,6 +484,46 @@ final class _SceneCoin extends StatelessWidget {
                   blurRadius: 1.5,
                 ),
               ],
+            ),
+          ),
+        ),
+      ),
+    ],
+  );
+}
+
+final class _SceneOrb extends StatelessWidget {
+  const _SceneOrb({required this.id, required this.colors});
+
+  final String id;
+  final ColorScheme colors;
+
+  @override
+  Widget build(BuildContext context) => Stack(
+    children: [
+      Align(
+        alignment: const Alignment(-.32, -.36),
+        child: FractionallySizedBox(
+          widthFactor: .28,
+          heightFactor: .28,
+          child: DecoratedBox(
+            key: ValueKey<String>('scene-orb-highlight:$id'),
+            decoration: BoxDecoration(
+              color: colors.surface.withValues(alpha: .72),
+              shape: BoxShape.circle,
+            ),
+          ),
+        ),
+      ),
+      Align(
+        alignment: const Alignment(.22, .3),
+        child: FractionallySizedBox(
+          widthFactor: .2,
+          heightFactor: .2,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: colors.onSurface.withValues(alpha: .16),
+              shape: BoxShape.circle,
             ),
           ),
         ),
