@@ -211,17 +211,27 @@ final class GameAttemptController extends ChangeNotifier {
           'type': 'drag',
           'targetId': targetId,
         },
+        PieceMoveAction(:final pieceId, :final targetId) => <String, Object?>{
+          'type': 'piece_move',
+          'pieceId': pieceId,
+          'targetId': targetId,
+        },
       };
 
   static PlayAction? _decodeAction(Object? raw) {
     if (raw is! Map) return null;
     final action = raw.cast<String, Object?>();
-    if (action['type'] != 'tap' && action.length != 2) return null;
+    if (action['type'] == 'tap' && action.length != 1) return null;
+    if (action['type'] != 'tap' &&
+        action['type'] != 'piece_move' &&
+        action.length != 2)
+      return null;
     return switch (action['type']) {
       'tap' => action.length == 1 ? const TapAction() : null,
       'choice' => _boundedActionText(action['optionId'], 'choice'),
       'drag' => _boundedActionText(action['targetId'], 'drag'),
       'sequence' => _sequenceAction(action['values']),
+      'piece_move' => _pieceMoveAction(action),
       _ => null,
     };
   }
@@ -243,6 +253,20 @@ final class GameAttemptController extends ChangeNotifier {
     return SequenceAction(values);
   }
 
+  static PlayAction? _pieceMoveAction(Map<String, Object?> raw) {
+    if (raw.length != 3) return null;
+    final pieceId = raw['pieceId'];
+    final targetId = raw['targetId'];
+    if (pieceId is! String ||
+        targetId is! String ||
+        pieceId.trim().isEmpty ||
+        targetId.trim().isEmpty ||
+        pieceId.length > 200 ||
+        targetId.length > 200)
+      return null;
+    return PieceMoveAction(pieceId: pieceId, targetId: targetId);
+  }
+
   static GameAttemptMode? _modeFromWire(Object? raw) => switch (raw) {
     'first' => GameAttemptMode.first,
     'practice' => GameAttemptMode.practice,
@@ -262,6 +286,9 @@ final class GameAttemptController extends ChangeNotifier {
             (input.properties['targets'] as List).any(
               (target) => target is Map && target['id'] == targetId,
             ),
+      PieceMoveAction(:final pieceId, :final targetId) =>
+        input.type == PlayInputType.pieceMove &&
+            _sceneAllowsMove(_session.state.presentation, pieceId, targetId),
       SequenceAction(:final values) =>
         input.type == PlayInputType.pianoKey &&
             values.every(
@@ -273,6 +300,24 @@ final class GameAttemptController extends ChangeNotifier {
                       .contains(value),
             ),
     };
+  }
+
+  static bool _sceneAllowsMove(
+    List<PresentationLayer> layers,
+    String pieceId,
+    String targetId,
+  ) {
+    for (final layer in layers) {
+      final scene = layer.scene;
+      if (scene == null) continue;
+      final movable = scene.objects.any(
+        (object) => object.id == pieceId && object.movable,
+      );
+      if (movable && scene.targets.any((target) => target.id == targetId)) {
+        return true;
+      }
+    }
+    return false;
   }
 }
 

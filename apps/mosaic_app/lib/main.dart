@@ -889,7 +889,7 @@ final class _ConsumerSearchScope {
 PlayCapabilityEnvelope consumerCapabilitiesForAssetDelivery(
   AssetDeliveryClient? assetDelivery,
 ) {
-  final presentationTypes = <String>{'text'};
+  final presentationTypes = <String>{'text', 'scene'};
   if (assetDelivery != null) {
     presentationTypes.add('canvas');
     if (assetDelivery.supportsBinaryNetworkAssets) {
@@ -899,12 +899,19 @@ PlayCapabilityEnvelope consumerCapabilitiesForAssetDelivery(
   return PlayCapabilityEnvelope(
     schemaVersions: const {1},
     presentationTypes: Set.unmodifiable(presentationTypes),
-    inputTypes: const {'tap', 'single_choice', 'piano_key', 'drag'},
+    inputTypes: const {
+      'tap',
+      'single_choice',
+      'piano_key',
+      'drag',
+      'piece_move',
+    },
     validatorTypes: const {
       'none',
       'equals',
       'ordered_sequence',
       'target_region',
+      'legal_piece_move',
     },
   );
 }
