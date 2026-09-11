@@ -2423,6 +2423,16 @@ const authoredStarterPlays = [
   ...echoArchitectRounds,
 ] as const;
 
+const publishedStarterPlays = authoredStarterPlays.map((play) =>
+  play.revisionId === 'rev_1'
+    ? {
+        ...play,
+        revisionId: 'rev_2',
+        document: {...play.document, revisionId: 'rev_2'},
+      }
+    : play,
+);
+
 type StarterFamilyId =
   | 'one-move'
   | 'quiet-switch'
@@ -2464,7 +2474,7 @@ function withGameFamily(play: StarterPlay): StarterPlay {
   };
 }
 
-const starterPlays = authoredStarterPlays.map(withGameFamily);
+const starterPlays = publishedStarterPlays.map(withGameFamily);
 
 const starterFamilyManifests: readonly GameFamilyManifest[] = [
   'one-move',
@@ -2679,11 +2689,15 @@ const starterIntegrityReviews: readonly CatalogIntegrityReview[] = [
     sequence: spec.sequence,
   })),] as const;
 
+const publishedIntegrityReviews = starterIntegrityReviews.map((review) =>
+  review.revisionId === 'rev_1' ? {...review, revisionId: 'rev_2'} : review,
+);
+
 export const productionCatalogIntegrityFixture: ProductionCatalogIntegrityFixture = {
   plays: starterPlays,
   canvasAssets: canvasAssets.map((asset) => normalizeCanvasAssetDocument(asset)),
   audioAssetIds: echoArchitectAudioAssets.map((asset) => asset.assetId),
-  reviews: starterIntegrityReviews,
+  reviews: publishedIntegrityReviews,
 };
 
 assertProductionCatalogIntegrity(productionCatalogIntegrityFixture);
