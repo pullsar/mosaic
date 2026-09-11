@@ -396,7 +396,7 @@ Future<_ScenarioHandle> _pumpScenario(
               feedRequestId: 'golden_feed',
               controller: harness.actions,
               onAdvance: (_) async => true,
-              onShare: (_) {},
+              onShare: (_, _) {},
               child: MixliAuthoredPlayDirection(child: playSurface),
             ),
           ),

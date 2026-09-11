@@ -427,7 +427,7 @@ Widget _composedApp(
           feedRequestId: 'feed_controls',
           controller: harness.controller,
           onAdvance: harness.advance,
-          onShare: (_) {},
+          onShare: (_, _) {},
           child: Stack(
             fit: StackFit.expand,
             children: <Widget>[
