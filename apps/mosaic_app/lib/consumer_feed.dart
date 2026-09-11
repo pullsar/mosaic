@@ -418,7 +418,13 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
   void _replacePageController(int page) {
     final bounded = math.max(0, math.min(page, _entries.length - 1));
     final previous = _pageController;
-    _pageController = PageController(initialPage: bounded);
+    // Replacing a controller on an attached PageView preserves its old scroll
+    // position. Reconcile that position before the reordered window is painted.
+    if (previous.hasClients) {
+      previous.jumpToPage(bounded);
+      return;
+    }
+    _pageController = PageController(initialPage: bounded, keepPage: false);
     WidgetsBinding.instance.addPostFrameCallback((_) => previous.dispose());
   }
 
@@ -661,6 +667,15 @@ final class _ConsumerFeedState extends State<ConsumerFeed> {
               : const PageScrollPhysics(),
           itemCount: _entries.length,
           onPageChanged: _onPageChanged,
+          findChildIndexCallback: (key) {
+            if (key is! ValueKey<String>) return null;
+            final index = _entries.indexWhere(
+              (entry) =>
+                  key.value ==
+                  'feed:${entry.requestId}:${entry.item.playId}:${entry.item.revisionId}',
+            );
+            return index < 0 ? null : index;
+          },
           itemBuilder: (context, index) {
             final entry = _entries[index];
             final active = index == _currentIndex;

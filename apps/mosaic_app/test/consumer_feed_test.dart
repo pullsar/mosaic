@@ -156,7 +156,86 @@ Widget _app(
   ),
 );
 
+final class _ProgressTile extends StatefulWidget {
+  const _ProgressTile(this.id, this.active);
+  final String id;
+  final bool active;
+  @override
+  State<_ProgressTile> createState() => _ProgressTileState();
+}
+
+final class _ProgressTileState extends State<_ProgressTile> {
+  int moves = 0;
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text('${widget.id}:${widget.active}'),
+        TextButton(
+          onPressed: () => setState(() => moves++),
+          child: Text('$moves moves'),
+        ),
+      ],
+    ),
+  );
+}
+
 void main() {
+  testWidgets(
+    'delayed fresh supply preserves the visible active Play after restore',
+    (tester) async {
+      final state = _MemoryConsumerState();
+      final items = [_item('old_0'), _item('old_1')];
+      state.cache = ConsumerFeedCache(
+        requestId: 'old',
+        items: items,
+        updatedAt: DateTime.now().toUtc(),
+      );
+      state.resume = ConsumerFeedResume(
+        requestId: 'old',
+        visiblePosition: 1,
+        visibleRevisionId: items[1].revisionId,
+        windowRevisionIds: items.map((item) => item.revisionId).toList(),
+        updatedAt: DateTime.now().toUtc(),
+      );
+      final refresh = Completer<http.Response>();
+      final runtime = _runtime(state, (_, _) => refresh.future);
+      addTearDown(runtime.close);
+      await tester.pumpWidget(
+        _app(
+          runtime,
+          itemBuilder:
+              (
+                context,
+                item, {
+                required feedRequestId,
+                required active,
+                required onDirectManipulationChanged,
+              }) => _ProgressTile(item.playId, active),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('old_1:true').hitTestable(), findsOneWidget);
+      await tester.tap(find.text('0 moves').hitTestable());
+      await tester.pump();
+      refresh.complete(
+        http.Response(
+          jsonEncode(_page('new', [_item('fresh_0'), _item('fresh_1')], null)),
+          200,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('old_1:true').hitTestable(), findsOneWidget);
+      expect(find.text('1 moves').hitTestable(), findsOneWidget);
+      await tester.drag(
+        find.byKey(const ValueKey<String>('consumer-feed-pager')),
+        const Offset(0, -700),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('fresh_0:true').hitTestable(), findsOneWidget);
+    },
+  );
   testWidgets('initial load shows useful branded structure', (tester) async {
     final response = Completer<http.Response>();
     final runtime = _runtime(_MemoryConsumerState(), (_, _) => response.future);

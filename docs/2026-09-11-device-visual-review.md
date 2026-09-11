@@ -21,6 +21,10 @@ Flutter: pinned 3.44.7. Android application: `com.pullsar.mosaic_app`.
   targets and native activation behavior.
 - Request light Android system-bar icons over the dark feed. The first phone
   screenshot exposed dark status-bar icons against the black background.
+- Reconcile a restored feed's attached scroll position when a delayed fresh
+  decision reorders its retained window. The phone exposed missing utilities
+  because a different visible page was marked active. The regression also checks
+  that the current Play's interaction state survives the reindex.
 
 ## Device evidence
 
@@ -28,6 +32,16 @@ The profile app installed and launched successfully. Manual ADB input exercised
 forward/back feed swipes, an answer and its reveal, Save → Unsave, and opening
 and dismissing More. UI Automator confirmed the resulting reveal, Unsave state,
 and menu actions. No Dart exception appeared in the captured app log.
+
+The final arm64 release APK (33.3 MB) subsequently built and installed on the same
+phone. Its SHA-256 is
+`a3cdc962c2aca1e2acf0ee282deeb7078314243a113bcee738642bec3e86c41b`.
+The final capture confirms light system-bar icons; UI Automator confirms active
+Save/Share/More after restored-feed reconciliation. More opened and dismissed.
+No Dart exception appeared in the captured final-process startup log. The web
+release build also passes. Earlier release attempts exhausted local disk space
+and left a Gradle execution-history lock; restarting the owning daemon and using
+completed build caches allowed packaging to finish without deleting user files.
 
 `apps/mosaic_app/tool/device_profile.dart` runs the normal app entrypoint. After
 15 seconds of warm-up it records a 60-second window using the existing bounded
@@ -60,7 +74,7 @@ not changed. Installing an APK does not publish the newer immutable catalog.
 ## Verification
 
 The full shared-renderer suite passes 260 tests and the full app suite passes
-158 tests, including reviewed screenshot references at compact, large-text/RTL,
+159 tests, including reviewed screenshot references at compact, large-text/RTL,
 landscape, tablet and desktop sizes. The prior four screenshot mismatches are
 resolved by the reviewed palette references in this pass.
 
