@@ -2444,7 +2444,10 @@ type StarterFamilyId =
   | 'second-thought'
   | 'echo-architect';
 
-const starterFamilyRevision = 'rev_1';
+// Family manifests are immutable. The published rev_1 manifests describe the
+// earlier starter pack, so this expanded pack must reference a new family
+// identity rather than rewriting that historical contract.
+const starterFamilyRevision = 'rev_2';
 
 function starterFamilyId(playId: string): StarterFamilyId | undefined {
   if (playId.startsWith('mixli_starter_move_')) return 'one-move';

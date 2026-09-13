@@ -9,6 +9,26 @@ import {
 import {productionCatalogIntegrityFixture} from '../src/production_catalog.js';
 import {echoArchitectAudioAssets} from '../src/curated_audio.js';
 
+test('published game rounds point at the current immutable family revision', () => {
+  const familyRounds = productionCatalogIntegrityFixture.plays.filter(
+    (play) => gameFamilyRevision(play.document) !== undefined,
+  );
+
+  assert.ok(familyRounds.length > 0);
+  assert.ok(
+    familyRounds.every(
+      (play) => gameFamilyRevision(play.document) === 'rev_2',
+    ),
+  );
+});
+
+function gameFamilyRevision(document: unknown): unknown {
+  const family = (document as Record<string, unknown>).gameFamily;
+  return family !== null && typeof family === 'object'
+    ? (family as {revisionId?: unknown}).revisionId
+    : undefined;
+}
+
 test('pattern task has a neutral missing slot and no pre-answer solution', () => {
   const play = productionCatalogIntegrityFixture.plays.find(
     (candidate) => candidate.id === 'mixli_starter_finish_pattern',

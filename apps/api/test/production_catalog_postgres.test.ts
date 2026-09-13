@@ -86,7 +86,7 @@ test(
       ) as Array<{id: string; revisionId: string; gameFamily: {id: string; revisionId: string}}>;
       assert.ok(rounds.length > 0 && rounds.length <= 64);
       assert.ok(rounds.every((round) => round.id !== 'mixli_starter_move_one_match' &&
-        round.gameFamily.id === 'one-move' && round.gameFamily.revisionId === 'rev_1'));
+        round.gameFamily.id === 'one-move' && round.gameFamily.revisionId === 'rev_2'));
       const eligibleRoundKeys = new Set(productionCatalogIntegrityFixture.plays
         .map((play) => `${play.id}/${play.revisionId}`));
       assert.ok(rounds.every((round) => eligibleRoundKeys.has(`${round.id}/${round.revisionId}`)));
